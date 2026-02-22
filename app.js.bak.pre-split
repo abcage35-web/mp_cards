@@ -1,0 +1,5983 @@
+const STORAGE_KEY = "wb-dashboard-v2";
+const BASKET_START = 1;
+const BASKET_END = 80;
+const BULK_CONCURRENCY = 2;
+const SELLER_LOAD_CONCURRENCY = 2;
+const SELLER_MAX_PAGES = 120;
+const RECOMMENDATION_ITEMS_LIMIT = 20;
+const RECOMMENDATION_SLIDES_PER_ITEM = 4;
+const RECOMMENDATION_IDS_LIST_LIMIT = 200;
+const FETCH_RETRY_ATTEMPTS = 3;
+const FETCH_TIMEOUT_MS = 12000;
+const FETCH_RETRY_BASE_DELAY_MS = 450;
+const FETCH_RETRY_MAX_DELAY_MS = 8000;
+const HOST_PROBE_PAUSE_MS = 25;
+const HOVER_ZOOM_MARGIN = 12;
+const HOVER_ZOOM_FIXED_WIDTH = 280;
+const HOVER_ZOOM_FIXED_HEIGHT = 380;
+const BREAK_TOOLTIP_OFFSET_X = 14;
+const BREAK_TOOLTIP_OFFSET_Y = 16;
+const LISTING_GRID_COLUMNS = 10;
+const LISTING_GRID_ROWS = 3;
+const LISTING_MAX_SLIDES = LISTING_GRID_COLUMNS * LISTING_GRID_ROWS;
+const ROWS_LIMIT_DEFAULT = 50;
+const ROWS_LIMIT_MAX = 300;
+const AUTOPLAY_LIMIT_DEFAULT = 50;
+const TAGS_LIMIT_DEFAULT = 60;
+const AUTOPLAY_LIMIT_MIN = 1;
+const AUTOPLAY_LIMIT_MAX = 500;
+const TABLE_COLUMNS = 9;
+const DUPLICATE_CHECK_TIMEOUT_MS = 9000;
+const ICON_HINT_DELAY_MS = 450;
+
+const SELLER_SETTINGS = [
+  {
+    supplierId: "233776",
+    cabinet: "Паша 1",
+    url: "https://www.wildberries.ru/seller/233776",
+  },
+  {
+    supplierId: "372556",
+    cabinet: "Стас 1",
+    url: "https://www.wildberries.ru/seller/372556",
+  },
+  {
+    supplierId: "250027557",
+    cabinet: "Паша 2",
+    url: "https://www.wildberries.ru/seller/250027557",
+  },
+  {
+    supplierId: "250067050",
+    cabinet: "Стас 2",
+    url: "https://www.wildberries.ru/seller/250067050",
+  },
+];
+
+const SELLER_ENDPOINT_TEMPLATES = [
+  ({ supplierId, page }) =>
+    `https://catalog.wb.ru/sellers/catalog?appType=1&curr=rub&dest=-1257786&page=${page}&sort=popular&spp=30&supplier=${supplierId}`,
+  ({ supplierId, page }) =>
+    `https://catalog.wb.ru/sellers/v4/catalog?appType=1&curr=rub&dest=-1257786&page=${page}&sort=popular&spp=30&supplier=${supplierId}`,
+  ({ supplierId, page }) =>
+    `https://search.wb.ru/exactmatch/ru/common/v4/search?appType=1&curr=rub&dest=-1257786&page=${page}&sort=popular&spp=30&resultset=catalog&query=*&_st0=${toBase64(
+      supplierId,
+    )}`,
+  ({ supplierId, page }) =>
+    `https://search.wb.ru/exactmatch/ru/common/v5/search?appType=1&curr=rub&dest=-1257786&page=${page}&sort=popular&spp=30&resultset=catalog&query=*&_st0=${toBase64(
+      supplierId,
+    )}`,
+];
+
+const FILTER_DEFAULTS = {
+  nmId: "",
+  cabinet: "all",
+  categoryGroup: "all",
+  name: "",
+  category: "",
+  brand: "",
+  stock: "all",
+  price: "",
+  video: "all",
+  recommendations: "all",
+  rich: "all",
+  autoplay: "all",
+  tags: "all",
+  tagsCount: "",
+  coverDuplicate: "all",
+  slides: "all",
+};
+
+const PRESET_FILTERS = [
+  { id: "problemRows", label: "Только ошибки выгрузки" },
+  { id: "recommendationsNo", label: "Рекомендации: нет" },
+  { id: "richNo", label: "Рич: нет" },
+  { id: "videoNo", label: "Видео: нет" },
+  { id: "autoplayNo", label: "Автоплей: нет" },
+  { id: "tagsNo", label: "Тэги: нет" },
+  { id: "coverDuplicate", label: "Дубль обложки: да" },
+];
+
+const ICON_LIBRARY = {
+  refresh: {
+    paths: [
+      "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+      "M21 3v5h-5",
+      "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+      "M3 21v-5h5",
+    ],
+  },
+  trash: {
+    paths: ["M3 6h18", "M8 6V4h8v2", "M19 6l-1 14H6L5 6", "M10 11v6", "M14 11v6"],
+  },
+  check: {
+    paths: ["M20 6 9 17 4 12"],
+  },
+  alert: {
+    paths: ["M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0", "M12 9v4", "M12 17h.01"],
+  },
+  loader: {
+    paths: ["M12 2v4", "M12 18v4", "M4.93 4.93l2.83 2.83", "M16.24 16.24l2.83 2.83", "M2 12h4", "M18 12h4", "M4.93 19.07l2.83-2.83", "M16.24 7.76l2.83-2.83"],
+  },
+  clock: {
+    paths: ["M12 6v6l4 2", "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"],
+  },
+  settings: {
+    paths: ["M4 6h6", "M14 6h6", "M10 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0", "M4 18h10", "M18 18h2", "M18 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0"],
+  },
+  externalLink: {
+    paths: ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"],
+  },
+  chevronLeft: {
+    paths: ["m15 18-6-6 6-6"],
+  },
+  chevronRight: {
+    paths: ["m9 18 6-6-6-6"],
+  },
+  chevronDown: {
+    paths: ["m6 9 6 6 6-6"],
+  },
+  chevronUp: {
+    paths: ["m18 15-6-6-6 6"],
+  },
+  filter: {
+    paths: ["M22 3H2l8 9v6l4 3v-9z"],
+  },
+  dashboard: {
+    paths: ["M3 3h8v8H3z", "M13 3h8v5h-8z", "M13 10h8v11h-8z", "M3 13h8v8H3z"],
+  },
+  clipboardCheck: {
+    paths: ["M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2", "M9 3h6v4H9z", "m9 14 2 2 4-4"],
+  },
+};
+
+const state = {
+  rows: [],
+  basketByVol: {},
+  filters: { ...FILTER_DEFAULTS },
+  isBulkLoading: false,
+  isSellerLoading: false,
+  lastSyncAt: null,
+  controlsCollapsed: false,
+  rowsLimit: ROWS_LIMIT_DEFAULT,
+  rowsPage: 1,
+  onlyErrors: false,
+  checksFiltersOpen: false,
+  globalFiltersCollapsed: false,
+  globalCategoriesOpen: false,
+  globalColumnsOpen: false,
+  autoplayProblemOnly: false,
+  tagsProblemOnly: false,
+  autoplayLimitPerCabinet: AUTOPLAY_LIMIT_DEFAULT,
+  autoplayLimitByCabinet: {},
+  tagsLimitPerCabinet: TAGS_LIMIT_DEFAULT,
+  tagsLimitByCabinet: {},
+  pagination: {
+    filtered: 0,
+    visible: 0,
+    totalPages: 1,
+  },
+};
+
+const hoverZoom = {
+  root: null,
+  image: null,
+  activeThumb: null,
+};
+
+const breakTooltip = {
+  root: null,
+  text: null,
+  activeSegment: null,
+};
+
+const iconHintTooltip = {
+  root: null,
+  text: null,
+  target: null,
+  timer: 0,
+};
+
+const previewGallery = {
+  items: [],
+  currentIndex: 0,
+  titlePrefix: "",
+};
+
+const richGallery = {
+  items: [],
+  currentIndex: 0,
+  scrollRaf: 0,
+  titlePrefix: "",
+};
+
+const el = {
+  agreementDashboardMain: document.getElementById("agreementDashboardMain"),
+  globalFiltersFrame: document.getElementById("globalFiltersFrame"),
+  globalFiltersBody: document.getElementById("globalFiltersBody"),
+  globalFiltersToggleBtn: document.getElementById("globalFiltersToggleBtn"),
+  globalFiltersSummary: document.getElementById("globalFiltersSummary"),
+  globalCategorySummary: document.getElementById("globalCategorySummary"),
+  globalCabinetFilters: document.getElementById("globalCabinetFilters"),
+  globalCategoryFilters: document.getElementById("globalCategoryFilters"),
+  presetFilters: document.getElementById("presetFilters"),
+  resetAllFiltersBtn: document.getElementById("resetAllFiltersBtn"),
+  controlsPanel: document.getElementById("controlsPanel"),
+  controlsBody: document.getElementById("controlsBody"),
+  toggleControlsBtn: document.getElementById("toggleControlsBtn"),
+  autoplayLimitInput: document.getElementById("autoplayLimitInput"),
+  autoplayQuotaGrid: document.getElementById("autoplayQuotaGrid"),
+  singleInput: document.getElementById("singleInput"),
+  bulkInput: document.getElementById("bulkInput"),
+  addSingleBtn: document.getElementById("addSingleBtn"),
+  addBulkBtn: document.getElementById("addBulkBtn"),
+  loadAllBtn: document.getElementById("loadAllBtn"),
+  loadSellersBtn: document.getElementById("loadSellersBtn"),
+  loadProblemBtn: document.getElementById("loadProblemBtn"),
+  clearBtn: document.getElementById("clearBtn"),
+  filtersRow: document.getElementById("filtersRow"),
+  filterCabinet: document.getElementById("filterCabinet"),
+  rowsLimitSelect: document.getElementById("rowsLimitSelect"),
+  checksFiltersToggle: document.getElementById("checksFiltersToggle"),
+  checksFiltersPanel: document.getElementById("checksFiltersPanel"),
+  pagePrevBtn: document.getElementById("pagePrevBtn"),
+  pageNextBtn: document.getElementById("pageNextBtn"),
+  pageInfo: document.getElementById("pageInfo"),
+  rowsBody: document.getElementById("rowsBody"),
+  summaryLine: document.getElementById("summaryLine"),
+  lastSyncLine: document.getElementById("lastSyncLine"),
+  problemLine: document.getElementById("problemLine"),
+  errorDetailsBtn: document.getElementById("errorDetailsBtn"),
+  previewModal: document.getElementById("previewModal"),
+  previewImage: document.getElementById("previewImage"),
+  previewCaption: document.getElementById("previewCaption"),
+  previewCloseBtn: document.getElementById("previewCloseBtn"),
+  previewPrevBtn: document.getElementById("previewPrevBtn"),
+  previewNextBtn: document.getElementById("previewNextBtn"),
+  previewThumbs: document.getElementById("previewThumbs"),
+  recommendationsModal: document.getElementById("recommendationsModal"),
+  recommendationsTitle: document.getElementById("recommendationsTitle"),
+  recommendationsSubtle: document.getElementById("recommendationsSubtle"),
+  recommendationsContent: document.getElementById("recommendationsContent"),
+  recommendationsCloseBtn: document.getElementById("recommendationsCloseBtn"),
+  richModal: document.getElementById("richModal"),
+  richCaption: document.getElementById("richCaption"),
+  richContent: document.getElementById("richContent"),
+  richCloseBtn: document.getElementById("richCloseBtn"),
+  limitsModal: document.getElementById("limitsModal"),
+  limitsCloseBtn: document.getElementById("limitsCloseBtn"),
+  limitsContent: document.getElementById("limitsContent"),
+};
+
+init();
+
+function init() {
+  restoreState();
+  hydrateStaticIcons();
+  bindEvents();
+  applyControlsState();
+  renderCabinetFilterOptions();
+  renderFilterInputs();
+  applyAutoplayLimitControl();
+  applyTagsLimitControl();
+  applyRowsLimitControl();
+  render();
+  registerServiceWorker();
+}
+
+function renderIcon(name, className = "") {
+  const icon = ICON_LIBRARY[name] || ICON_LIBRARY.externalLink;
+  const classAttr = className ? ` ${className}` : "";
+  const paths = icon.paths.map((path) => `<path d="${path}"></path>`).join("");
+  return `<svg class="ui-icon${classAttr}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+
+function setStaticButtonIcon(button, iconName, label = null) {
+  if (!button) {
+    return;
+  }
+
+  const buttonLabel = typeof label === "string" ? label.trim() : "";
+  button.innerHTML = `${renderIcon(iconName)}${buttonLabel ? `<span class="btn-label">${escapeHtml(buttonLabel)}</span>` : ""}`;
+}
+
+function hydrateStaticIcons() {
+  setStaticButtonIcon(el.pagePrevBtn, "chevronLeft");
+  setStaticButtonIcon(el.pageNextBtn, "chevronRight");
+  setStaticButtonIcon(el.previewPrevBtn, "chevronLeft");
+  setStaticButtonIcon(el.previewNextBtn, "chevronRight");
+}
+
+function bindEvents() {
+  if (el.addSingleBtn) {
+    el.addSingleBtn.addEventListener("click", handleAddSingle);
+  }
+  el.addBulkBtn.addEventListener("click", handleAddBulk);
+  el.loadAllBtn.addEventListener("click", handleLoadAll);
+  el.loadSellersBtn.addEventListener("click", handleLoadSellers);
+  if (el.loadProblemBtn) {
+    el.loadProblemBtn.addEventListener("click", handleLoadProblematic);
+  }
+  el.clearBtn.addEventListener("click", handleClear);
+  el.toggleControlsBtn.addEventListener("click", handleToggleControls);
+  if (el.errorDetailsBtn) {
+    el.errorDetailsBtn.addEventListener("click", handleShowErrorsReport);
+  }
+
+  if (el.singleInput) {
+    el.singleInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleAddSingle();
+      }
+    });
+  }
+
+  el.filtersRow.addEventListener("input", handleFilterInput);
+  el.filtersRow.addEventListener("change", handleFilterInput);
+  if (el.rowsLimitSelect) {
+    el.rowsLimitSelect.addEventListener("change", handleRowsLimitChange);
+  }
+  document.addEventListener("change", handleAutoplayLimitChange);
+  document.addEventListener("blur", handleAutoplayLimitChange, true);
+  document.addEventListener("change", handleAutoplayCabinetLimitChange);
+  document.addEventListener("blur", handleAutoplayCabinetLimitChange, true);
+  document.addEventListener("change", handleTagsLimitChange);
+  document.addEventListener("blur", handleTagsLimitChange, true);
+  document.addEventListener("change", handleTagsCabinetLimitChange);
+  document.addEventListener("blur", handleTagsCabinetLimitChange, true);
+  if (el.pagePrevBtn) {
+    el.pagePrevBtn.addEventListener("click", () => shiftRowsPage(-1));
+  }
+  if (el.pageNextBtn) {
+    el.pageNextBtn.addEventListener("click", () => shiftRowsPage(1));
+  }
+  if (el.resetAllFiltersBtn) {
+    el.resetAllFiltersBtn.addEventListener("click", handleResetAllFilters);
+  }
+  if (el.globalFiltersToggleBtn) {
+    el.globalFiltersToggleBtn.addEventListener("click", handleToggleGlobalFilters);
+  }
+  document.addEventListener("click", handlePresetActionsClick);
+  if (el.checksFiltersToggle) {
+    el.checksFiltersToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      toggleChecksFiltersPopover();
+    });
+  }
+  document.addEventListener("click", (event) => {
+    if (!state.checksFiltersOpen || !el.checksFiltersPanel || !el.checksFiltersToggle) {
+      return;
+    }
+
+    if (event.target.closest("#checksFiltersPanel")) {
+      return;
+    }
+    if (event.target.closest("#checksFiltersToggle")) {
+      return;
+    }
+
+    toggleChecksFiltersPopover(false);
+  });
+  document.addEventListener("pointerover", handleBreakSegmentPointerOver);
+  document.addEventListener("pointermove", handleBreakSegmentPointerMove);
+  document.addEventListener("pointerout", handleBreakSegmentPointerOut);
+
+  el.rowsBody.addEventListener("click", async (event) => {
+    const actionTarget = event.target.closest("[data-action]");
+    if (!actionTarget) {
+      return;
+    }
+
+    const action = actionTarget.dataset.action;
+    const rowId = actionTarget.dataset.id || actionTarget.closest("tr")?.dataset.id;
+
+    if (action === "remove" && rowId) {
+      removeRow(rowId);
+      return;
+    }
+
+    if (action === "reload" && rowId) {
+      await loadRow(rowId);
+      return;
+    }
+
+    if (action === "show-error" && rowId) {
+      showRowError(rowId);
+      return;
+    }
+
+    if (action === "preview") {
+      event.preventDefault();
+      hideHoverZoom();
+      const rowIdFromThumb = actionTarget.dataset.rowId;
+      const slideIndex = Number(actionTarget.dataset.slideIndex);
+      if (rowIdFromThumb && Number.isInteger(slideIndex) && slideIndex >= 0) {
+        openPreviewForRow(rowIdFromThumb, slideIndex);
+      } else {
+        openPreview(actionTarget.dataset.url, actionTarget.dataset.caption || "");
+      }
+      return;
+    }
+
+    if (action === "recommendations" && rowId) {
+      event.preventDefault();
+      await openRecommendations(rowId);
+      return;
+    }
+
+    if (action === "rich-content" && rowId) {
+      event.preventDefault();
+      await openRichContent(rowId);
+    }
+  });
+  el.rowsBody.addEventListener("pointerover", handleSlideThumbPointerOver);
+  el.rowsBody.addEventListener("pointerout", handleSlideThumbPointerOut);
+
+  el.previewCloseBtn.addEventListener("click", closePreview);
+  if (el.previewPrevBtn) {
+    el.previewPrevBtn.addEventListener("click", () => stepPreview(-1));
+  }
+  if (el.previewNextBtn) {
+    el.previewNextBtn.addEventListener("click", () => stepPreview(1));
+  }
+  if (el.previewThumbs) {
+    el.previewThumbs.addEventListener("click", (event) => {
+      const thumbButton = event.target.closest("[data-preview-index]");
+      if (!thumbButton) {
+        return;
+      }
+      const index = Number(thumbButton.dataset.previewIndex);
+      if (!Number.isInteger(index)) {
+        return;
+      }
+      setPreviewIndex(index);
+    });
+  }
+  el.previewModal.addEventListener("click", (event) => {
+    if (event.target.dataset.previewClose === "1") {
+      closePreview();
+    }
+  });
+
+  el.recommendationsCloseBtn.addEventListener("click", closeRecommendations);
+  el.recommendationsModal.addEventListener("click", (event) => {
+    if (event.target.dataset.recClose === "1") {
+      closeRecommendations();
+    }
+  });
+  el.recommendationsContent.addEventListener("click", (event) => {
+    const actionTarget = event.target.closest("[data-action='preview']");
+    if (!actionTarget) {
+      return;
+    }
+    event.preventDefault();
+    openPreview(actionTarget.dataset.url, actionTarget.dataset.caption || "");
+  });
+
+  if (el.richCloseBtn) {
+    el.richCloseBtn.addEventListener("click", closeRichContent);
+  }
+  if (el.richModal) {
+    el.richModal.addEventListener("click", (event) => {
+      if (event.target.dataset.richClose === "1") {
+        closeRichContent();
+      }
+    });
+  }
+  if (el.richContent) {
+    el.richContent.addEventListener("click", (event) => {
+      const selectBtn = event.target.closest("[data-action='rich-select']");
+      if (!selectBtn) {
+        return;
+      }
+      const index = Number(selectBtn.dataset.richIndex);
+      if (!Number.isInteger(index)) {
+        return;
+      }
+      setRichModalIndex(index);
+    });
+    el.richContent.addEventListener(
+      "scroll",
+      (event) => {
+        const stream = event.target;
+        if (!(stream instanceof HTMLElement) || !stream.matches("[data-rich-stage-stream]")) {
+          return;
+        }
+        if (richGallery.scrollRaf) {
+          cancelAnimationFrame(richGallery.scrollRaf);
+        }
+        richGallery.scrollRaf = requestAnimationFrame(() => {
+          richGallery.scrollRaf = 0;
+          syncRichModalIndexFromStream(stream);
+        });
+      },
+      true,
+    );
+  }
+
+  if (el.limitsCloseBtn) {
+    el.limitsCloseBtn.addEventListener("click", closeLimitsModal);
+  }
+  if (el.limitsModal) {
+    el.limitsModal.addEventListener("click", (event) => {
+      if (event.target.dataset.limitsClose === "1") {
+        closeLimitsModal();
+      }
+    });
+  }
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !el.previewModal.hidden) {
+      closePreview();
+      return;
+    }
+    if (!el.previewModal.hidden && event.key === "ArrowLeft") {
+      event.preventDefault();
+      stepPreview(-1);
+      return;
+    }
+    if (!el.previewModal.hidden && event.key === "ArrowRight") {
+      event.preventDefault();
+      stepPreview(1);
+      return;
+    }
+    if (event.key === "Escape" && !el.recommendationsModal.hidden) {
+      closeRecommendations();
+      return;
+    }
+    if (event.key === "Escape" && el.richModal && !el.richModal.hidden) {
+      closeRichContent();
+      return;
+    }
+    if (el.richModal && !el.richModal.hidden && (event.key === "ArrowLeft" || event.key === "ArrowUp")) {
+      event.preventDefault();
+      stepRichModal(-1);
+      return;
+    }
+    if (el.richModal && !el.richModal.hidden && (event.key === "ArrowRight" || event.key === "ArrowDown")) {
+      event.preventDefault();
+      stepRichModal(1);
+      return;
+    }
+    if (event.key === "Escape" && el.limitsModal && !el.limitsModal.hidden) {
+      closeLimitsModal();
+      return;
+    }
+    if (event.key === "Escape" && state.checksFiltersOpen) {
+      toggleChecksFiltersPopover(false);
+    }
+  });
+  window.addEventListener("resize", syncHoverZoomPosition);
+  window.addEventListener("resize", syncGlobalFilterOffset);
+  window.addEventListener(
+    "scroll",
+    () => {
+      syncGlobalFilterOffset();
+      if (hoverZoom.activeThumb) {
+        syncHoverZoomPosition();
+      }
+      if (breakTooltip.activeSegment) {
+        hideBreakSegmentTooltip();
+      }
+      if (iconHintTooltip.target) {
+        syncIconHintTooltipPosition();
+      }
+    },
+    true,
+  );
+  window.addEventListener("blur", hideBreakSegmentTooltip);
+  document.addEventListener("pointerover", handleIconHintPointerOver);
+  document.addEventListener("pointermove", handleIconHintPointerMove);
+  document.addEventListener("pointerout", handleIconHintPointerOut);
+  window.addEventListener("blur", hideIconHintTooltip);
+}
+
+function normalizeRowsLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return ROWS_LIMIT_DEFAULT;
+  }
+
+  return Math.min(ROWS_LIMIT_MAX, Math.max(ROWS_LIMIT_DEFAULT, parsed));
+}
+
+function normalizeAutoplayLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return AUTOPLAY_LIMIT_DEFAULT;
+  }
+
+  return Math.min(AUTOPLAY_LIMIT_MAX, Math.max(AUTOPLAY_LIMIT_MIN, parsed));
+}
+
+function normalizeAutoplayLimitMap(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [cabinetRaw, limitRaw] of Object.entries(raw)) {
+    const cabinet = String(cabinetRaw || "").trim();
+    if (!cabinet) {
+      continue;
+    }
+    normalized[cabinet] = normalizeAutoplayLimit(limitRaw);
+  }
+
+  return normalized;
+}
+
+function normalizeTagsLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return TAGS_LIMIT_DEFAULT;
+  }
+
+  return Math.min(AUTOPLAY_LIMIT_MAX, Math.max(AUTOPLAY_LIMIT_MIN, parsed));
+}
+
+function normalizeTagsLimitMap(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [cabinetRaw, limitRaw] of Object.entries(raw)) {
+    const cabinet = String(cabinetRaw || "").trim();
+    if (!cabinet) {
+      continue;
+    }
+    normalized[cabinet] = normalizeTagsLimit(limitRaw);
+  }
+
+  return normalized;
+}
+
+function applyAutoplayLimitControl() {
+  state.autoplayLimitPerCabinet = normalizeAutoplayLimit(state.autoplayLimitPerCabinet);
+  state.autoplayLimitByCabinet = normalizeAutoplayLimitMap(state.autoplayLimitByCabinet);
+  const globalInputs = [];
+  if (el.autoplayLimitInput) {
+    globalInputs.push(el.autoplayLimitInput);
+  }
+  for (const input of document.querySelectorAll("[data-autoplay-global-limit]")) {
+    globalInputs.push(input);
+  }
+  for (const input of globalInputs) {
+    input.value = String(state.autoplayLimitPerCabinet);
+  }
+}
+
+function handleAutoplayLimitChange(event) {
+  const targetInput = event?.target?.closest?.("[data-autoplay-global-limit], #autoplayLimitInput");
+  if (event && !targetInput) {
+    return;
+  }
+
+  const input = targetInput || el.autoplayLimitInput || document.querySelector("[data-autoplay-global-limit]");
+  if (!input) {
+    return;
+  }
+
+  state.autoplayLimitPerCabinet = normalizeAutoplayLimit(input.value);
+  applyAutoplayLimitControl();
+  render();
+}
+
+function applyTagsLimitControl() {
+  state.tagsLimitPerCabinet = normalizeTagsLimit(state.tagsLimitPerCabinet);
+  state.tagsLimitByCabinet = normalizeTagsLimitMap(state.tagsLimitByCabinet);
+  for (const input of document.querySelectorAll("[data-tags-global-limit]")) {
+    input.value = String(state.tagsLimitPerCabinet);
+  }
+}
+
+function handleTagsLimitChange(event) {
+  const targetInput = event?.target?.closest?.("[data-tags-global-limit]");
+  if (event && !targetInput) {
+    return;
+  }
+
+  const input = targetInput || document.querySelector("[data-tags-global-limit]");
+  if (!input) {
+    return;
+  }
+
+  state.tagsLimitPerCabinet = normalizeTagsLimit(input.value);
+  applyTagsLimitControl();
+  render();
+}
+
+function handleAutoplayCabinetLimitChange(event) {
+  const input = event.target?.closest?.("[data-cabinet-limit]");
+  if (!input) {
+    return;
+  }
+
+  const cabinet = String(input.dataset.cabinetLimit || "").trim();
+  if (!cabinet) {
+    return;
+  }
+
+  const raw = String(input.value || "").trim();
+  if (!raw) {
+    delete state.autoplayLimitByCabinet[cabinet];
+    render();
+    return;
+  }
+
+  state.autoplayLimitByCabinet[cabinet] = normalizeAutoplayLimit(raw);
+  render();
+}
+
+function handleTagsCabinetLimitChange(event) {
+  const input = event.target?.closest?.("[data-tags-cabinet-limit]");
+  if (!input) {
+    return;
+  }
+
+  const cabinet = String(input.dataset.tagsCabinetLimit || "").trim();
+  if (!cabinet) {
+    return;
+  }
+
+  const raw = String(input.value || "").trim();
+  if (!raw) {
+    delete state.tagsLimitByCabinet[cabinet];
+    render();
+    return;
+  }
+
+  state.tagsLimitByCabinet[cabinet] = normalizeTagsLimit(raw);
+  render();
+}
+
+function applyRowsLimitControl() {
+  state.rowsLimit = normalizeRowsLimit(state.rowsLimit);
+  if (!el.rowsLimitSelect) {
+    return;
+  }
+
+  const expected = String(state.rowsLimit);
+  const optionExists = Array.from(el.rowsLimitSelect.options).some((option) => option.value === expected);
+  if (optionExists) {
+    el.rowsLimitSelect.value = expected;
+  } else {
+    el.rowsLimitSelect.value = String(ROWS_LIMIT_DEFAULT);
+    state.rowsLimit = ROWS_LIMIT_DEFAULT;
+  }
+}
+
+function handleRowsLimitChange() {
+  if (!el.rowsLimitSelect) {
+    return;
+  }
+
+  state.rowsLimit = normalizeRowsLimit(el.rowsLimitSelect.value);
+  state.rowsPage = 1;
+  applyRowsLimitControl();
+  render();
+}
+
+function shiftRowsPage(delta) {
+  const next = state.rowsPage + Number(delta || 0);
+  const totalPages = Math.max(1, Number(state.pagination.totalPages) || 1);
+  state.rowsPage = Math.max(1, Math.min(totalPages, next));
+  render();
+}
+
+function handleResetAllFilters() {
+  state.filters = { ...FILTER_DEFAULTS };
+  state.onlyErrors = false;
+  state.checksFiltersOpen = false;
+  state.autoplayProblemOnly = false;
+  state.tagsProblemOnly = false;
+  state.rowsPage = 1;
+  renderFilterInputs();
+  render();
+}
+
+function handlePresetActionsClick(event) {
+  const limitsBtn = event.target.closest("[data-action='open-limit-settings']");
+  if (limitsBtn) {
+    event.preventDefault();
+    const kind = String(limitsBtn.dataset.limitKind || "autoplay").trim();
+    openLimitsModal(kind === "tags" ? "tags" : "autoplay");
+    return;
+  }
+
+  const dashboardCabinetBtn = event.target.closest("[data-action='toggle-dashboard-cabinet']");
+  if (dashboardCabinetBtn) {
+    event.preventDefault();
+    const cabinet = String(dashboardCabinetBtn.dataset.dashboardCabinet || "all").trim();
+    setDashboardCabinetFilter(cabinet, { toggle: true });
+    return;
+  }
+
+  const categoryGroupBtn = event.target.closest("[data-action='toggle-category-group']");
+  if (categoryGroupBtn) {
+    event.preventDefault();
+    const category = String(categoryGroupBtn.dataset.categoryGroup || "all");
+    setCategoryGroupFilter(toggleCategoryGroupFilter(state.filters.categoryGroup, category, state.rows));
+    return;
+  }
+
+  const toggleBtn = event.target.closest("[data-action='toggle-preset']");
+  if (toggleBtn) {
+    event.preventDefault();
+    const presetId = String(toggleBtn.dataset.presetId || "").trim();
+    if (presetId) {
+      togglePresetFilter(presetId);
+    }
+    return;
+  }
+
+  const resetBtn = event.target.closest("[data-action='reset-all-filters']");
+  if (resetBtn) {
+    event.preventDefault();
+    handleResetAllFilters();
+  }
+}
+
+function ensureBreakTooltipRoot() {
+  if (breakTooltip.root && breakTooltip.text) {
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.className = "agreement-break-tooltip";
+  root.hidden = true;
+  root.setAttribute("role", "status");
+
+  const text = document.createElement("div");
+  text.className = "agreement-break-tooltip-text";
+  root.append(text);
+
+  document.body.append(root);
+  breakTooltip.root = root;
+  breakTooltip.text = text;
+}
+
+function getBreakSegmentTarget(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  return target.closest(".agreement-break-segment[data-tooltip-title]");
+}
+
+function handleBreakSegmentPointerOver(event) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+
+  const segment = getBreakSegmentTarget(event.target);
+  if (!segment) {
+    return;
+  }
+
+  const previous = getBreakSegmentTarget(event.relatedTarget);
+  if (previous === segment) {
+    return;
+  }
+
+  showBreakSegmentTooltip(segment, event.clientX, event.clientY);
+}
+
+function handleBreakSegmentPointerMove(event) {
+  if (!breakTooltip.activeSegment) {
+    return;
+  }
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+
+  moveBreakSegmentTooltip(event.clientX, event.clientY);
+}
+
+function handleBreakSegmentPointerOut(event) {
+  if (!breakTooltip.activeSegment) {
+    return;
+  }
+
+  const segment = getBreakSegmentTarget(event.target);
+  if (!segment || segment !== breakTooltip.activeSegment) {
+    return;
+  }
+
+  const next = getBreakSegmentTarget(event.relatedTarget);
+  if (next && next === segment) {
+    return;
+  }
+
+  hideBreakSegmentTooltip();
+}
+
+function showBreakSegmentTooltip(segment, clientX, clientY) {
+  const title = String(segment.dataset.tooltipTitle || "").trim();
+  if (!title) {
+    return;
+  }
+
+  ensureBreakTooltipRoot();
+  breakTooltip.activeSegment = segment;
+
+  const problems = String(segment.dataset.tooltipProblems || "").trim();
+  const rows = String(segment.dataset.tooltipRows || "").trim();
+  const share = String(segment.dataset.tooltipShare || "").trim();
+  const colorRaw = String(segment.dataset.tooltipColor || "").trim();
+  const color = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorRaw) ? colorRaw : "#d5644a";
+  const rowsLine = rows ? `<li><span>Доля от всех строк:</span> <strong>${escapeHtml(rows)}%</strong></li>` : "";
+  const shareLine = share ? `<li><span>Доля в структуре проблем:</span> <strong>${escapeHtml(share)}%</strong></li>` : "";
+
+  breakTooltip.text.innerHTML = `<div class="agreement-break-tooltip-title">
+    <span class="agreement-break-tooltip-dot" style="background:${color}"></span>
+    <span>${escapeHtml(title)}</span>
+  </div>
+  <ul class="agreement-break-tooltip-list">
+    <li><span>Проблем:</span> <strong>${escapeHtml(problems)}</strong></li>
+    ${rowsLine}
+    ${shareLine}
+    <li><span>Клик:</span> <strong>показать такие строки</strong></li>
+  </ul>`;
+  breakTooltip.root.hidden = false;
+  breakTooltip.root.classList.add("is-visible");
+  moveBreakSegmentTooltip(clientX, clientY);
+}
+
+function moveBreakSegmentTooltip(clientX, clientY) {
+  if (!breakTooltip.root || breakTooltip.root.hidden) {
+    return;
+  }
+
+  const margin = 8;
+  const tooltipRect = breakTooltip.root.getBoundingClientRect();
+
+  let left = clientX + BREAK_TOOLTIP_OFFSET_X;
+  let top = clientY + BREAK_TOOLTIP_OFFSET_Y;
+
+  if (left + tooltipRect.width > window.innerWidth - margin) {
+    left = clientX - tooltipRect.width - BREAK_TOOLTIP_OFFSET_X;
+  }
+  if (top + tooltipRect.height > window.innerHeight - margin) {
+    top = clientY - tooltipRect.height - BREAK_TOOLTIP_OFFSET_Y;
+  }
+
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - tooltipRect.height - margin));
+
+  breakTooltip.root.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+}
+
+function hideBreakSegmentTooltip() {
+  if (!breakTooltip.root) {
+    breakTooltip.activeSegment = null;
+    return;
+  }
+
+  breakTooltip.activeSegment = null;
+  breakTooltip.root.classList.remove("is-visible");
+  breakTooltip.root.hidden = true;
+  breakTooltip.root.style.transform = "translate3d(-9999px, -9999px, 0)";
+}
+
+function ensureIconHintTooltipRoot() {
+  if (iconHintTooltip.root && iconHintTooltip.text) {
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.className = "icon-hint-tooltip";
+  root.hidden = true;
+  root.setAttribute("role", "status");
+
+  const text = document.createElement("div");
+  text.className = "icon-hint-tooltip-text";
+  root.append(text);
+
+  document.body.append(root);
+  iconHintTooltip.root = root;
+  iconHintTooltip.text = text;
+}
+
+function getIconHintTarget(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  return target.closest("[data-hint]");
+}
+
+function handleIconHintPointerOver(event) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+
+  const target = getIconHintTarget(event.target);
+  if (!target) {
+    return;
+  }
+
+  const previous = getIconHintTarget(event.relatedTarget);
+  if (previous === target) {
+    return;
+  }
+
+  scheduleIconHintTooltip(target);
+}
+
+function handleIconHintPointerMove(event) {
+  if (!iconHintTooltip.target || !iconHintTooltip.root || iconHintTooltip.root.hidden) {
+    return;
+  }
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+  moveIconHintTooltip(event.clientX, event.clientY);
+}
+
+function handleIconHintPointerOut(event) {
+  const target = getIconHintTarget(event.target);
+  if (!target) {
+    return;
+  }
+
+  const next = getIconHintTarget(event.relatedTarget);
+  if (next && next === target) {
+    return;
+  }
+
+  hideIconHintTooltip();
+}
+
+function scheduleIconHintTooltip(target) {
+  hideIconHintTooltip();
+  const text = String(target.dataset.hint || "").trim();
+  if (!text) {
+    return;
+  }
+
+  iconHintTooltip.target = target;
+  iconHintTooltip.timer = window.setTimeout(() => {
+    showIconHintTooltip(text);
+  }, ICON_HINT_DELAY_MS);
+}
+
+function showIconHintTooltip(text) {
+  if (!iconHintTooltip.target) {
+    return;
+  }
+
+  ensureIconHintTooltipRoot();
+  iconHintTooltip.text.textContent = text;
+  iconHintTooltip.root.hidden = false;
+  iconHintTooltip.root.classList.add("is-visible");
+  syncIconHintTooltipPosition();
+}
+
+function syncIconHintTooltipPosition() {
+  if (!iconHintTooltip.target) {
+    hideIconHintTooltip();
+    return;
+  }
+  const rect = iconHintTooltip.target.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top;
+  moveIconHintTooltip(x, y, { placeAbove: true });
+}
+
+function moveIconHintTooltip(clientX, clientY, options = {}) {
+  if (!iconHintTooltip.root || iconHintTooltip.root.hidden) {
+    return;
+  }
+
+  const placeAbove = options.placeAbove === true;
+  const margin = 8;
+  const tooltipRect = iconHintTooltip.root.getBoundingClientRect();
+  let left = Math.round(clientX - tooltipRect.width / 2);
+  let top = placeAbove
+    ? Math.round(clientY - tooltipRect.height - 10)
+    : Math.round(clientY + 12);
+
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - tooltipRect.height - margin));
+  iconHintTooltip.root.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+}
+
+function hideIconHintTooltip() {
+  if (iconHintTooltip.timer) {
+    clearTimeout(iconHintTooltip.timer);
+    iconHintTooltip.timer = 0;
+  }
+  if (!iconHintTooltip.root) {
+    iconHintTooltip.target = null;
+    return;
+  }
+
+  iconHintTooltip.target = null;
+  iconHintTooltip.root.classList.remove("is-visible");
+  iconHintTooltip.root.hidden = true;
+  iconHintTooltip.root.style.transform = "translate3d(-9999px, -9999px, 0)";
+}
+
+function ensureHoverZoomRoot() {
+  if (hoverZoom.root && hoverZoom.image) {
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.className = "slide-hover-zoom";
+  root.hidden = true;
+
+  const image = document.createElement("img");
+  image.alt = "";
+  root.append(image);
+
+  document.body.append(root);
+  hoverZoom.root = root;
+  hoverZoom.image = image;
+}
+
+function getClosestSlideThumb(target) {
+  if (!(target instanceof Element)) {
+    return null;
+  }
+  return target.closest(".slide-thumb");
+}
+
+function handleSlideThumbPointerOver(event) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+  const thumb = getClosestSlideThumb(event.target);
+  if (!thumb || !el.rowsBody.contains(thumb)) {
+    return;
+  }
+
+  const previous = getClosestSlideThumb(event.relatedTarget);
+  if (previous === thumb) {
+    return;
+  }
+
+  showHoverZoom(thumb);
+}
+
+function handleSlideThumbPointerOut(event) {
+  if (event.pointerType && event.pointerType !== "mouse") {
+    return;
+  }
+  if (!hoverZoom.activeThumb) {
+    return;
+  }
+
+  const thumb = getClosestSlideThumb(event.target);
+  if (!thumb || thumb !== hoverZoom.activeThumb) {
+    return;
+  }
+
+  const next = getClosestSlideThumb(event.relatedTarget);
+  if (next && el.rowsBody.contains(next)) {
+    showHoverZoom(next);
+    return;
+  }
+
+  hideHoverZoom();
+}
+
+function showHoverZoom(thumb) {
+  ensureHoverZoomRoot();
+  const url = thumb.dataset.url || thumb.querySelector("img")?.currentSrc || thumb.querySelector("img")?.src;
+  if (!url) {
+    return;
+  }
+
+  hoverZoom.activeThumb = thumb;
+  hoverZoom.image.src = url;
+  hoverZoom.image.alt = thumb.dataset.caption || "Слайд";
+  hoverZoom.root.hidden = false;
+  hoverZoom.root.classList.add("is-visible");
+  syncHoverZoomPosition();
+}
+
+function hideHoverZoom() {
+  if (!hoverZoom.root) {
+    hoverZoom.activeThumb = null;
+    return;
+  }
+  hoverZoom.activeThumb = null;
+  hoverZoom.root.classList.remove("is-visible");
+  hoverZoom.root.hidden = true;
+  hoverZoom.root.style.transform = "translate3d(-9999px, -9999px, 0)";
+}
+
+function syncHoverZoomPosition() {
+  if (!hoverZoom.root || !hoverZoom.activeThumb) {
+    return;
+  }
+
+  const rect = hoverZoom.activeThumb.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    hideHoverZoom();
+    return;
+  }
+
+  const maxWidth = Math.max(120, window.innerWidth - HOVER_ZOOM_MARGIN * 2);
+  const maxHeight = Math.max(120, window.innerHeight - HOVER_ZOOM_MARGIN * 2);
+  const scale = Math.min(1, maxWidth / HOVER_ZOOM_FIXED_WIDTH, maxHeight / HOVER_ZOOM_FIXED_HEIGHT);
+  const width = Math.round(HOVER_ZOOM_FIXED_WIDTH * scale);
+  const height = Math.round(HOVER_ZOOM_FIXED_HEIGHT * scale);
+
+  let left = rect.left;
+  let top = rect.top;
+
+  if (left + width > window.innerWidth - HOVER_ZOOM_MARGIN) {
+    left = rect.right - width;
+  }
+  if (top + height > window.innerHeight - HOVER_ZOOM_MARGIN) {
+    top = rect.bottom - height;
+  }
+
+  left = Math.max(HOVER_ZOOM_MARGIN, Math.min(left, window.innerWidth - width - HOVER_ZOOM_MARGIN));
+  top = Math.max(HOVER_ZOOM_MARGIN, Math.min(top, window.innerHeight - height - HOVER_ZOOM_MARGIN));
+
+  hoverZoom.root.style.width = `${width}px`;
+  hoverZoom.root.style.height = `${height}px`;
+  hoverZoom.root.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+}
+
+function registerServiceWorker() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return;
+  }
+
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    return;
+  }
+
+  navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {});
+}
+
+function handleToggleControls() {
+  state.controlsCollapsed = !state.controlsCollapsed;
+  applyControlsState();
+  persistState();
+}
+
+function applyControlsState() {
+  if (state.controlsCollapsed) {
+    el.controlsPanel.classList.add("controls-collapsed");
+    el.toggleControlsBtn.textContent = "Показать блок заполнения";
+  } else {
+    el.controlsPanel.classList.remove("controls-collapsed");
+    el.toggleControlsBtn.textContent = "Скрыть блок заполнения";
+  }
+}
+
+function handleToggleGlobalFilters() {
+  state.globalFiltersCollapsed = !state.globalFiltersCollapsed;
+  applyGlobalFiltersState();
+  syncGlobalFilterOffset();
+  persistState();
+}
+
+function handleToggleGlobalCategories() {
+  state.globalCategoriesOpen = !state.globalCategoriesOpen;
+  applyGlobalCategoriesState();
+  syncGlobalFilterOffset();
+  persistState();
+}
+
+function handleToggleGlobalColumns() {
+  state.globalColumnsOpen = !state.globalColumnsOpen;
+  applyGlobalColumnsState();
+  syncGlobalFilterOffset();
+  persistState();
+}
+
+function getActiveGlobalFiltersCount() {
+  let active = 0;
+  for (const key of Object.keys(FILTER_DEFAULTS)) {
+    if (key === "categoryGroup") {
+      if (buildCategoryGroupFilterValue(getCategoryGroupSelection(state.filters.categoryGroup)) !== "all") {
+        active += 1;
+      }
+      continue;
+    }
+    const current = String(state.filters[key] ?? "");
+    const initial = String(FILTER_DEFAULTS[key] ?? "");
+    if (current !== initial) {
+      active += 1;
+    }
+  }
+  if (state.onlyErrors) {
+    active += 1;
+  }
+  if (state.autoplayProblemOnly) {
+    active += 1;
+  }
+  if (state.tagsProblemOnly) {
+    active += 1;
+  }
+  return active;
+}
+
+function getActiveColumnFiltersCount() {
+  const keys = [
+    "nmId",
+    "cabinet",
+    "name",
+    "category",
+    "brand",
+    "stock",
+    "price",
+    "video",
+    "recommendations",
+    "rich",
+    "autoplay",
+    "tags",
+    "tagsCount",
+    "coverDuplicate",
+    "slides",
+  ];
+
+  let active = 0;
+  for (const key of keys) {
+    const current = String(state.filters[key] ?? "");
+    const initial = String(FILTER_DEFAULTS[key] ?? "");
+    if (current !== initial) {
+      active += 1;
+    }
+  }
+  return active;
+}
+
+function applyGlobalFiltersState() {
+  if (!el.globalFiltersFrame || !el.globalFiltersBody) {
+    return;
+  }
+
+  const collapsed = state.globalFiltersCollapsed === true;
+  el.globalFiltersFrame.classList.toggle("is-collapsed", collapsed);
+  el.globalFiltersBody.hidden = collapsed;
+
+  if (el.globalFiltersToggleBtn) {
+    const label = collapsed ? "Развернуть фильтры" : "Свернуть фильтры";
+    el.globalFiltersToggleBtn.innerHTML = `${renderIcon(collapsed ? "chevronDown" : "chevronUp")}<span class="btn-label">${label}</span>`;
+  }
+
+  if (el.globalFiltersSummary) {
+    const activeCount = getActiveGlobalFiltersCount();
+    const filtered = Number(state.pagination.filtered) || 0;
+    const total = state.rows.length;
+    el.globalFiltersSummary.textContent = `Активных фильтров: ${activeCount} · показано ${filtered}/${total}`;
+  }
+
+  applyGlobalCategoriesState();
+  applyGlobalColumnsState();
+}
+
+function applyGlobalCategoriesState() {
+  const selected = getCategoryGroupSelection(state.filters.categoryGroup);
+  if (el.globalCategoryFilters) {
+    el.globalCategoryFilters.hidden = false;
+  }
+  if (el.globalCategorySummary) {
+    if (selected.length === 0) {
+      el.globalCategorySummary.textContent = "Все категории";
+    } else {
+      const labels = selected.map((item) => (item === "__empty__" ? "Без категории" : item));
+      const preview = labels.slice(0, 2).join(", ");
+      const extra = selected.length > 2 ? ` +${selected.length - 2}` : "";
+      el.globalCategorySummary.textContent = `Выбрано: ${preview}${extra}`;
+    }
+  }
+}
+
+function applyGlobalColumnsState() {
+  if (el.filtersRow) {
+    el.filtersRow.hidden = false;
+  }
+}
+
+function syncGlobalFilterOffset() {
+  const root = document.documentElement;
+  if (!root) {
+    return;
+  }
+  if (!el.globalFiltersFrame || !el.globalFiltersFrame.offsetHeight) {
+    root.style.setProperty("--global-filter-offset", "0px");
+    return;
+  }
+
+  const frameRect = el.globalFiltersFrame.getBoundingClientRect();
+  const stickyTop = 8;
+  const isPinned = frameRect.top <= stickyTop + 1 && frameRect.bottom > stickyTop;
+  if (!isPinned) {
+    root.style.setProperty("--global-filter-offset", "0px");
+    return;
+  }
+
+  const offset = Math.max(0, Math.ceil(frameRect.bottom + 8));
+  root.style.setProperty("--global-filter-offset", `${offset}px`);
+}
+
+function buildSellerSettingsHtml() {
+  return SELLER_SETTINGS.map(
+    (seller) => `<div class="seller-chip">
+      <span>${escapeHtml(seller.cabinet)}</span>
+      <span class="mono">${escapeHtml(seller.supplierId)}</span>
+      <a href="${seller.url}" target="_blank" rel="noopener noreferrer">ссылка</a>
+    </div>`,
+  ).join("");
+}
+
+function getAllCabinets(rows = state.rows, includeSellerSettings = true) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const sellerCabinets = includeSellerSettings
+    ? SELLER_SETTINGS.map((item) => String(item.cabinet || "").trim())
+    : [];
+  return Array.from(
+    new Set(
+      [
+        ...sellerCabinets,
+        ...sourceRows.map((row) => String(row.cabinet || "").trim()),
+      ].filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+function getAllCategories(rows = state.rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return Array.from(new Set(sourceRows.map((row) => getRowCategoryLabel(row)).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, "ru"),
+  );
+}
+
+function getRowsByCabinet(rows, cabinetRaw) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const cabinet = String(cabinetRaw || "").trim();
+  if (!cabinet || cabinet === "all") {
+    return sourceRows;
+  }
+  if (cabinet === "__empty__") {
+    return sourceRows.filter((row) => !String(row?.cabinet || "").trim());
+  }
+  return sourceRows.filter((row) => String(row.cabinet || "").trim() === cabinet);
+}
+
+function getRowCategoryLabel(row) {
+  return String(row?.data?.category || "").trim();
+}
+
+function normalizeDashboardCabinet(valueRaw, rows = state.rows) {
+  const value = String(valueRaw || "all").trim() || "all";
+  if (value === "all" || value === "__empty__") {
+    return value;
+  }
+  return getAllCabinets(rows).includes(value) ? value : "all";
+}
+
+function setDashboardCabinetFilter(valueRaw, options = {}) {
+  const toggle = options && options.toggle === true;
+  const next = normalizeDashboardCabinet(valueRaw, state.rows);
+  const target = toggle && next === state.filters.cabinet ? "all" : next;
+  if (target === state.filters.cabinet) {
+    return;
+  }
+  state.filters.cabinet = target;
+  state.rowsPage = 1;
+  renderFilterInputs();
+  render();
+}
+
+const CATEGORY_MULTI_PREFIX = "multi:";
+
+function encodeCategoryFilterToken(valueRaw) {
+  return encodeURIComponent(String(valueRaw || "").trim());
+}
+
+function decodeCategoryFilterToken(valueRaw) {
+  try {
+    return decodeURIComponent(String(valueRaw || ""));
+  } catch {
+    return String(valueRaw || "");
+  }
+}
+
+function getCategoryGroupSelection(valueRaw) {
+  const value = String(valueRaw ?? "all").trim();
+  if (!value || value === "all") {
+    return [];
+  }
+
+  if (value.startsWith(CATEGORY_MULTI_PREFIX)) {
+    const rawItems = value.slice(CATEGORY_MULTI_PREFIX.length);
+    if (!rawItems) {
+      return [];
+    }
+    const decoded = rawItems
+      .split(",")
+      .map((token) => decodeCategoryFilterToken(token).trim())
+      .filter(Boolean);
+    return Array.from(new Set(decoded));
+  }
+
+  return [value];
+}
+
+function buildCategoryGroupFilterValue(valuesRaw) {
+  const values = Array.isArray(valuesRaw) ? valuesRaw : [];
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalized.length <= 0) {
+    return "all";
+  }
+  if (normalized.length === 1) {
+    return normalized[0];
+  }
+  const encoded = normalized.map((value) => encodeCategoryFilterToken(value)).join(",");
+  return `${CATEGORY_MULTI_PREFIX}${encoded}`;
+}
+
+function normalizeCategoryGroupValue(valueRaw, rows = state.rows) {
+  const value = String(valueRaw || "all");
+  if (value === "all") {
+    return "all";
+  }
+
+  const categories = getAllCategories(rows);
+  const allowed = new Set(categories);
+  const hasEmpty = rows.some((row) => !getRowCategoryLabel(row));
+  if (hasEmpty) {
+    allowed.add("__empty__");
+  }
+
+  const selected = getCategoryGroupSelection(value).filter((item) => allowed.has(item));
+  return buildCategoryGroupFilterValue(selected);
+}
+
+function toggleCategoryGroupFilter(currentValueRaw, categoryRaw, rows = state.rows) {
+  const category = String(categoryRaw || "").trim();
+  if (!category || category === "all") {
+    return "all";
+  }
+
+  const normalizedCurrent = normalizeCategoryGroupValue(currentValueRaw, rows);
+  const selected = new Set(getCategoryGroupSelection(normalizedCurrent));
+  if (selected.has(category)) {
+    selected.delete(category);
+  } else {
+    selected.add(category);
+  }
+  return buildCategoryGroupFilterValue(Array.from(selected));
+}
+
+function setCategoryGroupFilter(valueRaw) {
+  const next = normalizeCategoryGroupValue(valueRaw, state.rows);
+  if (next === state.filters.categoryGroup) {
+    return;
+  }
+  state.filters.categoryGroup = next;
+  state.rowsPage = 1;
+  renderFilterInputs();
+  render();
+}
+
+function getAutoplayLimitForCabinet(cabinetRaw) {
+  const cabinet = String(cabinetRaw || "").trim();
+  if (!cabinet) {
+    return normalizeAutoplayLimit(state.autoplayLimitPerCabinet);
+  }
+
+  if (
+    state.autoplayLimitByCabinet &&
+    Object.prototype.hasOwnProperty.call(state.autoplayLimitByCabinet, cabinet)
+  ) {
+    return normalizeAutoplayLimit(state.autoplayLimitByCabinet[cabinet]);
+  }
+
+  return normalizeAutoplayLimit(state.autoplayLimitPerCabinet);
+}
+
+function getTagsLimitForCabinet(cabinetRaw) {
+  const cabinet = String(cabinetRaw || "").trim();
+  if (!cabinet) {
+    return normalizeTagsLimit(state.tagsLimitPerCabinet);
+  }
+
+  if (state.tagsLimitByCabinet && Object.prototype.hasOwnProperty.call(state.tagsLimitByCabinet, cabinet)) {
+    return normalizeTagsLimit(state.tagsLimitByCabinet[cabinet]);
+  }
+
+  return normalizeTagsLimit(state.tagsLimitPerCabinet);
+}
+
+function getAutoplayUsageByCabinet(rows = state.rows, cabinetsOverride = null) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const hasOverrides = Array.isArray(cabinetsOverride);
+  const normalizedOverrides = hasOverrides
+    ? cabinetsOverride
+        .map((cabinet) => String(cabinet || "").trim())
+        .filter(Boolean)
+    : [];
+  const cabinets = hasOverrides
+    ? Array.from(new Set(normalizedOverrides)).sort((a, b) => a.localeCompare(b, "ru"))
+    : getAllCabinets(sourceRows);
+
+  return cabinets.map((cabinet) => {
+    const cabinetRows = getRowsByCabinet(sourceRows, cabinet);
+    const loadedRows = cabinetRows.filter((row) => row.data && !row.error);
+    const autoplayUsed = loadedRows.filter((row) => getAutoplayValue(row.data) === true).length;
+    const limit = getAutoplayLimitForCabinet(cabinet);
+    const percent = limit > 0 ? (autoplayUsed / limit) * 100 : 0;
+    const over = Math.max(0, autoplayUsed - limit);
+    const unused = Math.max(0, limit - autoplayUsed);
+    const coverageTarget = Math.max(0, Math.min(limit, cabinetRows.length));
+    const missing = Math.max(0, coverageTarget - autoplayUsed);
+
+    return {
+      cabinet,
+      limit,
+      hasOverride:
+        state.autoplayLimitByCabinet &&
+        Object.prototype.hasOwnProperty.call(state.autoplayLimitByCabinet, cabinet),
+      totalRows: cabinetRows.length,
+      loadedRows: loadedRows.length,
+      autoplayUsed,
+      percent,
+      over,
+      unused,
+      coverageTarget,
+      missing,
+    };
+  });
+}
+
+function getTagsUsageByCabinet(rows = state.rows, cabinetsOverride = null) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const hasOverrides = Array.isArray(cabinetsOverride);
+  const normalizedOverrides = hasOverrides
+    ? cabinetsOverride
+        .map((cabinet) => String(cabinet || "").trim())
+        .filter(Boolean)
+    : [];
+  const cabinets = hasOverrides
+    ? Array.from(new Set(normalizedOverrides)).sort((a, b) => a.localeCompare(b, "ru"))
+    : getAllCabinets(sourceRows);
+
+  return cabinets.map((cabinet) => {
+    const cabinetRows = getRowsByCabinet(sourceRows, cabinet);
+    const loadedRows = cabinetRows.filter((row) => row.data && !row.error);
+    const tagsUsed = loadedRows.filter((row) => getTagsValue(row.data) === true).length;
+    const limit = getTagsLimitForCabinet(cabinet);
+    const percent = limit > 0 ? (tagsUsed / limit) * 100 : 0;
+    const over = Math.max(0, tagsUsed - limit);
+    const unused = Math.max(0, limit - tagsUsed);
+    const coverageTarget = Math.max(0, Math.min(limit, cabinetRows.length));
+    const missing = Math.max(0, coverageTarget - tagsUsed);
+
+    return {
+      cabinet,
+      limit,
+      hasOverride:
+        state.tagsLimitByCabinet &&
+        Object.prototype.hasOwnProperty.call(state.tagsLimitByCabinet, cabinet),
+      totalRows: cabinetRows.length,
+      loadedRows: loadedRows.length,
+      tagsUsed,
+      percent,
+      over,
+      unused,
+      coverageTarget,
+      missing,
+    };
+  });
+}
+
+function renderAutoplayQuotaPanel() {
+  if (!el.autoplayQuotaGrid) {
+    return;
+  }
+
+  const usage = getAutoplayUsageByCabinet();
+  const globalLimit = normalizeAutoplayLimit(state.autoplayLimitPerCabinet);
+  const controlsDisabled = state.isSellerLoading || state.isBulkLoading;
+  if (usage.length === 0) {
+    el.autoplayQuotaGrid.innerHTML =
+      '<div class="autoplay-quota-empty">Нет данных по кабинетам. Загрузите карточки продавцов.</div>';
+    return;
+  }
+
+  const html = usage
+    .map((item) => {
+      const fill = Math.max(0, Math.min(100, item.percent));
+      const toneClass = item.over > 0 ? " is-over" : item.percent >= 80 ? " is-warning" : " is-ok";
+      const meta = item.over > 0 ? `Превышение: +${item.over}` : `Доступно: ${item.unused}`;
+      const limitValue = item.hasOverride ? String(item.limit) : "";
+      const overrideNote = item.hasOverride ? "индивид." : "общий";
+
+      return `<article class="autoplay-quota-card${toneClass}">
+        <div class="autoplay-quota-head">
+          <span class="autoplay-quota-cabinet">${escapeHtml(item.cabinet)}</span>
+          <span class="autoplay-quota-value">${item.autoplayUsed}/${item.limit}</span>
+        </div>
+        <div class="autoplay-quota-rail">
+          <span style="width:${fill.toFixed(2)}%"></span>
+        </div>
+        <div class="autoplay-quota-footer">
+          <p class="autoplay-quota-meta">
+            Использовано ${item.percent.toFixed(1)}% · ${escapeHtml(meta)} · загружено ${item.loadedRows}/${item.totalRows}
+          </p>
+          <label class="autoplay-quota-limit-field">
+            <span>Лимит (${overrideNote})</span>
+            <input
+              type="number"
+              min="${AUTOPLAY_LIMIT_MIN}"
+              max="${AUTOPLAY_LIMIT_MAX}"
+              step="1"
+              data-cabinet-limit="${escapeAttr(item.cabinet)}"
+              value="${escapeAttr(limitValue)}"
+              placeholder="${escapeAttr(String(globalLimit))}"
+              ${controlsDisabled ? "disabled" : ""}
+            />
+          </label>
+        </div>
+      </article>`;
+    })
+    .join("");
+
+  el.autoplayQuotaGrid.innerHTML = html;
+}
+
+function handleFilterInput(event) {
+  const control = event.target.closest("[data-filter-key]");
+  if (!control) {
+    return;
+  }
+
+  const key = control.dataset.filterKey;
+  if (!(key in state.filters)) {
+    return;
+  }
+
+  state.filters[key] = String(control.value || "");
+  if (
+    (key === "recommendations" || key === "autoplay" || key === "video" || key === "tags") &&
+    state.filters[key] === "na"
+  ) {
+    state.filters[key] = "no";
+  }
+  state.rowsPage = 1;
+  if (isChecksFilterKey(key)) {
+    applyChecksFilterPopoverState();
+  }
+  render();
+}
+
+function renderFilterInputs() {
+  for (const control of el.filtersRow.querySelectorAll("[data-filter-key]")) {
+    const key = control.dataset.filterKey;
+    if (key in state.filters) {
+      control.value = state.filters[key];
+    }
+  }
+  applyChecksFilterPopoverState();
+}
+
+function isChecksFilterKey(key) {
+  return (
+    key === "video" ||
+    key === "recommendations" ||
+    key === "rich" ||
+    key === "autoplay" ||
+    key === "tags" ||
+    key === "coverDuplicate" ||
+    key === "tagsCount"
+  );
+}
+
+function getActiveChecksFiltersCount() {
+  const keys = ["video", "recommendations", "rich", "autoplay", "tags", "coverDuplicate", "tagsCount"];
+  let active = 0;
+  for (const key of keys) {
+    const current = String(state.filters[key] ?? "");
+    const initial = String(FILTER_DEFAULTS[key] ?? "");
+    if (current !== initial) {
+      active += 1;
+    }
+  }
+  return active;
+}
+
+function applyChecksFilterPopoverState() {
+  if (!el.checksFiltersToggle || !el.checksFiltersPanel) {
+    return;
+  }
+
+  const activeCount = getActiveChecksFiltersCount();
+  const expanded = state.checksFiltersOpen === true;
+  const label = activeCount > 0 ? `Фильтр (${activeCount})` : "Фильтр";
+  el.checksFiltersToggle.innerHTML = `<span class="checks-filter-toggle-main">${renderIcon(
+    "filter",
+    "checks-filter-main-icon",
+  )}<span>${escapeHtml(label)}</span></span>${renderIcon(
+    expanded ? "chevronUp" : "chevronDown",
+    "checks-filter-toggle-icon",
+  )}`;
+  el.checksFiltersToggle.classList.toggle("is-active", expanded || activeCount > 0);
+  el.checksFiltersToggle.setAttribute("aria-expanded", String(expanded));
+  el.checksFiltersPanel.hidden = !expanded;
+}
+
+function toggleChecksFiltersPopover(forceOpen = null) {
+  const next = forceOpen === null ? !state.checksFiltersOpen : Boolean(forceOpen);
+  if (state.checksFiltersOpen === next) {
+    return;
+  }
+  state.checksFiltersOpen = next;
+  applyChecksFilterPopoverState();
+  persistState();
+}
+
+function renderCabinetFilterOptions() {
+  const currentValue = state.filters.cabinet || "all";
+  const cabinets = Array.from(
+    new Set(
+      [
+        ...SELLER_SETTINGS.map((item) => item.cabinet),
+        ...state.rows.map((row) => String(row.cabinet || "").trim()).filter(Boolean),
+      ].filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "ru"));
+
+  const options = [
+    { value: "all", label: "Все" },
+    ...cabinets.map((cabinet) => ({ value: cabinet, label: cabinet })),
+    { value: "__empty__", label: "Без кабинета" },
+  ];
+
+  el.filterCabinet.innerHTML = options
+    .map((option) => `<option value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</option>`)
+    .join("");
+
+  const hasCurrent = options.some((option) => option.value === currentValue);
+  state.filters.cabinet = hasCurrent ? currentValue : "all";
+  el.filterCabinet.value = state.filters.cabinet;
+}
+
+function handleAddSingle() {
+  const raw = el.singleInput.value.trim();
+  const nmId = extractNmId(raw);
+
+  if (!nmId) {
+    window.alert("Введите артикул WB или ссылку на карточку.");
+    return;
+  }
+
+  upsertRowsFromNmIds([nmId]);
+  el.singleInput.value = "";
+  render();
+}
+
+function handleAddBulk() {
+  const nmIds = parseBulkInput(el.bulkInput.value);
+
+  if (nmIds.length === 0) {
+    window.alert("Не удалось распознать артикулы. Добавьте по одному значению в строке.");
+    return;
+  }
+
+  upsertRowsFromNmIds(nmIds);
+  el.bulkInput.value = "";
+  render();
+}
+
+async function handleLoadAll() {
+  if (state.rows.length === 0 || state.isBulkLoading || state.isSellerLoading) {
+    return;
+  }
+
+  const filteredRows = applyFilters(state.rows);
+  if (filteredRows.length === 0) {
+    window.alert("После фильтрации нет строк для обновления.");
+    return;
+  }
+
+  const isFilteredSubset = filteredRows.length !== state.rows.length;
+  await loadRowsByIds(
+    filteredRows.map((row) => row.id),
+    { loadingText: isFilteredSubset ? "Обновляю отфильтрованные карточки" : "Обновляю карточки" },
+  );
+}
+
+function getProblemRowIds() {
+  return state.rows.filter((row) => Boolean(row.error)).map((row) => row.id);
+}
+
+async function handleLoadProblematic() {
+  if (state.isBulkLoading || state.isSellerLoading) {
+    return;
+  }
+
+  const problemRowIds = getProblemRowIds();
+  if (problemRowIds.length === 0) {
+    window.alert("Проблемных карточек с ошибками загрузки сейчас нет.");
+    return;
+  }
+
+  if (el.loadProblemBtn) {
+    el.loadProblemBtn.textContent = "Обновляю проблемные...";
+  }
+
+  try {
+    setBulkLoading(true, `Обновляю проблемные (0/${problemRowIds.length})...`);
+
+    for (let index = 0; index < problemRowIds.length; index += 1) {
+      const rowId = problemRowIds[index];
+      if (el.loadProblemBtn) {
+        el.loadProblemBtn.textContent = `Проблемные: ${index + 1}/${problemRowIds.length}`;
+      }
+      setBulkLoading(true, `Обновляю проблемные (${index + 1}/${problemRowIds.length})...`);
+      await loadRow(rowId, { forceHostProbe: true });
+      const freshRow = getRowById(rowId);
+      if (freshRow?.error && isRetriableRowError(freshRow.error)) {
+        await sleep(720);
+        await loadRow(rowId, { forceHostProbe: true });
+      }
+      await sleep(160);
+    }
+
+    state.lastSyncAt = new Date().toISOString();
+  } finally {
+    setBulkLoading(false);
+    renderSummary();
+    syncButtonState();
+  }
+}
+
+async function handleLoadSellers() {
+  if (state.isSellerLoading || state.isBulkLoading) {
+    return;
+  }
+
+  setSellerLoading(true);
+
+  const sellerErrors = [];
+  const touchedRowIds = new Set();
+  let processedSellers = 0;
+
+  await runWithConcurrency(SELLER_SETTINGS, SELLER_LOAD_CONCURRENCY, async (seller) => {
+    try {
+      const products = await fetchSellerProducts(seller);
+      if (products.length === 0) {
+        throw new Error("получен пустой каталог");
+      }
+
+      const rowIds = upsertRowsFromSellerProducts(seller, products);
+      for (const rowId of rowIds) {
+        touchedRowIds.add(rowId);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sellerErrors.push(`${seller.cabinet}: ${message}`);
+    } finally {
+      processedSellers += 1;
+      if (el.loadSellersBtn) {
+        el.loadSellersBtn.textContent = `Кабинеты: ${processedSellers}/${SELLER_SETTINGS.length}`;
+      }
+    }
+  });
+
+  if (touchedRowIds.size > 0) {
+    render();
+    await loadRowsByIds(Array.from(touchedRowIds), {
+      loadingText: "Обновляю карточки продавцов",
+      skipSellerBusyCheck: true,
+    });
+  } else {
+    render();
+  }
+
+  setSellerLoading(false);
+
+  if (sellerErrors.length > 0) {
+    window.alert(
+      `Часть кабинетов не загрузилась:\n\n${sellerErrors.slice(0, 8).join("\n")}${
+        sellerErrors.length > 8 ? "\n..." : ""
+      }`,
+    );
+  }
+}
+
+function handleClear() {
+  if (state.rows.length === 0) {
+    return;
+  }
+
+  const accepted = window.confirm("Очистить все строки?");
+  if (!accepted) {
+    return;
+  }
+
+  state.rows = [];
+  state.lastSyncAt = null;
+  render();
+}
+
+function showRowError(rowId) {
+  const row = getRowById(rowId);
+  if (!row) {
+    return;
+  }
+
+  const message = row.error ? String(row.error) : "Нет сохраненной ошибки для этой строки.";
+  window.alert(`Артикул: ${row.nmId}\n\nОшибка:\n${message}`);
+}
+
+function isRetriableRowError(messageRaw) {
+  const message = String(messageRaw || "").toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("failed to fetch") ||
+    message.includes("превышено время ожидания") ||
+    message.includes("html вместо json") ||
+    message.includes("x-pow") ||
+    message.includes("не удалось определить basket-хост") ||
+    message.includes("http 5") ||
+    message.includes("временно недоступен")
+  );
+}
+
+function handleShowErrorsReport() {
+  const report = buildErrorReport(state.rows);
+  if (report.total === 0) {
+    window.alert("Ошибок загрузки нет.");
+    return;
+  }
+
+  const lines = [`Ошибок загрузки: ${report.total}`, ""];
+  for (const [index, group] of report.groups.entries()) {
+    lines.push(`${index + 1}. ${group.label}: ${group.count}`);
+    if (group.nmIds.length > 0) {
+      const idsText = group.nmIds.join(", ");
+      lines.push(`   Артикулы: ${idsText}${group.moreNmIds > 0 ? ` ... +${group.moreNmIds}` : ""}`);
+    }
+    if (group.example) {
+      lines.push(`   Пример: ${group.example}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("Подсказка: ошибки 429/Failed to fetch обычно временные лимиты WB.");
+  window.alert(lines.join("\n"));
+}
+
+function createRow(nmId, initial = {}) {
+  return {
+    id: `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    nmId: String(nmId),
+    cabinet: initial.cabinet || "",
+    supplierId: initial.supplierId || null,
+    stockValue: initial.stockValue ?? null,
+    inStock: typeof initial.inStock === "boolean" ? initial.inStock : null,
+    stockSource: initial.stockSource || "",
+    currentPrice: Number.isFinite(initial.currentPrice) ? Math.max(0, Math.round(initial.currentPrice)) : null,
+    basePrice: Number.isFinite(initial.basePrice) ? Math.max(0, Math.round(initial.basePrice)) : null,
+    priceSource: initial.priceSource || "",
+    loading: false,
+    error: "",
+    data: initial.data || null,
+    updatedAt: initial.updatedAt || null,
+  };
+}
+
+function getRowById(rowId) {
+  return state.rows.find((row) => row.id === rowId);
+}
+
+function getRowByNmId(nmId) {
+  return state.rows.find((row) => String(row.nmId) === String(nmId));
+}
+
+function removeRow(rowId) {
+  state.rows = state.rows.filter((row) => row.id !== rowId);
+  render();
+}
+
+function upsertRowsFromNmIds(nmIds) {
+  const createdIds = [];
+
+  for (const nmIdRaw of nmIds) {
+    const nmId = String(nmIdRaw);
+    let row = getRowByNmId(nmId);
+    if (!row) {
+      row = createRow(nmId);
+      state.rows.push(row);
+      createdIds.push(row.id);
+    }
+  }
+
+  renderCabinetFilterOptions();
+  return createdIds;
+}
+
+function upsertRowsFromSellerProducts(seller, products) {
+  const touchedIds = [];
+
+  for (const product of products) {
+    const nmId = String(product.nmId);
+    if (!nmId) {
+      continue;
+    }
+
+    let row = getRowByNmId(nmId);
+    if (!row) {
+      row = createRow(nmId, {
+        cabinet: seller.cabinet,
+        supplierId: seller.supplierId,
+      });
+      state.rows.push(row);
+    }
+
+    row.cabinet = seller.cabinet;
+    row.supplierId = seller.supplierId;
+    mergeStockIntoRow(row, {
+      stockValue: product.stockValue,
+      inStock: product.inStock,
+      source: "seller-catalog",
+    });
+    mergePriceIntoRow(row, {
+      currentPrice: product.currentPrice,
+      basePrice: product.basePrice,
+      source: "seller-catalog",
+    });
+
+    touchedIds.push(row.id);
+  }
+
+  renderCabinetFilterOptions();
+  return touchedIds;
+}
+
+function mergeStockIntoRow(row, stock) {
+  if (!row || !stock) {
+    return;
+  }
+
+  if (Number.isFinite(stock.stockValue)) {
+    row.stockValue = Math.max(0, Math.round(stock.stockValue));
+    row.inStock = row.stockValue > 0;
+    row.stockSource = stock.source || row.stockSource;
+    return;
+  }
+
+  if (typeof stock.inStock === "boolean") {
+    row.inStock = stock.inStock;
+    row.stockSource = stock.source || row.stockSource;
+  }
+}
+
+function mergePriceIntoRow(row, price) {
+  if (!row || !price || typeof price !== "object") {
+    return;
+  }
+
+  if (Number.isFinite(price.currentPrice)) {
+    row.currentPrice = Math.max(0, Math.round(price.currentPrice));
+    row.priceSource = price.source || row.priceSource;
+  }
+
+  if (Number.isFinite(price.basePrice)) {
+    row.basePrice = Math.max(0, Math.round(price.basePrice));
+  }
+}
+
+async function loadRowsByIds(rowIds, options = {}) {
+  const {
+    loadingText = "Обновляю карточки",
+    skipSellerBusyCheck = false,
+  } = options;
+
+  if (!Array.isArray(rowIds) || rowIds.length === 0) {
+    return;
+  }
+
+  if (!skipSellerBusyCheck && state.isSellerLoading) {
+    return;
+  }
+
+  const uniqueIds = Array.from(new Set(rowIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return;
+  }
+
+  let completed = 0;
+  setBulkLoading(true, `${loadingText} (0/${uniqueIds.length})...`);
+
+  await runWithConcurrency(uniqueIds, BULK_CONCURRENCY, async (rowId) => {
+    await loadRow(rowId, { silentStart: true });
+    completed += 1;
+    setBulkLoading(true, `${loadingText} (${completed}/${uniqueIds.length})...`);
+  });
+
+  const retryIds = uniqueIds.filter((rowId) => {
+    const row = getRowById(rowId);
+    return Boolean(row?.error && isRetriableRowError(row.error));
+  });
+  if (retryIds.length > 0) {
+    await sleep(1100);
+    for (let index = 0; index < retryIds.length; index += 1) {
+      setBulkLoading(true, `${loadingText} · повтор (${index + 1}/${retryIds.length})...`);
+      await loadRow(retryIds[index], { silentStart: true });
+    }
+  }
+
+  state.lastSyncAt = new Date().toISOString();
+  setBulkLoading(false);
+  render();
+}
+
+async function loadRow(rowId, { silentStart = false, forceHostProbe = false } = {}) {
+  const row = getRowById(rowId);
+  if (!row || row.loading) {
+    return;
+  }
+
+  row.loading = true;
+  row.error = "";
+
+  if (!silentStart) {
+    render();
+  } else {
+    renderSummary();
+  }
+
+  try {
+    const payload = await fetchCardPayload(row.nmId, { forceHostProbe });
+    const target = getRowById(rowId);
+    if (!target) {
+      return;
+    }
+
+    target.data = payload;
+    target.updatedAt = new Date().toISOString();
+    target.error = "";
+
+    if (payload.supplierId) {
+      target.supplierId = String(payload.supplierId);
+    }
+
+    const cabinetFromMap = getCabinetBySupplierId(target.supplierId);
+    if (cabinetFromMap) {
+      target.cabinet = cabinetFromMap;
+    }
+
+    mergeStockIntoRow(target, {
+      stockValue: payload.stockValue,
+      inStock: payload.inStock,
+      source: payload.stockSource || "card",
+    });
+
+    mergePriceIntoRow(target, {
+      currentPrice: payload.currentPrice,
+      basePrice: payload.basePrice,
+      source: payload.priceSource || "card-v4",
+    });
+  } catch (error) {
+    const target = getRowById(rowId);
+    if (!target) {
+      return;
+    }
+
+    target.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    const target = getRowById(rowId);
+    if (target) {
+      target.loading = false;
+    }
+
+    state.lastSyncAt = new Date().toISOString();
+    render();
+  }
+}
+
+function getCabinetBySupplierId(supplierIdRaw) {
+  const supplierId = normalizeSupplierId(supplierIdRaw);
+  if (!supplierId) {
+    return "";
+  }
+
+  const seller = SELLER_SETTINGS.find((item) => String(item.supplierId) === String(supplierId));
+  return seller?.cabinet || "";
+}
+
+async function fetchCardPayload(nmIdRaw, options = {}) {
+  const forceHostProbe = Boolean(options.forceHostProbe);
+  const nmId = Number(nmIdRaw);
+  if (!Number.isInteger(nmId) || nmId <= 0) {
+    throw new Error("Некорректный артикул");
+  }
+
+  const vol = Math.floor(nmId / 100000);
+  const part = Math.floor(nmId / 1000);
+
+  const hostSuffix = await resolveBasketHost({ nmId, vol, part, forceProbe: forceHostProbe });
+  const base = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}`;
+
+  const card = await fetchJson(`${base}/info/ru/card.json`);
+  const marketSnapshot = await fetchCardMarketSnapshot(nmId, { basketBase: base });
+
+  const hasSellerRecommendations = card?.has_seller_recommendations === true;
+  const hasRich = card?.has_rich === true;
+
+  let richBlockCount = null;
+  let recommendationRefs = [];
+  let richDetails = null;
+
+  if (hasRich || hasSellerRecommendations) {
+    try {
+      const rich = await fetchJson(`${base}/info/ru/rich.json`);
+      if (hasRich) {
+        richBlockCount = Array.isArray(rich?.content) ? rich.content.length : 0;
+      }
+      recommendationRefs = extractRecommendationRefsFromRich(rich, nmId);
+      richDetails = extractRichDetailsFromPayload(rich);
+    } catch {
+      if (hasRich) {
+        richBlockCount = 0;
+      }
+      recommendationRefs = [];
+      richDetails = null;
+    }
+  }
+
+  const normalizedRichRefs = normalizeRecommendationRefs(recommendationRefs, nmId);
+
+  const photoCount = Number(card?.media?.photo_count) || 0;
+  const slides = [];
+  for (let index = 1; index <= photoCount; index += 1) {
+    slides.push(`${base}/images/big/${index}.webp`);
+  }
+
+  const coverSlideDuplicate = await detectCoverSlideDuplicate(slides);
+
+  return {
+    hostSuffix,
+    supplierId: normalizeSupplierId(card?.selling?.supplier_id),
+    link: `https://www.wildberries.ru/catalog/${nmId}/detail.aspx`,
+    name: card?.imt_name || card?.slug || "-",
+    category: card?.subj_name || "-",
+    brand: card?.selling?.brand_name || "-",
+    hasVideo: toNullableBoolean(card?.media?.has_video),
+    hasSellerRecommendations: card?.has_seller_recommendations === true,
+    recommendationRefs: normalizedRichRefs,
+    recommendationRefsFromRich: normalizedRichRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT),
+    recommendationRefsFromApi: [],
+    recommendationKnownCount: normalizedRichRefs.length,
+    recommendationResolvedRefs: normalizedRichRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT),
+    recommendationRefsTruncated: normalizedRichRefs.length > RECOMMENDATION_IDS_LIST_LIMIT,
+    recommendationRefsFromRichTruncated: normalizedRichRefs.length > RECOMMENDATION_IDS_LIST_LIMIT,
+    recommendationRefsFromApiTruncated: false,
+    recommendationDetails: null,
+    recommendationDetailsError: "",
+    recommendationsResolvedAt: null,
+    hasRich,
+    richBlockCount,
+    richDetails,
+    hasAutoplay: card?.media?.is_autoplaying_video === true,
+    hasTags: toNullableBoolean(card?.enable_tags),
+    tagsCount: null,
+    coverSlideDuplicate,
+    slides,
+    photoCount,
+    cardUpdatedAt: card?.update_date || null,
+    stockValue: marketSnapshot.stockValue,
+    inStock: marketSnapshot.inStock,
+    stockSource: marketSnapshot.stockSource,
+    currentPrice: marketSnapshot.currentPrice,
+    basePrice: marketSnapshot.basePrice,
+    priceSource: marketSnapshot.priceSource,
+  };
+}
+
+async function fetchCardMarketSnapshot(nmIdRaw, options = {}) {
+  const marketService = window.WBMarketService;
+  if (!marketService || typeof marketService.fetchCardMarketSnapshot !== "function") {
+    return createEmptyMarketSnapshot();
+  }
+
+  return marketService.fetchCardMarketSnapshot(nmIdRaw, options, {
+    fetchJsonMaybe,
+    fetchWithRetry,
+    fetchTimeoutMs: FETCH_TIMEOUT_MS,
+  });
+}
+
+function createEmptyMarketSnapshot() {
+  return {
+    stockValue: null,
+    inStock: null,
+    stockSource: "",
+    currentPrice: null,
+    basePrice: null,
+    priceSource: "",
+  };
+}
+
+function toNullableBoolean(value) {
+  if (value === true) {
+    return true;
+  }
+  if (value === false) {
+    return false;
+  }
+  return null;
+}
+
+function normalizeRowData(dataRaw) {
+  if (!dataRaw || typeof dataRaw !== "object") {
+    return null;
+  }
+
+  const data = { ...dataRaw };
+  data.hasSellerRecommendations = data.hasSellerRecommendations === true;
+  data.hasAutoplay = data.hasAutoplay === true;
+  data.richDetails = normalizeRichDetails(data.richDetails);
+  data.stockValue = Number.isFinite(data.stockValue) ? Math.max(0, Math.round(data.stockValue)) : null;
+  data.inStock = typeof data.inStock === "boolean" ? data.inStock : null;
+  data.stockSource = String(data.stockSource || "");
+  data.currentPrice = Number.isFinite(data.currentPrice) ? Math.max(0, Math.round(data.currentPrice)) : null;
+  data.basePrice = Number.isFinite(data.basePrice) ? Math.max(0, Math.round(data.basePrice)) : null;
+  data.priceSource = String(data.priceSource || "");
+  data.coverSlideDuplicate =
+    data.coverSlideDuplicate === true ? true : data.coverSlideDuplicate === false ? false : null;
+
+  const richRefs = normalizeRecommendationRefs(data.recommendationRefsFromRich || data.recommendationRefs);
+  const apiRefs = normalizeRecommendationRefs(data.recommendationRefsFromApi);
+  const resolvedRefs = normalizeRecommendationRefs(data.recommendationResolvedRefs);
+
+  data.recommendationRefs = richRefs;
+  data.recommendationRefsFromRich = richRefs;
+  data.recommendationRefsFromApi = apiRefs;
+  data.recommendationResolvedRefs =
+    resolvedRefs.length > 0 ? resolvedRefs : normalizeRecommendationRefs([...apiRefs, ...richRefs]);
+  data.recommendationRefsFromRichTruncated =
+    data.recommendationRefsFromRichTruncated === true ||
+    (Number.isInteger(data.recommendationKnownCount) && data.recommendationKnownCount > RECOMMENDATION_IDS_LIST_LIMIT && richRefs.length >= RECOMMENDATION_IDS_LIST_LIMIT);
+  data.recommendationRefsFromApiTruncated = data.recommendationRefsFromApiTruncated === true;
+
+  return data;
+}
+
+function normalizeRichDetails(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const blockCount = Number.isInteger(raw.blockCount) ? Math.max(0, raw.blockCount) : 0;
+  const media = Array.isArray(raw.media)
+    ? orderRichMediaUrls(raw.media.map((item) => String(item || "").trim()).filter(Boolean)).slice(0, 60)
+    : [];
+  const links = Array.isArray(raw.links)
+    ? raw.links.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 80)
+    : [];
+  const snippets = Array.isArray(raw.snippets)
+    ? raw.snippets.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 80)
+    : [];
+
+  return { blockCount, media, links, snippets };
+}
+
+function orderRichMediaUrls(urls) {
+  if (!Array.isArray(urls) || urls.length <= 1) {
+    return Array.isArray(urls) ? urls : [];
+  }
+
+  const parsed = urls.map((url, index) => ({
+    url,
+    index,
+    order: extractRichMediaOrder(url),
+  }));
+  const withOrderCount = parsed.filter((item) => item.order !== null).length;
+  if (withOrderCount === 0) {
+    return urls;
+  }
+
+  const ratio = withOrderCount / parsed.length;
+  if (ratio < 0.6) {
+    return urls;
+  }
+
+  return parsed
+    .slice()
+    .sort((a, b) => {
+      const aOrder = a.order === null ? Number.MAX_SAFE_INTEGER : a.order;
+      const bOrder = b.order === null ? Number.MAX_SAFE_INTEGER : b.order;
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder;
+      }
+      return a.index - b.index;
+    })
+    .map((item) => item.url);
+}
+
+function extractRichMediaOrder(urlRaw) {
+  const url = String(urlRaw || "");
+  if (!url) {
+    return null;
+  }
+
+  const fromFilename = url.match(/(?:^|\/)(\d{1,4})\.(?:webp|jpg|jpeg|png|gif|avif)(?:\?.*)?$/i);
+  if (fromFilename?.[1]) {
+    return Number(fromFilename[1]);
+  }
+
+  const fromSlideToken = url.match(/(?:slide|frame|image)[_-]?(\d{1,4})/i);
+  if (fromSlideToken?.[1]) {
+    return Number(fromSlideToken[1]);
+  }
+
+  return null;
+}
+
+function normalizeSupplierId(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (/^\d+$/.test(normalized)) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+async function resolveBasketHost({ nmId, vol, part, forceProbe = false }) {
+  const volKey = String(vol);
+  const cached = state.basketByVol[volKey];
+
+  if (cached && !forceProbe) {
+    const alive = await checkHost(cached, nmId, vol, part);
+    if (alive) {
+      return cached;
+    }
+  }
+
+  const probeEnd = forceProbe ? Math.max(BASKET_END, 120) : BASKET_END;
+  const candidates = [];
+  if (cached) {
+    candidates.push(cached);
+  }
+  for (let host = BASKET_START; host <= probeEnd; host += 1) {
+    const suffix = String(host).padStart(2, "0");
+    if (!candidates.includes(suffix)) {
+      candidates.push(suffix);
+    }
+  }
+
+  let resolved = null;
+
+  for (const suffix of candidates) {
+    if (await checkHost(suffix, nmId, vol, part)) {
+      resolved = suffix;
+      break;
+    }
+    await sleep(HOST_PROBE_PAUSE_MS);
+  }
+
+  if (!resolved) {
+    if (cached && forceProbe) {
+      delete state.basketByVol[volKey];
+      persistState();
+    }
+    throw new Error("Не удалось определить basket-хост");
+  }
+
+  state.basketByVol[volKey] = resolved;
+  persistState();
+  return resolved;
+}
+
+async function checkHost(hostSuffix, nmId, vol, part) {
+  const probeUrl = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}/images/c246x328/1.webp`;
+
+  try {
+    const response = await fetchWithRetry(
+      probeUrl,
+      {
+        method: "HEAD",
+        mode: "cors",
+        cache: "no-store",
+      },
+      { attempts: 2, timeoutMs: 8000 },
+    );
+    if (response.ok) {
+      return true;
+    }
+
+    if (response.status === 405 || response.status === 403) {
+      const fallback = await fetchWithRetry(
+        probeUrl,
+        {
+          method: "GET",
+          mode: "cors",
+          cache: "no-store",
+        },
+        { attempts: 2, timeoutMs: 8000 },
+      );
+      return fallback.ok;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  const timeout = Math.max(0, Number(ms) || 0);
+  return new Promise((resolve) => {
+    setTimeout(resolve, timeout);
+  });
+}
+
+function isRetriableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function parseRetryAfterMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+
+  const absolute = Date.parse(value);
+  if (Number.isNaN(absolute)) {
+    return null;
+  }
+
+  const delta = absolute - Date.now();
+  if (delta <= 0) {
+    return 0;
+  }
+
+  return delta;
+}
+
+function getRetryDelayMs(attempt, retryAfterMs = null) {
+  if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+    return Math.min(FETCH_RETRY_MAX_DELAY_MS, Math.round(retryAfterMs));
+  }
+
+  const exp = FETCH_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+  const jitter = Math.floor(Math.random() * 240);
+  return Math.min(FETCH_RETRY_MAX_DELAY_MS, exp + jitter);
+}
+
+function normalizeFetchError(error) {
+  if (error && typeof error === "object" && error.name === "AbortError") {
+    return new Error("Превышено время ожидания ответа источника");
+  }
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+async function fetchWithRetry(url, options = {}, config = {}) {
+  const attempts = Math.max(1, Number(config.attempts) || FETCH_RETRY_ATTEMPTS);
+  const timeoutMs = Math.max(1000, Number(config.timeoutMs) || FETCH_TIMEOUT_MS);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    let timer = null;
+
+    try {
+      if (controller) {
+        timer = setTimeout(() => controller.abort(), timeoutMs);
+      }
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller ? controller.signal : options.signal,
+      });
+
+      if (!response.ok && isRetriableStatus(response.status) && attempt < attempts) {
+        const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+        await sleep(getRetryDelayMs(attempt, retryAfterMs));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = normalizeFetchError(error);
+      if (attempt >= attempts) {
+        throw lastError;
+      }
+      await sleep(getRetryDelayMs(attempt));
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  throw lastError || new Error("Не удалось выполнить запрос");
+}
+
+function httpStatusErrorMessage(status) {
+  if (status === 429) {
+    return "HTTP 429: WB ограничил частоту запросов";
+  }
+  if (status === 403 || status === 405) {
+    return `HTTP ${status}: доступ к источнику ограничен`;
+  }
+  if (status >= 500) {
+    return `HTTP ${status}: сервер WB временно недоступен`;
+  }
+  return `HTTP ${status}`;
+}
+
+function isLikelyHtmlPayload(text) {
+  const normalized = String(text || "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized.startsWith("<!doctype html") || normalized.startsWith("<html") || normalized.includes("<body");
+}
+
+async function fetchJson(url) {
+  const response = await fetchWithRetry(url, {
+    method: "GET",
+    mode: "cors",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(httpStatusErrorMessage(response.status));
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (isLikelyHtmlPayload(text) || text.toLowerCase().includes("x-pow")) {
+      throw new Error("WB вернул HTML вместо JSON (антибот / x-pow)");
+    }
+    throw new Error("Ответ источника не похож на JSON");
+  }
+}
+
+async function fetchJsonMaybe(url) {
+  try {
+    const response = await fetchWithRetry(
+      url,
+      {
+        method: "GET",
+        mode: "cors",
+        cache: "no-store",
+      },
+      { attempts: 2 },
+    );
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: httpStatusErrorMessage(response.status),
+      };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return {
+        ok: true,
+        data,
+      };
+    } catch {
+      if (isLikelyHtmlPayload(text) || text.toLowerCase().includes("x-pow")) {
+        return {
+          ok: false,
+          message: "WB вернул HTML вместо JSON (антибот / x-pow)",
+        };
+      }
+      return {
+        ok: false,
+        message: "Ответ не JSON",
+      };
+    }
+  } catch (error) {
+    const normalized = normalizeFetchError(error);
+    return {
+      ok: false,
+      message: normalized.message,
+    };
+  }
+}
+
+async function detectCoverSlideDuplicate(slides) {
+  if (!Array.isArray(slides) || slides.length < 2) {
+    return null;
+  }
+
+  const firstThumb = toSlideThumbUrl(slides[0]);
+  const secondThumb = toSlideThumbUrl(slides[1]);
+  if (!firstThumb || !secondThumb) {
+    return null;
+  }
+
+  const [metaA, metaB] = await Promise.all([fetchImageMeta(firstThumb), fetchImageMeta(secondThumb)]);
+  if (metaA && metaB) {
+    if (metaA.etag && metaB.etag && metaA.etag === metaB.etag) {
+      return true;
+    }
+
+    if (Number.isFinite(metaA.contentLength) && Number.isFinite(metaB.contentLength)) {
+      if (metaA.contentLength !== metaB.contentLength) {
+        return false;
+      }
+    }
+  }
+
+  try {
+    const [hashA, hashB] = await Promise.all([hashRemoteImage(firstThumb), hashRemoteImage(secondThumb)]);
+    if (!hashA || !hashB) {
+      return null;
+    }
+    return hashA === hashB;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchImageMeta(url) {
+  try {
+    const response = await fetchWithRetry(
+      url,
+      {
+        method: "HEAD",
+        mode: "cors",
+        cache: "no-store",
+      },
+      { attempts: 2, timeoutMs: Math.min(FETCH_TIMEOUT_MS, DUPLICATE_CHECK_TIMEOUT_MS) },
+    );
+    if (!response.ok) {
+      return null;
+    }
+
+    const etag = String(response.headers.get("etag") || "").trim();
+    const contentLength = Number(response.headers.get("content-length"));
+    return {
+      etag: etag || "",
+      contentLength: Number.isFinite(contentLength) ? contentLength : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function hashRemoteImage(url) {
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+    },
+    { attempts: 2, timeoutMs: DUPLICATE_CHECK_TIMEOUT_MS },
+  );
+
+  if (!response.ok) {
+    throw new Error(httpStatusErrorMessage(response.status));
+  }
+
+  const buffer = await response.arrayBuffer();
+  return sha256Hex(buffer);
+}
+
+async function sha256Hex(buffer) {
+  const cryptoApi = globalThis.crypto;
+  if (!cryptoApi || !cryptoApi.subtle) {
+    return "";
+  }
+
+  const digest = await cryptoApi.subtle.digest("SHA-256", buffer);
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+async function fetchSellerProducts(seller) {
+  const sellerService = window.WBSellerService;
+  if (!sellerService || typeof sellerService.fetchSellerProducts !== "function") {
+    throw new Error("Seller service не инициализирован");
+  }
+
+  return sellerService.fetchSellerProducts(seller, {
+    endpointTemplates: SELLER_ENDPOINT_TEMPLATES,
+    maxPages: SELLER_MAX_PAGES,
+    fetchJsonMaybe,
+    normalizeSupplierId,
+  });
+}
+
+function parseBulkInput(raw) {
+  const tokens = raw
+    .split(/[\n,;]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const result = [];
+  for (const token of tokens) {
+    const nmId = extractNmId(token);
+    if (nmId) {
+      result.push(nmId);
+    }
+  }
+
+  return result;
+}
+
+function extractNmId(raw) {
+  if (!raw) {
+    return null;
+  }
+
+  const text = String(raw).trim();
+  if (!text) {
+    return null;
+  }
+
+  const fromUrl = text.match(/wildberries\.ru\/catalog\/(\d{6,})/i);
+  if (fromUrl) {
+    return fromUrl[1];
+  }
+
+  const direct = text.match(/\b(\d{6,})\b/);
+  if (direct) {
+    return direct[1];
+  }
+
+  return null;
+}
+
+function normalizeRecommendationRefs(values, sourceNmId = null) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const excluded = sourceNmId ? String(sourceNmId) : "";
+  const seen = new Set();
+  const output = [];
+
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (!text) {
+      continue;
+    }
+
+    let nmId = null;
+    const fromUrl = text.match(/wildberries\.ru\/catalog\/(\d{6,})/i);
+    if (fromUrl?.[1]) {
+      nmId = fromUrl[1];
+    } else if (/^\d{6,}$/.test(text)) {
+      nmId = text;
+    }
+
+    if (!nmId) {
+      continue;
+    }
+    if (excluded && String(nmId) === excluded) {
+      continue;
+    }
+    if (seen.has(nmId)) {
+      continue;
+    }
+
+    seen.add(nmId);
+    output.push(String(nmId));
+  }
+
+  return output;
+}
+
+function getRecommendationSourceRefs(data, rowNmId) {
+  const richRefs = normalizeRecommendationRefs(
+    Array.isArray(data?.recommendationRefsFromRich) && data.recommendationRefsFromRich.length > 0
+      ? data.recommendationRefsFromRich
+      : Array.isArray(data?.recommendationRefs)
+        ? data.recommendationRefs
+        : [],
+    rowNmId,
+  );
+
+  const apiRefs = normalizeRecommendationRefs(data?.recommendationRefsFromApi, rowNmId);
+
+  const legacyRefs =
+    richRefs.length === 0 && apiRefs.length === 0
+      ? normalizeRecommendationRefs(data?.recommendationResolvedRefs, rowNmId)
+      : [];
+
+  const mergedRefs = normalizeRecommendationRefs([...apiRefs, ...richRefs, ...legacyRefs], rowNmId);
+
+  return {
+    richRefs,
+    apiRefs,
+    legacyRefs,
+    mergedRefs,
+  };
+}
+
+function extractRecommendationRefsFromRich(rich, sourceNmId) {
+  if (!rich || typeof rich !== "object") {
+    return [];
+  }
+
+  const sourceNmIdText = String(sourceNmId || "").trim();
+  const ids = new Set();
+  const stack = [rich];
+
+  function addCandidate(valueRaw) {
+    const value = String(valueRaw || "").trim();
+    if (!/^\d{6,}$/.test(value)) {
+      return;
+    }
+    if (sourceNmIdText && value === sourceNmIdText) {
+      return;
+    }
+    ids.add(value);
+  }
+
+  function addFromText(textRaw, allowDirectNumeric = false) {
+    const text = String(textRaw || "");
+    if (!text) {
+      return;
+    }
+
+    const urlPatterns = [
+      /wildberries\.ru\/catalog\/(\d{6,})/gi,
+      /\/catalog\/(\d{6,})\/detail\.aspx/gi,
+      /(?:\?|&)nm=(\d{6,})/gi,
+    ];
+
+    for (const pattern of urlPatterns) {
+      for (const match of text.matchAll(pattern)) {
+        if (match?.[1]) {
+          addCandidate(match[1]);
+        }
+      }
+    }
+
+    if (allowDirectNumeric) {
+      for (const match of text.matchAll(/\b(\d{6,})\b/g)) {
+        if (match?.[1]) {
+          addCandidate(match[1]);
+        }
+      }
+    }
+  }
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        stack.push(item);
+      }
+      continue;
+    }
+
+    if (typeof current === "number" && Number.isInteger(current) && current >= 100000) {
+      addCandidate(String(current));
+      continue;
+    }
+
+    if (typeof current === "string") {
+      const trimmed = current.trim();
+      if (/^\d{6,}$/.test(trimmed)) {
+        addCandidate(trimmed);
+      }
+      addFromText(current, false);
+      continue;
+    }
+
+    if (!current || typeof current !== "object") {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(current)) {
+      const normalizedKey = String(key || "").toLowerCase();
+      const keySuggestsNmId = /(^nm$|nmid|nm_id|productid|product_id|itemid|item_id|wbid|wb_id)/i.test(normalizedKey);
+      const keySuggestsLink = /(link|url|href|target)/i.test(normalizedKey);
+
+      if (typeof value === "number" && Number.isInteger(value) && value >= 100000 && keySuggestsNmId) {
+        addCandidate(String(value));
+      }
+
+      if (typeof value === "string") {
+        addFromText(value, keySuggestsNmId || keySuggestsLink);
+      }
+
+      if (value && typeof value === "object") {
+        stack.push(value);
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
+function extractRichDetailsFromPayload(rich) {
+  if (!rich || typeof rich !== "object") {
+    return null;
+  }
+
+  const details = {
+    blockCount: Array.isArray(rich?.content) ? rich.content.length : 0,
+    media: [],
+    links: [],
+    snippets: [],
+  };
+
+  const mediaSet = new Set();
+  const linksSet = new Set();
+  const snippetsSet = new Set();
+
+  const mediaList = [];
+  const linksList = [];
+  const snippetsList = [];
+
+  const IMAGE_LIKE_RE = /\.(webp|jpg|jpeg|png|gif|avif)(\?.*)?$/i;
+  const IMAGE_PATH_RE = /\/(images|media|imagedata)\//i;
+
+  function normalizeUrlCandidate(urlRaw) {
+    const text = String(urlRaw || "").trim();
+    if (!text) {
+      return "";
+    }
+    return text.replace(/[),.;]+$/g, "");
+  }
+
+  function isImageLikeUrl(urlRaw) {
+    const text = normalizeUrlCandidate(urlRaw);
+    if (!text || !/^https?:\/\//i.test(text)) {
+      return false;
+    }
+    return IMAGE_LIKE_RE.test(text) || IMAGE_PATH_RE.test(text);
+  }
+
+  function addMedia(urlRaw) {
+    const url = normalizeUrlCandidate(urlRaw);
+    if (!url || mediaSet.has(url) || mediaList.length >= 60) {
+      return;
+    }
+    mediaSet.add(url);
+    mediaList.push(url);
+  }
+
+  function addLink(urlRaw) {
+    const url = normalizeUrlCandidate(urlRaw);
+    if (!url || linksSet.has(url) || linksList.length >= 80) {
+      return;
+    }
+    linksSet.add(url);
+    linksList.push(url);
+  }
+
+  function addSnippet(textRaw) {
+    const text = String(textRaw || "").trim();
+    if (!text || snippetsSet.has(text) || snippetsList.length >= 80) {
+      return;
+    }
+    snippetsSet.add(text);
+    snippetsList.push(text);
+  }
+
+  function extractUrlsInOrder(textRaw) {
+    const text = String(textRaw || "");
+    if (!text) {
+      return [];
+    }
+    return Array.from(text.matchAll(/https?:\/\/[^\s"'<>]+/gi), (match) => normalizeUrlCandidate(match?.[0] || "")).filter(Boolean);
+  }
+
+  function inspectString(valueRaw, keyRaw = "") {
+    const text = String(valueRaw || "").trim();
+    if (!text) {
+      return;
+    }
+
+    const key = String(keyRaw || "").toLowerCase();
+    const urls = extractUrlsInOrder(text);
+    if (urls.length > 0) {
+      for (const url of urls) {
+        if (isImageLikeUrl(url)) {
+          addMedia(url);
+        } else {
+          addLink(url);
+        }
+      }
+    } else if (/^https?:\/\//i.test(text)) {
+      if (isImageLikeUrl(text)) {
+        addMedia(text);
+      } else {
+        addLink(text);
+      }
+    }
+
+    if (
+      snippetsList.length < 60 &&
+      /(title|text|caption|description|desc|name|heading|subheading)/i.test(key) &&
+      text.length > 2
+    ) {
+      addSnippet(text.slice(0, 220));
+    }
+  }
+
+  function walk(node, keyHint = "") {
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        walk(item, keyHint);
+      }
+      return;
+    }
+
+    if (typeof node === "string") {
+      inspectString(node, keyHint);
+      return;
+    }
+
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === "string") {
+        inspectString(value, key);
+      } else {
+        walk(value, key);
+      }
+    }
+  }
+
+  if (Array.isArray(rich.content)) {
+    walk(rich.content, "content");
+    const rest = { ...rich };
+    delete rest.content;
+    walk(rest, "");
+  } else {
+    walk(rich, "");
+  }
+
+  details.media = mediaList.slice(0, 60);
+  details.links = linksList.slice(0, 80);
+  details.snippets = snippetsList.slice(0, 80);
+  return details;
+}
+
+function render() {
+  hideBreakSegmentTooltip();
+  hideIconHintTooltip();
+  renderCabinetFilterOptions();
+  renderGlobalCabinetFilters();
+  renderGlobalCategoryFilters();
+  applyChecksFilterPopoverState();
+  renderRows();
+  renderSummary();
+  renderPresetFilters();
+  applyGlobalFiltersState();
+  if (el.limitsModal && !el.limitsModal.hidden) {
+    renderLimitsModalContent();
+  }
+  syncButtonState();
+  syncGlobalFilterOffset();
+  persistState();
+}
+
+function renderRows() {
+  hideHoverZoom();
+  const filteredRows = applyFilters(state.rows);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / state.rowsLimit));
+  state.rowsPage = Math.max(1, Math.min(totalPages, state.rowsPage));
+  const startIndex = (state.rowsPage - 1) * state.rowsLimit;
+  const visibleRows = filteredRows.slice(startIndex, startIndex + state.rowsLimit);
+
+  state.pagination.filtered = filteredRows.length;
+  state.pagination.visible = visibleRows.length;
+  state.pagination.totalPages = filteredRows.length > 0 ? totalPages : 0;
+  renderRowsPagination();
+
+  if (filteredRows.length === 0) {
+    el.rowsBody.innerHTML =
+      `<tr><td class="empty-cell" colspan="${TABLE_COLUMNS}">Нет строк для отображения. Проверьте фильтры или загрузите карточки продавцов.</td></tr>`;
+    return;
+  }
+
+  const rowsHtml = visibleRows
+    .map((row, index) => {
+      const data = row.data;
+      const wbLink = `https://www.wildberries.ru/catalog/${row.nmId}/detail.aspx`;
+      const status = buildStatus(row);
+      const nameText = data?.name || "-";
+      const categoryText = data?.category || "-";
+      const brandText = data?.brand || "-";
+
+      return `<tr data-id="${row.id}">
+        <td class="actions-cell">
+          <div class="cell-actions">
+            ${renderStatusIcon(row, status)}
+            <span class="actions-divider" aria-hidden="true"></span>
+            <button
+              class="icon-btn icon-btn-refresh"
+              data-action="reload"
+              data-id="${row.id}"
+              type="button"
+              aria-label="Обновить"
+              data-hint="Обновить строку"
+            >
+              ${renderIcon("refresh")}
+            </button>
+            <button
+              class="icon-btn icon-btn-remove"
+              data-action="remove"
+              data-id="${row.id}"
+              type="button"
+              aria-label="Удалить"
+              data-hint="Удалить строку"
+            >
+              ${renderIcon("trash")}
+            </button>
+          </div>
+        </td>
+        <td>${startIndex + index + 1}</td>
+        <td>
+          <div class="mono">${escapeHtml(row.nmId)}</div>
+          <a
+            class="wb-link wb-link-icon"
+            href="${wbLink}"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Открыть карточку на WB"
+            data-hint="Открыть карточку на WB"
+            title="Открыть карточку на WB"
+          >${renderIcon("externalLink")}</a>
+        </td>
+        <td>${escapeHtml(row.cabinet || "-")}</td>
+        <td class="cell-text product-meta-cell">
+          <div class="cell-clip product-name-clip" title="${escapeAttr(nameText)}">${escapeHtml(nameText)}</div>
+          <div class="product-meta-line">
+            <span class="product-meta-chip" title="${escapeAttr(categoryText)}">${escapeHtml(categoryText)}</span>
+          </div>
+          <div class="product-meta-line">
+            <span class="product-meta-chip product-meta-chip-brand" title="${escapeAttr(brandText)}">${escapeHtml(brandText)}</span>
+          </div>
+        </td>
+        <td>${renderStockCell(row)}</td>
+        <td>${renderPriceCell(row)}</td>
+        <td class="checks-cell">${renderChecksGroupCell(row)}</td>
+        <td class="listing-cell">${renderSlidesCell(data?.slides || [], row.id)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const limitNote =
+    filteredRows.length > visibleRows.length
+      ? `<tr><td class="empty-cell" colspan="${TABLE_COLUMNS}">Показано ${visibleRows.length} строк на странице ${state.rowsPage} из ${state.pagination.totalPages} (всего ${filteredRows.length}).</td></tr>`
+      : "";
+
+  el.rowsBody.innerHTML = rowsHtml + limitNote;
+}
+
+function renderRowsPagination() {
+  if (!el.pageInfo || !el.pagePrevBtn || !el.pageNextBtn) {
+    return;
+  }
+
+  const filtered = Number(state.pagination.filtered) || 0;
+  const totalPages = Number(state.pagination.totalPages) || 0;
+  const page = filtered > 0 ? state.rowsPage : 0;
+  el.pageInfo.textContent = `Страница ${page} / ${totalPages}`;
+
+  const disabledByLoading = state.isSellerLoading || state.isBulkLoading;
+  el.pagePrevBtn.disabled = disabledByLoading || page <= 1 || filtered === 0;
+  el.pageNextBtn.disabled = disabledByLoading || page >= totalPages || filtered === 0;
+}
+
+function applyFilters(rows, filterOverrides = null) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  const activeFilters =
+    filterOverrides && typeof filterOverrides === "object"
+      ? { ...state.filters, ...filterOverrides }
+      : state.filters;
+  let filteredRows = rows.filter((row) => {
+    if (state.onlyErrors && !row.error) {
+      return false;
+    }
+
+    const data = row.data;
+
+    if (!matchTextFilter(row.nmId, activeFilters.nmId)) {
+      return false;
+    }
+
+    if (!matchCabinetFilter(row.cabinet, activeFilters.cabinet)) {
+      return false;
+    }
+
+    if (!matchCategoryGroupFilter(data?.category || "", activeFilters.categoryGroup)) {
+      return false;
+    }
+
+    if (!matchTextFilter(data?.name || "", activeFilters.name)) {
+      return false;
+    }
+
+    if (!matchTextFilter(data?.category || "", activeFilters.category)) {
+      return false;
+    }
+
+    if (!matchTextFilter(data?.brand || "", activeFilters.brand)) {
+      return false;
+    }
+
+    if (!matchStockFilter(row, activeFilters.stock)) {
+      return false;
+    }
+
+    if (!matchTextFilter(Number.isFinite(row.currentPrice) ? String(Math.round(row.currentPrice)) : "", activeFilters.price)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(getVideoValue(data), activeFilters.video)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(getRecommendationValue(data), activeFilters.recommendations)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(data?.hasRich, activeFilters.rich)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(getAutoplayValue(data), activeFilters.autoplay)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(getTagsValue(data), activeFilters.tags)) {
+      return false;
+    }
+
+    if (!matchTextFilter(data?.tagsCount ?? "", activeFilters.tagsCount)) {
+      return false;
+    }
+
+    if (!matchBoolFilter(getCoverDuplicateValue(data), activeFilters.coverDuplicate)) {
+      return false;
+    }
+
+    if (!matchSlidesFilter(data?.slides, activeFilters.slides)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (state.autoplayProblemOnly) {
+    const autoplayProblemRowIds = getAutoplayProblemCandidateRowIds(filteredRows);
+    filteredRows = filteredRows.filter((row) => autoplayProblemRowIds.has(row.id));
+  }
+
+  if (state.tagsProblemOnly) {
+    const tagsProblemRowIds = getTagsProblemCandidateRowIds(filteredRows);
+    filteredRows = filteredRows.filter((row) => tagsProblemRowIds.has(row.id));
+  }
+
+  return filteredRows;
+}
+
+function getAutoplayProblemCandidateRowIds(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const scopeCabinets = getAllCabinets(sourceRows, false);
+  const usage = getAutoplayUsageByCabinet(sourceRows, scopeCabinets);
+  const remainingByCabinet = new Map(
+    usage.map((item) => [String(item.cabinet || "").trim(), Math.max(0, Number(item.missing) || 0)]),
+  );
+  const selectedByCabinet = new Map();
+  const selectedRowIds = new Set();
+
+  for (const row of sourceRows) {
+    if (!row || !row.data || row.error) {
+      continue;
+    }
+
+    if (getAutoplayValue(row.data) !== false) {
+      continue;
+    }
+
+    const cabinet = String(row.cabinet || "").trim();
+    if (!cabinet) {
+      continue;
+    }
+
+    const remaining = Number(remainingByCabinet.get(cabinet) || 0);
+    if (remaining <= 0) {
+      continue;
+    }
+
+    const selectedCount = Number(selectedByCabinet.get(cabinet) || 0);
+    if (selectedCount >= remaining) {
+      continue;
+    }
+
+    selectedByCabinet.set(cabinet, selectedCount + 1);
+    selectedRowIds.add(row.id);
+  }
+
+  return selectedRowIds;
+}
+
+function getTagsProblemCandidateRowIds(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const scopeCabinets = getAllCabinets(sourceRows, false);
+  const usage = getTagsUsageByCabinet(sourceRows, scopeCabinets);
+  const remainingByCabinet = new Map(
+    usage.map((item) => [String(item.cabinet || "").trim(), Math.max(0, Number(item.missing) || 0)]),
+  );
+  const selectedByCabinet = new Map();
+  const selectedRowIds = new Set();
+
+  for (const row of sourceRows) {
+    if (!row || !row.data || row.error) {
+      continue;
+    }
+
+    if (getTagsValue(row.data) !== false) {
+      continue;
+    }
+
+    const cabinet = String(row.cabinet || "").trim();
+    if (!cabinet) {
+      continue;
+    }
+
+    const remaining = Number(remainingByCabinet.get(cabinet) || 0);
+    if (remaining <= 0) {
+      continue;
+    }
+
+    const selectedCount = Number(selectedByCabinet.get(cabinet) || 0);
+    if (selectedCount >= remaining) {
+      continue;
+    }
+
+    selectedByCabinet.set(cabinet, selectedCount + 1);
+    selectedRowIds.add(row.id);
+  }
+
+  return selectedRowIds;
+}
+
+function matchTextFilter(valueRaw, filterRaw) {
+  const filter = String(filterRaw || "").trim().toLowerCase();
+  if (!filter) {
+    return true;
+  }
+
+  const value = String(valueRaw || "").toLowerCase();
+  return value.includes(filter);
+}
+
+function matchCabinetFilter(cabinetRaw, filterRaw) {
+  const filter = String(filterRaw || "all");
+  if (filter === "all") {
+    return true;
+  }
+
+  const cabinet = String(cabinetRaw || "").trim();
+  if (filter === "__empty__") {
+    return !cabinet;
+  }
+
+  return cabinet === filter;
+}
+
+function matchCategoryGroupFilter(categoryRaw, filterRaw) {
+  const selected = getCategoryGroupSelection(filterRaw);
+  if (selected.length <= 0) {
+    return true;
+  }
+  const category = String(categoryRaw || "").trim();
+  if (!category) {
+    return selected.includes("__empty__");
+  }
+  return selected.includes(category);
+}
+
+function matchBoolFilter(value, filterRaw) {
+  const filter = String(filterRaw || "all");
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "yes") {
+    return value === true;
+  }
+
+  if (filter === "no") {
+    return value === false;
+  }
+
+  if (filter === "na") {
+    return value !== true && value !== false;
+  }
+
+  return true;
+}
+
+function getStockState(row) {
+  if (Number.isFinite(row.stockValue)) {
+    return row.stockValue > 0 ? "yes" : "no";
+  }
+
+  if (typeof row.inStock === "boolean") {
+    return row.inStock ? "yes" : "no";
+  }
+
+  return "na";
+}
+
+function matchStockFilter(row, filterRaw) {
+  const filter = String(filterRaw || "all");
+  if (filter === "all") {
+    return true;
+  }
+
+  const stockState = getStockState(row);
+  return stockState === filter;
+}
+
+function matchSlidesFilter(slides, filterRaw) {
+  const filter = String(filterRaw || "all");
+  if (filter === "all") {
+    return true;
+  }
+
+  const hasSlides = Array.isArray(slides) && slides.length > 0;
+  return filter === "yes" ? hasSlides : !hasSlides;
+}
+
+function renderStockCell(row) {
+  if (Number.isFinite(row.stockValue)) {
+    return `<span class="stock-cell"><span class="mono">${escapeHtml(String(row.stockValue))}</span><span class="stock-note">шт.</span></span>`;
+  }
+
+  if (row.inStock === true) {
+    return '<span class="pill pill-ok">Есть</span>';
+  }
+
+  if (row.inStock === false) {
+    return '<span class="pill pill-no">Нет</span>';
+  }
+
+  return '<span class="pill pill-na">Н/Д</span>';
+}
+
+function formatRub(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  return new Intl.NumberFormat("ru-RU").format(Math.max(0, Math.round(value)));
+}
+
+function renderPriceCell(row) {
+  if (!Number.isFinite(row.currentPrice)) {
+    return '<span class="pill pill-na">Н/Д</span>';
+  }
+
+  const current = formatRub(row.currentPrice);
+  const hasOldPrice = Number.isFinite(row.basePrice) && row.basePrice > row.currentPrice;
+  if (!hasOldPrice) {
+    return `<span class="stock-cell"><span class="mono">${escapeHtml(current)}</span><span class="stock-note">₽</span></span>`;
+  }
+
+  const old = formatRub(row.basePrice);
+  return `<span class="price-cell">
+    <span class="mono">${escapeHtml(current)}</span>
+    <span class="stock-note">₽</span>
+    <span class="price-old">${escapeHtml(old)} ₽</span>
+  </span>`;
+}
+
+function buildStatus(row) {
+  if (row.loading) {
+    return {
+      key: "loading",
+      text: "Загрузка",
+      title: "Загрузка данных карточки",
+    };
+  }
+
+  if (row.error) {
+    return {
+      key: "error",
+      text: "Ошибка",
+      title: row.error,
+    };
+  }
+
+  if (!row.data) {
+    return {
+      key: "idle",
+      text: "Не загружено",
+      title: "Нажмите обновление карточек",
+    };
+  }
+
+  const hostInfo = row.data.hostSuffix ? `basket-${row.data.hostSuffix}` : "basket";
+  const at = row.updatedAt ? `, ${formatDateTime(row.updatedAt)}` : "";
+
+  return {
+    key: "ok",
+    text: "OK",
+    title: `Данные обновлены (${hostInfo}${at})`,
+  };
+}
+
+function renderStatusIcon(row, status) {
+  const title = `Статус: ${status.text}${status.title ? ` · ${status.title}` : ""}`;
+  let svg = renderIcon("clock");
+  if (status.key === "ok") {
+    svg = renderIcon("check");
+  } else if (status.key === "error") {
+    svg = renderIcon("alert");
+  } else if (status.key === "loading") {
+    svg = renderIcon("loader", "status-icon-spin");
+  }
+
+  if (status.key === "error") {
+    return `<button class="status-icon status-icon-${status.key} status-icon-btn" data-action="show-error" data-id="${escapeAttr(
+      row.id,
+    )}" type="button" aria-label="${escapeAttr(title)}" data-hint="Показать ошибку строки">${svg}</button>`;
+  }
+
+  return `<span class="status-icon status-icon-${status.key}" aria-label="${escapeAttr(
+    title,
+  )}" role="img" data-hint="Статус: ${escapeAttr(status.text)}">${svg}</span>`;
+}
+
+function renderSummary() {
+  const dashboardRows = applyFilters(state.rows);
+
+  const total = state.rows.length;
+  const filtered = Number(state.pagination.filtered) || applyFilters(state.rows).length;
+  const visible = Number(state.pagination.visible) || Math.min(filtered, state.rowsLimit);
+  const dashboardTotal = dashboardRows.length;
+  const dashboardLoaded = dashboardRows.filter((row) => row.data && !row.error).length;
+  const dashboardErrors = dashboardRows.filter((row) => row.error).length;
+  const loaded = dashboardLoaded;
+  const errors = dashboardErrors;
+
+  if (el.summaryLine) {
+    el.summaryLine.textContent = `Товаров: ${total} | Показано: ${visible}/${filtered} | ${loaded} загружено | ${errors} ошибок`;
+  }
+  if (el.lastSyncLine) {
+    el.lastSyncLine.textContent = state.lastSyncAt
+      ? `Последнее обновление: ${formatDateTime(state.lastSyncAt)}`
+      : "Последнее обновление: -";
+  }
+  if (el.errorDetailsBtn) {
+    if (errors > 0) {
+      el.errorDetailsBtn.hidden = false;
+      el.errorDetailsBtn.textContent = `Показать ошибки (${errors})`;
+      el.errorDetailsBtn.title = "Показать расшифровку ошибок загрузки по артикулам";
+    } else {
+      el.errorDetailsBtn.hidden = true;
+    }
+  }
+  if (el.loadProblemBtn) {
+    el.loadProblemBtn.textContent = errors > 0 ? `Обновить проблемные (${errors})` : "Обновить проблемные";
+  }
+
+  const problemStats = getProblemStats(dashboardRows);
+
+  const totalProblems =
+    problemStats.recommendationsNo +
+    problemStats.richNo +
+    problemStats.videoNo +
+    problemStats.autoplayNo +
+    problemStats.tagsNo +
+    problemStats.coverDuplicate;
+
+  if (el.problemLine) {
+    if (dashboardTotal === 0) {
+      el.problemLine.textContent = "Проблемы: -";
+      el.problemLine.classList.remove("problem-alert");
+    } else {
+      el.problemLine.textContent =
+        `Проблемы: Рекомендации нет ${problemStats.recommendationsNo}, ` +
+        `Рич нет ${problemStats.richNo}, ` +
+        `Видео нет ${problemStats.videoNo}, ` +
+        `Автоплей нет ${problemStats.autoplayNo}, ` +
+        `Тэги нет ${problemStats.tagsNo}, ` +
+        `Дубль обложки ${problemStats.coverDuplicate}` +
+        (problemStats.autoplayOver > 0 ? `, Перелимит автоплея +${problemStats.autoplayOver}` : "") +
+        (problemStats.tagsOver > 0 ? `, Перелимит тэгов +${problemStats.tagsOver}` : "");
+
+      el.problemLine.classList.toggle(
+        "problem-alert",
+        totalProblems > 0 || problemStats.autoplayOver > 0 || problemStats.tagsOver > 0,
+      );
+    }
+  }
+
+  renderAgreementDashboard(problemStats, {
+    total: dashboardTotal,
+    loaded: dashboardLoaded,
+    errors: dashboardErrors,
+    dashboardRows,
+  });
+}
+
+function getProblemStats(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const problemStats = {
+    recommendationsNo: 0,
+    richNo: 0,
+    videoNo: 0,
+    autoplayNo: 0,
+    autoplayOver: 0,
+    tagsNo: 0,
+    tagsOver: 0,
+    coverDuplicate: 0,
+  };
+
+  for (const row of sourceRows) {
+    if (!row.data || row.error) {
+      continue;
+    }
+
+    if (getRecommendationValue(row.data) === false) {
+      problemStats.recommendationsNo += 1;
+    }
+    if (row.data.hasRich === false) {
+      problemStats.richNo += 1;
+    }
+    if (getVideoValue(row.data) === false) {
+      problemStats.videoNo += 1;
+    }
+    if (getCoverDuplicateValue(row.data) === true) {
+      problemStats.coverDuplicate += 1;
+    }
+  }
+
+  const scopeCabinets = getAllCabinets(sourceRows, false);
+  const autoplayUsage = getAutoplayUsageByCabinet(sourceRows, scopeCabinets);
+  problemStats.autoplayNo = autoplayUsage.reduce((sum, item) => sum + item.missing, 0);
+  problemStats.autoplayOver = autoplayUsage.reduce((sum, item) => sum + item.over, 0);
+
+  const tagsUsage = getTagsUsageByCabinet(sourceRows, scopeCabinets);
+  problemStats.tagsNo = tagsUsage.reduce((sum, item) => sum + item.missing, 0);
+  problemStats.tagsOver = tagsUsage.reduce((sum, item) => sum + item.over, 0);
+
+  return problemStats;
+}
+
+function getProblemBreakdownByCabinets(problemKey, rows = state.rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const scopeCabinets = getAllCabinets(sourceRows, false);
+  const autoplayUsage = getAutoplayUsageByCabinet(sourceRows, scopeCabinets);
+  const tagsUsage = getTagsUsageByCabinet(sourceRows, scopeCabinets);
+  const autoplayMap = new Map(autoplayUsage.map((item) => [item.cabinet, item]));
+  const tagsMap = new Map(tagsUsage.map((item) => [item.cabinet, item]));
+  const cabinets = getAllCabinets(sourceRows, false);
+
+  const isFilled = (row, key) => {
+    if (!row || !row.data || row.error) {
+      return false;
+    }
+    if (key === "recommendationsNo") {
+      return getRecommendationValue(row.data) === true;
+    }
+    if (key === "richNo") {
+      return row.data.hasRich === true;
+    }
+    if (key === "videoNo") {
+      return getVideoValue(row.data) === true;
+    }
+    if (key === "autoplayNo") {
+      return getAutoplayValue(row.data) === true;
+    }
+    if (key === "tagsNo") {
+      return getTagsValue(row.data) === true;
+    }
+    if (key === "coverDuplicate") {
+      return getCoverDuplicateValue(row.data) === false;
+    }
+    return false;
+  };
+
+  if (problemKey === "autoplayNo") {
+    return autoplayUsage.map((item) => {
+      const cabinetRows = getRowsByCabinet(sourceRows, item.cabinet);
+      return {
+        cabinet: item.cabinet,
+        count: item.missing,
+        over: item.over,
+        filled: cabinetRows.filter((row) => isFilled(row, problemKey)).length,
+        total: cabinetRows.length,
+        loadedRows: item.loadedRows,
+        totalRows: item.totalRows,
+        used: item.autoplayUsed,
+        limit: item.limit,
+        hasOverride: item.hasOverride === true,
+      };
+    });
+  }
+
+  if (problemKey === "tagsNo") {
+    return tagsUsage.map((item) => {
+      const cabinetRows = getRowsByCabinet(sourceRows, item.cabinet);
+      return {
+        cabinet: item.cabinet,
+        count: item.missing,
+        over: item.over,
+        filled: cabinetRows.filter((row) => isFilled(row, problemKey)).length,
+        total: cabinetRows.length,
+        loadedRows: item.loadedRows,
+        totalRows: item.totalRows,
+        used: item.tagsUsed,
+        limit: item.limit,
+        hasOverride: item.hasOverride === true,
+      };
+    });
+  }
+
+  return cabinets.map((cabinet) => {
+    const autoplayItem = autoplayMap.get(cabinet);
+    const tagsItem = tagsMap.get(cabinet);
+    const cabinetRows = sourceRows.filter(
+      (row) => String(row.cabinet || "").trim() === cabinet && row.data && !row.error,
+    );
+    const total = sourceRows.filter((row) => String(row.cabinet || "").trim() === cabinet).length;
+    let count = 0;
+
+    for (const row of cabinetRows) {
+      if (problemKey === "recommendationsNo" && getRecommendationValue(row.data) === false) {
+        count += 1;
+      } else if (problemKey === "richNo" && row.data.hasRich === false) {
+        count += 1;
+      } else if (problemKey === "videoNo" && getVideoValue(row.data) === false) {
+        count += 1;
+      } else if (problemKey === "coverDuplicate" && getCoverDuplicateValue(row.data) === true) {
+        count += 1;
+      }
+    }
+
+    return {
+      cabinet,
+      count,
+      over: 0,
+      filled: cabinetRows.filter((row) => isFilled(row, problemKey)).length,
+      total,
+      loadedRows: autoplayItem?.loadedRows ?? tagsItem?.loadedRows ?? cabinetRows.length,
+      totalRows: autoplayItem?.totalRows ?? tagsItem?.totalRows ?? total,
+    };
+  });
+}
+
+function renderProblemCabinetBreakdown(problemKey, rows = state.rows) {
+  const items = getProblemBreakdownByCabinets(problemKey, rows);
+  if (!Array.isArray(items) || items.length === 0) {
+    return "";
+  }
+
+  const itemsHtml = items
+    .map((item) => {
+      let toneClass = "";
+      let usageTitle = "";
+
+      if (problemKey === "autoplayNo") {
+        toneClass = item.over > 0 ? " is-over" : item.count > 0 ? " is-warning" : "";
+        usageTitle = `Использовано: ${item.used}/${item.limit}${item.over > 0 ? `, перелимит +${item.over}` : ""}`;
+      } else if (problemKey === "tagsNo") {
+        toneClass = item.over > 0 ? " is-over" : item.count > 0 ? " is-warning" : "";
+        usageTitle = `Использовано: ${item.used}/${item.limit}${item.over > 0 ? `, перелимит +${item.over}` : ""}`;
+      } else {
+        toneClass = item.count > 0 ? " is-warning" : "";
+      }
+      const problemsText = String(item.count);
+      const articlesText = String(item.total);
+
+      const titleAttr = usageTitle ? ` title="${escapeAttr(usageTitle)}"` : "";
+      return `<li class="agreement-problem-cabinet-item${toneClass}"${titleAttr}>
+        <span class="agreement-problem-cabinet-name">${escapeHtml(item.cabinet)}</span>
+        <span class="agreement-problem-cabinet-problems">${escapeHtml(problemsText)}</span>
+        <span class="agreement-problem-cabinet-slash">/</span>
+        <span class="agreement-problem-cabinet-articles">${escapeHtml(articlesText)}</span>
+      </li>`;
+    })
+    .join("");
+
+  return `<div class="agreement-problem-cabinets-wrap">
+    <div class="agreement-problem-cabinets-head">
+      <span class="agreement-problem-cabinets-head-name">Кабинет</span>
+      <span class="agreement-problem-cabinets-head-problems">Пробл.</span>
+      <span class="agreement-problem-cabinets-head-slash">/</span>
+      <span class="agreement-problem-cabinets-head-articles">Арт</span>
+    </div>
+    <ul class="agreement-problem-cabinets">${itemsHtml}</ul>
+  </div>`;
+}
+
+function getTotalProblemsValue(problemStats) {
+  if (!problemStats || typeof problemStats !== "object") {
+    return 0;
+  }
+  return (
+    Number(problemStats.recommendationsNo || 0) +
+    Number(problemStats.richNo || 0) +
+    Number(problemStats.videoNo || 0) +
+    Number(problemStats.autoplayNo || 0) +
+    Number(problemStats.tagsNo || 0) +
+    Number(problemStats.coverDuplicate || 0)
+  );
+}
+
+function renderGlobalCabinetFilters() {
+  if (!el.globalCabinetFilters) {
+    return;
+  }
+
+  const activeCabinet = normalizeDashboardCabinet(state.filters.cabinet, state.rows);
+  el.globalCabinetFilters.innerHTML = renderDashboardCabinetQuickFilters(activeCabinet);
+}
+
+function renderDashboardCabinetQuickFilters(activeCabinet = "all") {
+  const normalizedActive = normalizeDashboardCabinet(activeCabinet, state.rows);
+  const rowsWithoutCabinetFilter = applyFilters(state.rows, { cabinet: "all" });
+  const cabinets = getAllCabinets(state.rows);
+  const hasEmptyCabinet = rowsWithoutCabinetFilter.some((row) => !String(row?.cabinet || "").trim());
+  if (cabinets.length === 0 && !hasEmptyCabinet) {
+    return "";
+  }
+
+  const allStats = getProblemStats(rowsWithoutCabinetFilter);
+  const allProblems = getTotalProblemsValue(allStats);
+  const allRowsCount = rowsWithoutCabinetFilter.length;
+
+  const chips = [
+    `<button
+      class="global-filter-chip${normalizedActive === "all" ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-dashboard-cabinet"
+      data-dashboard-cabinet="all"
+      title="Все кабинеты: проблем ${allProblems}, артикулов ${allRowsCount}"
+    >
+      <span class="global-filter-chip-name">Все</span>
+      <span class="global-filter-chip-count">${allProblems}</span>
+    </button>`,
+  ];
+
+  for (const cabinet of cabinets) {
+    const cabinetRows = getRowsByCabinet(rowsWithoutCabinetFilter, cabinet);
+    const cabinetStats = getProblemStats(cabinetRows);
+    const cabinetProblems = getTotalProblemsValue(cabinetStats);
+    chips.push(`<button
+      class="global-filter-chip${normalizedActive === cabinet ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-dashboard-cabinet"
+      data-dashboard-cabinet="${escapeAttr(cabinet)}"
+      title="${escapeAttr(`${cabinet}: проблем ${cabinetProblems}, артикулов ${cabinetRows.length}`)}"
+    >
+      <span class="global-filter-chip-name">${escapeHtml(cabinet)}</span>
+      <span class="global-filter-chip-count">${cabinetProblems}</span>
+    </button>`);
+  }
+
+  if (hasEmptyCabinet) {
+    const emptyRows = getRowsByCabinet(rowsWithoutCabinetFilter, "__empty__");
+    const emptyStats = getProblemStats(emptyRows);
+    const emptyProblems = getTotalProblemsValue(emptyStats);
+    chips.push(`<button
+      class="global-filter-chip${normalizedActive === "__empty__" ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-dashboard-cabinet"
+      data-dashboard-cabinet="__empty__"
+      title="Без кабинета: проблем ${emptyProblems}, артикулов ${emptyRows.length}"
+    >
+      <span class="global-filter-chip-name">Без кабинета</span>
+      <span class="global-filter-chip-count">${emptyProblems}</span>
+    </button>`);
+  }
+
+  return chips.join("");
+}
+
+function renderGlobalCategoryFilters() {
+  if (!el.globalCategoryFilters) {
+    return;
+  }
+
+  const rowsWithoutCategoryFilter = applyFilters(state.rows, { categoryGroup: "all" });
+  const categories = getAllCategories(rowsWithoutCategoryFilter);
+  const hasEmptyCategory = rowsWithoutCategoryFilter.some((row) => !getRowCategoryLabel(row));
+  const normalizedValue = normalizeCategoryGroupValue(state.filters.categoryGroup, rowsWithoutCategoryFilter);
+  const activeSelection = getCategoryGroupSelection(normalizedValue);
+
+  if (normalizedValue !== state.filters.categoryGroup) {
+    state.filters.categoryGroup = normalizedValue;
+  }
+
+  if (categories.length === 0 && !hasEmptyCategory) {
+    el.globalCategoryFilters.innerHTML = "";
+    return;
+  }
+
+  const allStats = getProblemStats(rowsWithoutCategoryFilter);
+  const allProblems = getTotalProblemsValue(allStats);
+  const chips = [
+    `<button
+      class="global-filter-chip${activeSelection.length <= 0 ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-category-group"
+      data-category-group="all"
+      title="Все категории: проблем ${allProblems}, артикулов ${rowsWithoutCategoryFilter.length}"
+    >
+      <span class="global-filter-chip-name">Все</span>
+      <span class="global-filter-chip-count">${allProblems}</span>
+    </button>`,
+  ];
+
+  for (const category of categories) {
+    const categoryRows = rowsWithoutCategoryFilter.filter((row) => getRowCategoryLabel(row) === category);
+    const categoryProblems = getTotalProblemsValue(getProblemStats(categoryRows));
+    chips.push(`<button
+      class="global-filter-chip${activeSelection.includes(category) ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-category-group"
+      data-category-group="${escapeAttr(category)}"
+      title="${escapeAttr(`${category}: проблем ${categoryProblems}, артикулов ${categoryRows.length}`)}"
+    >
+      <span class="global-filter-chip-name">${escapeHtml(category)}</span>
+      <span class="global-filter-chip-count">${categoryProblems}</span>
+    </button>`);
+  }
+
+  if (hasEmptyCategory) {
+    const emptyRows = rowsWithoutCategoryFilter.filter((row) => !getRowCategoryLabel(row));
+    const emptyProblems = getTotalProblemsValue(getProblemStats(emptyRows));
+    chips.push(`<button
+      class="global-filter-chip${activeSelection.includes("__empty__") ? " is-active" : ""}"
+      type="button"
+      data-action="toggle-category-group"
+      data-category-group="__empty__"
+      title="Без категории: проблем ${emptyProblems}, артикулов ${emptyRows.length}"
+    >
+      <span class="global-filter-chip-name">Без категории</span>
+      <span class="global-filter-chip-count">${emptyProblems}</span>
+    </button>`);
+  }
+
+  el.globalCategoryFilters.innerHTML = chips.join("");
+}
+
+function renderAgreementDashboard(problemStats, meta = {}) {
+  renderAgreementDashboardTo(el.agreementDashboardMain, problemStats, meta);
+}
+
+function renderAgreementDashboardTo(targetEl, problemStats, meta = {}) {
+  if (!targetEl) {
+    return;
+  }
+
+  const totalRows = Number(meta.total) || 0;
+  const loadedRows = Number(meta.loaded) || 0;
+  const errors = Number(meta.errors) || 0;
+  const dashboardRows = Array.isArray(meta.dashboardRows)
+    ? meta.dashboardRows
+    : applyFilters(state.rows);
+
+  if (totalRows <= 0) {
+    targetEl.innerHTML =
+      '<div class="agreement-empty">Нет данных для дашборда. Загрузите карточки продавцов или добавьте артикулы.</div>';
+    return;
+  }
+
+  const cards = [
+    {
+      key: "recommendationsNo",
+      label: "Рекомендации",
+      shortLabel: "Рек.",
+      count: problemStats.recommendationsNo,
+      presetId: "recommendationsNo",
+      segmentColor: "#d95f48",
+      bucket: "main",
+    },
+    {
+      key: "richNo",
+      label: "Рич",
+      shortLabel: "Рич",
+      count: problemStats.richNo,
+      presetId: "richNo",
+      segmentColor: "#d6852d",
+      bucket: "main",
+    },
+    {
+      key: "videoNo",
+      label: "Видео",
+      shortLabel: "Видео",
+      count: problemStats.videoNo,
+      presetId: "videoNo",
+      segmentColor: "#2c8aa2",
+      bucket: "main",
+    },
+    {
+      key: "coverDuplicate",
+      label: "Дубль обложки",
+      shortLabel: "Дубль",
+      count: problemStats.coverDuplicate,
+      presetId: "coverDuplicate",
+      segmentColor: "#8a6fbc",
+      bucket: "main",
+    },
+    {
+      key: "autoplayNo",
+      label: "Автоплей",
+      shortLabel: "Автоплей",
+      count: problemStats.autoplayNo,
+      presetId: "autoplayNo",
+      segmentColor: "#3d9679",
+      bucket: "limits",
+    },
+    {
+      key: "tagsNo",
+      label: "Тэги",
+      shortLabel: "Тэги",
+      count: problemStats.tagsNo,
+      presetId: "tagsNo",
+      segmentColor: "#5f7fa7",
+      bucket: "limits",
+    },
+  ];
+
+  const totalProblems = cards.reduce((sum, item) => sum + item.count, 0);
+  const mainToneClass =
+    totalProblems > 0 || problemStats.autoplayOver > 0 || problemStats.tagsOver > 0
+      ? "agreement-total-alert"
+      : "agreement-total-ok";
+
+  const breakdownSegments = cards
+    .map((item) => {
+      if (item.count <= 0 || totalProblems <= 0) {
+        return "";
+      }
+
+      const width = ((item.count / totalProblems) * 100).toFixed(2);
+      const shareOfRows = totalRows > 0 ? ((item.count / totalRows) * 100).toFixed(1) : "0.0";
+      const shareOfProblems = totalProblems > 0 ? ((item.count / totalProblems) * 100).toFixed(1) : "0.0";
+
+      return `<button
+        class="agreement-break-segment"
+        type="button"
+        style="width:${width}%; --segment-color:${item.segmentColor}"
+        data-action="toggle-preset"
+        data-preset-id="${item.presetId}"
+        data-tooltip-title="${escapeAttr(item.label)}"
+        data-tooltip-problems="${escapeAttr(String(item.count))}"
+        data-tooltip-rows="${escapeAttr(shareOfRows)}"
+        data-tooltip-share="${escapeAttr(shareOfProblems)}"
+        data-tooltip-color="${escapeAttr(item.segmentColor)}"
+        aria-label="${escapeAttr(`${item.label}: ${item.count}`)}"
+      ></button>`;
+    })
+    .join("");
+
+  const cardsHtml = cards
+    .map((item) => {
+      const percent = totalRows > 0 ? (item.count / totalRows) * 100 : 0;
+      const barWidth = Math.max(0, Math.min(100, percent));
+      const hasProblem =
+        item.count > 0 ||
+        (item.key === "tagsNo" && Number(problemStats.tagsOver) > 0) ||
+        (item.key === "autoplayNo" && Number(problemStats.autoplayOver) > 0);
+      const hasProblemClass = hasProblem ? "agreement-card-has-problem" : "agreement-card-clean";
+      const active = isPresetActive(item.presetId);
+      const filterLabel = active ? "Сбросить фильтр" : "Показать строки";
+      const filterClass = active ? " is-active" : "";
+      const cabinetBreakdownHtml = renderProblemCabinetBreakdown(item.key, dashboardRows);
+      const hintText =
+        item.key === "autoplayNo" && Number(problemStats.autoplayOver) > 0
+          ? `Перелимит +${problemStats.autoplayOver}`
+          : item.key === "tagsNo" && Number(problemStats.tagsOver) > 0
+            ? `Перелимит +${problemStats.tagsOver}`
+            : item.count > 0
+              ? "Есть проблемы"
+              : "Проблем нет";
+      const showSettings = item.key === "autoplayNo" || item.key === "tagsNo";
+      const settingsKind = item.key === "tagsNo" ? "tags" : "autoplay";
+      const settingsButtonHtml = showSettings
+        ? `<button
+            class="agreement-icon-btn"
+            type="button"
+            data-action="open-limit-settings"
+            data-limit-kind="${settingsKind}"
+            aria-label="Изменить лимиты"
+            data-hint="Изменить лимиты"
+          >
+            ${renderIcon("settings")}
+          </button>`
+        : "";
+
+      const cardExtraClass = item.bucket === "limits" ? " agreement-card-limits" : "";
+      return `<article class="agreement-card ${hasProblemClass}${cardExtraClass}">
+        <div class="agreement-card-top">
+          <span class="agreement-card-title">${item.label}</span>
+          <span class="agreement-card-percent">${barWidth.toFixed(1)}%</span>
+        </div>
+        <div class="agreement-card-count">${item.count}</div>
+        <div class="agreement-card-hint">${hintText}</div>
+        <div class="agreement-card-bar"><span style="width:${barWidth.toFixed(2)}%"></span></div>
+        ${cabinetBreakdownHtml}
+        <div class="agreement-card-actions">
+          <button class="agreement-card-filter${filterClass}" type="button" data-action="toggle-preset" data-preset-id="${item.presetId}">
+            ${filterLabel}
+          </button>
+          ${settingsButtonHtml}
+        </div>
+      </article>`;
+    })
+    .join("");
+
+  const summaryLegendHtml = cards
+    .map(
+      (item) => `<span class="agreement-breakdown-item">
+        <span class="agreement-breakdown-dot" style="background:${escapeAttr(item.segmentColor)}"></span>
+        <span class="agreement-breakdown-name">${escapeHtml(item.label)}</span>
+        <strong class="agreement-breakdown-count">${item.count}</strong>
+      </span>`,
+    )
+    .join("");
+  const totalMetaMainParts = [`${totalRows} товаров`, `${loadedRows} загружено`, `${errors} ошибок`];
+  const totalMetaExtraParts = [];
+  if (problemStats.autoplayOver > 0) {
+    totalMetaExtraParts.push(`автоплей перелимит +${problemStats.autoplayOver}`);
+  }
+  if (problemStats.tagsOver > 0) {
+    totalMetaExtraParts.push(`тэги перелимит +${problemStats.tagsOver}`);
+  }
+  const totalMetaMainHtml = totalMetaMainParts
+    .map((part) => `<span class="agreement-total-meta-pill">${escapeHtml(part)}</span>`)
+    .join("");
+  const totalMetaExtraHtml = totalMetaExtraParts
+    .map((part) => `<span class="agreement-total-meta-pill agreement-total-meta-pill-extra">${escapeHtml(part)}</span>`)
+    .join("");
+  const sellerSettingsHtml = buildSellerSettingsHtml();
+
+  targetEl.innerHTML = `<div class="agreement-block">
+    <div class="agreement-block-head">
+      <div class="agreement-head-main">
+        <h2>Дашборд заполняемости карточек</h2>
+        <p class="subtle">Обновлено: ${escapeHtml(
+          state.lastSyncAt ? formatDateTime(state.lastSyncAt) : "-",
+        )}</p>
+      </div>
+      <div class="seller-settings agreement-seller-settings">${sellerSettingsHtml}</div>
+    </div>
+
+    <div class="agreement-topline">
+      <article class="agreement-total ${mainToneClass}">
+        <div class="agreement-total-main">
+          <p class="agreement-total-label">Всего проблем</p>
+          <p class="agreement-total-value">${totalProblems}</p>
+        </div>
+        <div class="agreement-total-meta-stack">
+          <div class="agreement-total-meta-list agreement-total-meta-list-main">${totalMetaMainHtml}</div>
+          ${totalMetaExtraHtml ? `<div class="agreement-total-meta-list agreement-total-meta-list-extra">${totalMetaExtraHtml}</div>` : ""}
+        </div>
+      </article>
+      <article class="agreement-breakdown">
+        <div class="agreement-breakdown-head">
+          <p class="agreement-breakdown-title">Структура проблем</p>
+          <div class="agreement-breakdown-meta">${summaryLegendHtml}</div>
+        </div>
+        <div class="agreement-break-rail">
+          ${
+            breakdownSegments ||
+            '<span class="agreement-break-segment agreement-break-segment-empty" style="width:100%"></span>'
+          }
+        </div>
+      </article>
+    </div>
+
+    <div class="agreement-cards">${cardsHtml}</div>
+  </div>`;
+}
+
+function buildErrorReport(rows) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const rawMessage = row?.error ? String(row.error).trim() : "";
+    if (!rawMessage) {
+      continue;
+    }
+
+    const bucket = classifyErrorMessage(rawMessage);
+    if (!groups.has(bucket.key)) {
+      groups.set(bucket.key, {
+        key: bucket.key,
+        label: bucket.label,
+        count: 0,
+        nmIds: [],
+        moreNmIds: 0,
+        example: rawMessage,
+      });
+    }
+
+    const group = groups.get(bucket.key);
+    group.count += 1;
+    if (group.nmIds.length < 12) {
+      group.nmIds.push(String(row.nmId || "").trim());
+    } else {
+      group.moreNmIds += 1;
+    }
+  }
+
+  const sorted = Array.from(groups.values()).sort((a, b) => b.count - a.count);
+  const total = sorted.reduce((acc, item) => acc + item.count, 0);
+  return {
+    total,
+    groups: sorted,
+  };
+}
+
+function classifyErrorMessage(messageRaw) {
+  const message = String(messageRaw || "");
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("429")) {
+    return {
+      key: "rate-limit",
+      label: "HTTP 429 / лимит WB",
+    };
+  }
+
+  if (
+    normalized.includes("x-pow") ||
+    normalized.includes("ответ источника не похож на json") ||
+    normalized.includes("html вместо json")
+  ) {
+    return {
+      key: "antibot",
+      label: "Антибот WB (x-pow / HTML вместо JSON)",
+    };
+  }
+
+  if (normalized.includes("failed to fetch") || normalized.includes("превышено время ожидания")) {
+    return {
+      key: "network",
+      label: "Сетевая ошибка (Failed to fetch / timeout)",
+    };
+  }
+
+  if (normalized.includes("не удалось определить basket-хост")) {
+    return {
+      key: "basket-host",
+      label: "Не найден basket-хост",
+    };
+  }
+
+  if (normalized.includes("403") || normalized.includes("405")) {
+    return {
+      key: "forbidden",
+      label: "Источник недоступен (HTTP 403/405)",
+    };
+  }
+
+  if (normalized.includes("http 5") || normalized.includes("временно недоступен")) {
+    return {
+      key: "server-error",
+      label: "Сервер WB временно недоступен (5xx)",
+    };
+  }
+
+  if (normalized.includes("некорректный артикул")) {
+    return {
+      key: "bad-id",
+      label: "Некорректный артикул",
+    };
+  }
+
+  return {
+    key: "other",
+    label: "Прочие ошибки",
+  };
+}
+
+function renderBoolPill(value, options = {}) {
+  const compact = options.compact === true;
+  const compactClass = compact ? " pill-compact" : "";
+
+  if (value === true) {
+    return `<span class="pill pill-ok${compactClass}">Да</span>`;
+  }
+  if (value === false) {
+    return `<span class="pill pill-no${compactClass}">Нет</span>`;
+  }
+  return `<span class="pill pill-na${compactClass}">Н/Д</span>`;
+}
+
+function getRecommendationValue(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  return data.hasSellerRecommendations === true;
+}
+
+function getVideoValue(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  return data.hasVideo === true;
+}
+
+function getAutoplayValue(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  return data.hasAutoplay === true;
+}
+
+function getTagsValue(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  return data.hasTags === true;
+}
+
+function getCoverDuplicateValue(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  if (data.coverSlideDuplicate === true) {
+    return true;
+  }
+  if (data.coverSlideDuplicate === false) {
+    return false;
+  }
+  return null;
+}
+
+function renderCoverDuplicatePill(value, options = {}) {
+  const compact = options.compact === true;
+  const compactClass = compact ? " pill-compact" : "";
+
+  if (value === true) {
+    return `<span class="pill pill-no${compactClass}" title="Обложка и слайд 1 совпадают">Да</span>`;
+  }
+  if (value === false) {
+    return `<span class="pill pill-ok${compactClass}" title="Обложка и слайд 1 разные">Нет</span>`;
+  }
+  return `<span class="pill pill-na${compactClass}" title="Недостаточно данных для проверки">Н/Д</span>`;
+}
+
+function isPresetActive(presetId) {
+  switch (presetId) {
+    case "problemRows":
+      return state.onlyErrors;
+    case "recommendationsNo":
+      return state.filters.recommendations === "no";
+    case "richNo":
+      return state.filters.rich === "no";
+    case "videoNo":
+      return state.filters.video === "no";
+    case "autoplayNo":
+      return state.autoplayProblemOnly;
+    case "tagsNo":
+      return state.tagsProblemOnly;
+    case "coverDuplicate":
+      return state.filters.coverDuplicate === "yes";
+    default:
+      return false;
+  }
+}
+
+function togglePresetFilter(presetId) {
+  const active = isPresetActive(presetId);
+  setPresetActive(presetId, !active);
+}
+
+function setPresetActive(presetId, isActive) {
+  const enabled = Boolean(isActive);
+  switch (presetId) {
+    case "problemRows":
+      state.onlyErrors = enabled;
+      break;
+    case "recommendationsNo":
+      state.filters.recommendations = enabled ? "no" : "all";
+      break;
+    case "richNo":
+      state.filters.rich = enabled ? "no" : "all";
+      break;
+    case "videoNo":
+      state.filters.video = enabled ? "no" : "all";
+      break;
+    case "autoplayNo":
+      state.autoplayProblemOnly = enabled;
+      break;
+    case "tagsNo":
+      state.tagsProblemOnly = enabled;
+      break;
+    case "coverDuplicate":
+      state.filters.coverDuplicate = enabled ? "yes" : "all";
+      break;
+    default:
+      return;
+  }
+
+  state.rowsPage = 1;
+  renderFilterInputs();
+  render();
+}
+
+function getPresetRowsCount(presetId) {
+  switch (presetId) {
+    case "problemRows":
+      return state.rows.filter((row) => Boolean(row.error)).length;
+    case "recommendationsNo":
+      return state.rows.filter((row) => row.data && !row.error && getRecommendationValue(row.data) === false).length;
+    case "richNo":
+      return state.rows.filter((row) => row.data && !row.error && row.data.hasRich === false).length;
+    case "videoNo":
+      return state.rows.filter((row) => row.data && !row.error && getVideoValue(row.data) === false).length;
+    case "autoplayNo":
+      return getProblemStats(state.rows).autoplayNo;
+    case "tagsNo":
+      return getProblemStats(state.rows).tagsNo;
+    case "coverDuplicate":
+      return state.rows.filter((row) => row.data && !row.error && getCoverDuplicateValue(row.data) === true).length;
+    default:
+      return 0;
+  }
+}
+
+function renderPresetFilters() {
+  if (!el.presetFilters) {
+    return;
+  }
+
+  el.presetFilters.innerHTML = PRESET_FILTERS.map((preset) => {
+    const activeClass = isPresetActive(preset.id) ? " is-active" : "";
+    const count = getPresetRowsCount(preset.id);
+    return `<button class="preset-chip global-filter-chip${activeClass}" type="button" data-action="toggle-preset" data-preset-id="${preset.id}">
+      <span class="global-filter-chip-name">${escapeHtml(preset.label)}</span>
+      <span class="preset-chip-count global-filter-chip-count">${count}</span>
+    </button>`;
+  }).join("");
+}
+
+function renderRecommendationsCell(row, options = {}) {
+  const compact = options.compact === true;
+  const value = getRecommendationValue(row?.data);
+  const refsCount = Number.isInteger(row?.data?.recommendationKnownCount)
+    ? row.data.recommendationKnownCount
+    : Array.isArray(row?.data?.recommendationRefs)
+      ? row.data.recommendationRefs.length
+      : 0;
+
+  if (value === true) {
+    const refsLabel = refsCount > 0 ? `товаров: ${refsCount}` : "детали";
+    if (compact) {
+      return `<button class="pill pill-ok pill-compact rec-pill rec-pill-compact" data-action="recommendations" data-id="${row.id}" type="button" title="Открыть детали рекомендаций (${refsLabel})">
+      <span class="rec-pill-mark" aria-hidden="true"></span>
+      <span>Да</span>
+      <span class="rec-pill-mini">${refsCount > 0 ? refsCount : "i"}</span>
+    </button>`;
+    }
+
+    return `<button class="pill pill-ok rec-pill" data-action="recommendations" data-id="${row.id}" type="button" title="Открыть детали рекомендаций">
+      <span class="rec-pill-mark" aria-hidden="true"></span>
+      <span>Да</span>
+      <span class="rec-pill-hint">клик · ${refsLabel}</span>
+    </button>`;
+  }
+
+  if (value === false) {
+    return compact ? '<span class="pill pill-no pill-compact">Нет</span>' : '<span class="pill pill-no">Нет</span>';
+  }
+
+  return compact ? '<span class="pill pill-na pill-compact">Н/Д</span>' : '<span class="pill pill-na">Н/Д</span>';
+}
+
+function renderNullableCount(value, options = {}) {
+  const compact = options.compact === true;
+  if (value === null || value === undefined || value === "") {
+    return compact ? '<span class="pill pill-na pill-compact">Н/Д</span>' : '<span class="pill pill-na">Н/Д</span>';
+  }
+  return `<span class="mono${compact ? " mono-compact" : ""}">${escapeHtml(String(value))}</span>`;
+}
+
+function renderRichCell(row, options = {}) {
+  const data = row?.data || null;
+  const compact = options.compact === true;
+  if (!data) {
+    return compact ? '<span class="pill pill-na pill-compact">Н/Д</span>' : '<span class="pill pill-na">Н/Д</span>';
+  }
+
+  if (data.hasRich === true) {
+    const detailsCount = Number.isInteger(data.richBlockCount) ? data.richBlockCount : data.richDetails?.blockCount;
+    const countText =
+      detailsCount === null || detailsCount === undefined ? "" : ` ${escapeHtml(String(detailsCount))}`;
+    if (compact) {
+      return `<button
+        class="pill pill-ok pill-compact rec-pill rec-pill-compact"
+        data-action="rich-content"
+        data-id="${row.id}"
+        type="button"
+        title="Открыть рич-контент"
+      >
+        <span class="rec-pill-mark" aria-hidden="true"></span>
+        <span>Да${countText}</span>
+      </button>`;
+    }
+    return `<button class="pill pill-ok rec-pill" data-action="rich-content" data-id="${row.id}" type="button" title="Открыть рич-контент">
+      <span class="rec-pill-mark" aria-hidden="true"></span>
+      <span>Да${countText}</span>
+      <span class="rec-pill-hint">клик · рич-блок</span>
+    </button>`;
+  }
+
+  if (data.hasRich === false) {
+    return compact ? '<span class="pill pill-no pill-compact">Нет</span>' : '<span class="pill pill-no">Нет</span>';
+  }
+
+  return compact ? '<span class="pill pill-na pill-compact">Н/Д</span>' : '<span class="pill pill-na">Н/Д</span>';
+}
+
+function renderChecksGroupCell(row) {
+  const data = row?.data || null;
+  const videoValue = getVideoValue(data);
+  const tagsValue = getTagsValue(data);
+
+  const checks = [
+    { label: "Видео", valueHtml: renderBoolPill(videoValue === null ? false : videoValue, { compact: true }) },
+    { label: "Рек.", valueHtml: renderRecommendationsCell(row, { compact: true }) },
+    { label: "Рич", valueHtml: renderRichCell(row, { compact: true }) },
+    { label: "Авто", valueHtml: renderBoolPill(getAutoplayValue(data), { compact: true }) },
+    { label: "Тэги", valueHtml: renderBoolPill(tagsValue === null ? false : tagsValue, { compact: true }) },
+    { label: "Дубль", valueHtml: renderCoverDuplicatePill(getCoverDuplicateValue(data), { compact: true }) },
+    { label: "Кол-во", valueHtml: renderNullableCount(data?.tagsCount, { compact: true }) },
+  ];
+
+  return `<div class="checks-grid">
+    ${checks
+      .map(
+        (item) => `<div class="check-item">
+      <span class="check-label">${escapeHtml(item.label)}</span>
+      <span class="check-value">${item.valueHtml}</span>
+    </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function renderSlidesCell(slides, rowId = "") {
+  const allSlides = Array.isArray(slides) ? slides.filter(Boolean) : [];
+  const visibleSlides = allSlides.slice(0, LISTING_MAX_SLIDES);
+  const placeholdersCount = Math.max(0, LISTING_MAX_SLIDES - visibleSlides.length);
+
+  const items = visibleSlides
+    .map((url, index) => {
+      const label = index === 0 ? "Обложка" : `Слайд ${index}`;
+      const caption = `${label}`;
+      const thumbUrl = toSlideThumbUrl(url);
+      const previewUrl = toSlidePreviewUrl(url);
+
+      return `<div class="slide-item">
+        <span class="slide-label">${label}</span>
+        <a
+          href="${previewUrl}"
+          class="slide-thumb"
+          data-action="preview"
+          data-row-id="${escapeAttr(rowId)}"
+          data-slide-index="${index}"
+          data-url="${previewUrl}"
+          data-caption="${escapeAttr(caption)}"
+          title="${escapeAttr(caption)}"
+        >
+          <img src="${thumbUrl}" alt="${escapeAttr(caption)}" loading="lazy" decoding="async" />
+        </a>
+      </div>`;
+    })
+    .join("");
+
+  const placeholders = Array.from(
+    { length: placeholdersCount },
+    () => '<div class="slide-item slide-item-placeholder" aria-hidden="true"></div>',
+  ).join("");
+
+  const totalText =
+    allSlides.length > LISTING_MAX_SLIDES
+      ? `Всего слайдов: ${allSlides.length} (показаны первые ${LISTING_MAX_SLIDES})`
+      : `Всего слайдов: ${allSlides.length}`;
+
+  return `<div class="slides-wrap">
+    <div class="slides-grid">${items}${placeholders}</div>
+    <div class="mono slides-total">${escapeHtml(totalText)}</div>
+  </div>`;
+}
+
+function buildPreviewItemsFromRow(row) {
+  const slides = Array.isArray(row?.data?.slides) ? row.data.slides.filter(Boolean) : [];
+  if (slides.length === 0) {
+    return [];
+  }
+
+  return slides.map((url, index) => ({
+    url: toSlidePreviewUrl(url),
+    thumb: toSlideThumbUrl(url),
+    caption: index === 0 ? "Обложка" : `Слайд ${index}`,
+  }));
+}
+
+function openPreviewForRow(rowId, startIndex = 0) {
+  const row = getRowById(rowId);
+  const items = buildPreviewItemsFromRow(row);
+  if (items.length === 0) {
+    return;
+  }
+
+  const index = Math.max(0, Math.min(items.length - 1, Number(startIndex) || 0));
+  const titlePrefix = row?.nmId ? `Артикул ${row.nmId}` : "";
+  openPreviewGallery(items, index, titlePrefix);
+}
+
+function openPreview(url, caption) {
+  const normalizedUrl = toSlidePreviewUrl(url);
+  if (!normalizedUrl) {
+    return;
+  }
+
+  openPreviewGallery(
+    [
+      {
+        url: normalizedUrl,
+        thumb: toSlideThumbUrl(normalizedUrl),
+        caption: caption || "Слайд",
+      },
+    ],
+    0,
+    "",
+  );
+}
+
+function openPreviewGallery(items, startIndex = 0, titlePrefix = "") {
+  if (!Array.isArray(items) || items.length === 0) {
+    return;
+  }
+
+  previewGallery.items = items.filter((item) => item && item.url).map((item) => ({
+    url: String(item.url),
+    thumb: String(item.thumb || toSlideThumbUrl(item.url)),
+    caption: String(item.caption || "Слайд"),
+  }));
+  if (previewGallery.items.length === 0) {
+    return;
+  }
+
+  previewGallery.currentIndex = Math.max(0, Math.min(previewGallery.items.length - 1, Number(startIndex) || 0));
+  previewGallery.titlePrefix = String(titlePrefix || "");
+  el.previewModal.hidden = false;
+  renderPreviewGallery();
+  requestAnimationFrame(() => {
+    syncPreviewThumbStripPosition("auto");
+  });
+}
+
+function closePreview() {
+  el.previewModal.hidden = true;
+  previewGallery.items = [];
+  previewGallery.currentIndex = 0;
+  previewGallery.titlePrefix = "";
+  el.previewImage.src = "";
+  el.previewCaption.textContent = "";
+  if (el.previewThumbs) {
+    el.previewThumbs.innerHTML = "";
+  }
+}
+
+function setPreviewIndex(nextIndex) {
+  if (!Array.isArray(previewGallery.items) || previewGallery.items.length === 0) {
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(previewGallery.items.length - 1, Number(nextIndex) || 0));
+  if (clamped === previewGallery.currentIndex) {
+    return;
+  }
+
+  previewGallery.currentIndex = clamped;
+  renderPreviewGallery();
+}
+
+function stepPreview(direction) {
+  if (!Array.isArray(previewGallery.items) || previewGallery.items.length <= 1) {
+    return;
+  }
+
+  const next = previewGallery.currentIndex + Number(direction || 0);
+  if (next < 0 || next >= previewGallery.items.length) {
+    return;
+  }
+
+  previewGallery.currentIndex = next;
+  renderPreviewGallery();
+}
+
+function renderPreviewGallery() {
+  if (!Array.isArray(previewGallery.items) || previewGallery.items.length === 0) {
+    return;
+  }
+
+  const current = previewGallery.items[previewGallery.currentIndex];
+  if (!current) {
+    return;
+  }
+
+  el.previewImage.src = current.url;
+  const total = previewGallery.items.length;
+  const baseCaption = current.caption || "Слайд";
+  const prefix = previewGallery.titlePrefix ? `${previewGallery.titlePrefix} · ` : "";
+  const position = total > 1 ? ` (${previewGallery.currentIndex + 1}/${total})` : "";
+  el.previewCaption.textContent = `${prefix}${baseCaption}${position}`;
+
+  if (el.previewPrevBtn) {
+    el.previewPrevBtn.disabled = total <= 1 || previewGallery.currentIndex <= 0;
+    el.previewPrevBtn.hidden = total <= 1;
+  }
+  if (el.previewNextBtn) {
+    el.previewNextBtn.disabled = total <= 1 || previewGallery.currentIndex >= total - 1;
+    el.previewNextBtn.hidden = total <= 1;
+  }
+
+  if (el.previewThumbs) {
+    if (total <= 1) {
+      el.previewThumbs.innerHTML = "";
+      return;
+    }
+
+    el.previewThumbs.innerHTML = previewGallery.items
+      .map((item, index) => {
+        const activeClass = index === previewGallery.currentIndex ? " is-active" : "";
+        return `<button class="preview-thumb${activeClass}" type="button" data-preview-index="${index}" title="${escapeAttr(
+          item.caption || `Слайд ${index + 1}`,
+        )}">
+          <img src="${item.thumb}" alt="${escapeAttr(item.caption || `Слайд ${index + 1}`)}" loading="lazy" decoding="async" />
+        </button>`;
+      })
+      .join("");
+
+    syncPreviewThumbStripPosition("smooth");
+  }
+}
+
+function syncPreviewThumbStripPosition(behavior = "smooth") {
+  if (!el.previewThumbs) {
+    return;
+  }
+
+  const activeThumb = el.previewThumbs.querySelector(".preview-thumb.is-active");
+  if (!activeThumb) {
+    return;
+  }
+
+  const strip = el.previewThumbs;
+  const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+  if (maxScrollLeft <= 0) {
+    return;
+  }
+
+  const rightGap = 10;
+  const targetLeft = activeThumb.offsetLeft - (strip.clientWidth - activeThumb.offsetWidth - rightGap);
+  const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, targetLeft));
+  const delta = Math.abs(strip.scrollLeft - nextScrollLeft);
+  if (delta < 1) {
+    return;
+  }
+
+  strip.scrollTo({
+    left: nextScrollLeft,
+    behavior: behavior === "auto" ? "auto" : "smooth",
+  });
+}
+
+function openLimitsModal(preferredKind = "autoplay") {
+  if (!el.limitsModal) {
+    return;
+  }
+  el.limitsModal.dataset.preferredKind = preferredKind;
+  renderLimitsModalContent(preferredKind);
+  el.limitsModal.hidden = false;
+}
+
+function closeLimitsModal() {
+  if (!el.limitsModal) {
+    return;
+  }
+  el.limitsModal.hidden = true;
+  delete el.limitsModal.dataset.preferredKind;
+}
+
+function renderLimitsModalContent(preferredKind = "") {
+  if (!el.limitsContent) {
+    return;
+  }
+
+  const kind = String(preferredKind || el.limitsModal?.dataset?.preferredKind || "").trim();
+  const autoplayUsage = getAutoplayUsageByCabinet();
+  const tagsUsage = getTagsUsageByCabinet();
+  const controlsDisabled = state.isSellerLoading || state.isBulkLoading;
+
+  const sectionHtml = (sectionKey, title, globalValue, globalAttr, cabinetAttr, usage, usedLabel) => {
+    const isPreferred = kind === sectionKey ? " is-preferred" : "";
+    return `<section class="limits-section${isPreferred}">
+      <div class="limits-section-head">
+        <h4>${escapeHtml(title)}</h4>
+        <label class="limits-global-field">
+          <span>Общий лимит</span>
+          <input
+            type="number"
+            min="${AUTOPLAY_LIMIT_MIN}"
+            max="${AUTOPLAY_LIMIT_MAX}"
+            step="1"
+            ${globalAttr}
+            value="${escapeAttr(String(globalValue))}"
+            ${controlsDisabled ? "disabled" : ""}
+          />
+        </label>
+      </div>
+      <div class="limits-cabinet-list">
+        ${usage
+          .map((item) => {
+            const localValue = item.hasOverride ? String(item.limit) : "";
+            return `<div class="limits-cabinet-row${item.over > 0 ? " is-over" : ""}">
+              <span class="limits-cabinet-name">${escapeHtml(item.cabinet)}</span>
+              <span class="limits-cabinet-usage">${escapeHtml(`${usedLabel}: ${item.used}/${item.limit}`)}</span>
+              <span class="limits-cabinet-fill">${escapeHtml(`Заполнено: ${item.loadedRows}/${item.totalRows}`)}</span>
+              <input
+                type="number"
+                min="${AUTOPLAY_LIMIT_MIN}"
+                max="${AUTOPLAY_LIMIT_MAX}"
+                step="1"
+                ${cabinetAttr}="${escapeAttr(item.cabinet)}"
+                value="${escapeAttr(localValue)}"
+                placeholder="${escapeAttr(String(globalValue))}"
+                ${controlsDisabled ? "disabled" : ""}
+              />
+            </div>`;
+          })
+          .join("")}
+      </div>
+    </section>`;
+  };
+
+  const autoplayNormalized = autoplayUsage.map((item) => ({
+    ...item,
+    used: item.autoplayUsed,
+  }));
+  const tagsNormalized = tagsUsage.map((item) => ({
+    ...item,
+    used: item.tagsUsed,
+  }));
+
+  el.limitsContent.innerHTML = `
+    ${sectionHtml(
+      "autoplay",
+      "Автоплей по кабинетам",
+      normalizeAutoplayLimit(state.autoplayLimitPerCabinet),
+      'data-autoplay-global-limit="1"',
+      "data-cabinet-limit",
+      autoplayNormalized,
+      "Использовано",
+    )}
+    ${sectionHtml(
+      "tags",
+      "Тэги по кабинетам",
+      normalizeTagsLimit(state.tagsLimitPerCabinet),
+      'data-tags-global-limit="1"',
+      "data-tags-cabinet-limit",
+      tagsNormalized,
+      "Использовано",
+    )}
+  `;
+}
+
+function buildRichPreviewItems(details) {
+  const media = Array.isArray(details?.media) ? details.media : [];
+  return media
+    .map((url, index) => {
+      const normalized = toSlidePreviewUrl(url);
+      if (!normalized) {
+        return null;
+      }
+      return {
+        url: normalized,
+        thumb: toSlideThumbUrl(normalized),
+        caption: `Рич-медиа ${index + 1}`,
+      };
+    })
+    .filter(Boolean);
+}
+
+function setRichModalIndex(nextIndex, options = {}) {
+  if (!el.richContent || !Array.isArray(richGallery.items) || richGallery.items.length === 0) {
+    return;
+  }
+  const scrollThumb = options.scrollThumb !== false;
+  const scrollStream = options.scrollStream !== false;
+  const behavior = options.behavior === "auto" ? "auto" : "smooth";
+  const clamped = Math.max(0, Math.min(richGallery.items.length - 1, Number(nextIndex) || 0));
+  richGallery.currentIndex = clamped;
+  const current = richGallery.items[clamped];
+  if (!current) {
+    return;
+  }
+
+  const total = richGallery.items.length;
+  if (el.richCaption) {
+    el.richCaption.textContent = `${richGallery.titlePrefix || "Рич-контент"} · Слайд ${clamped + 1} (${clamped + 1}/${total})`;
+  }
+
+  const buttons = el.richContent.querySelectorAll("[data-action='rich-select']");
+  buttons.forEach((button, index) => {
+    button.classList.toggle("is-active", index === clamped);
+    button.setAttribute("aria-current", index === clamped ? "true" : "false");
+  });
+
+  if (scrollThumb) {
+    const strip = el.richContent.querySelector("[data-rich-strip]");
+    const activeThumb = el.richContent.querySelector(`[data-action='rich-select'][data-rich-index='${clamped}']`);
+    if (strip && activeThumb) {
+      const thumbTop = activeThumb.offsetTop;
+      const thumbBottom = thumbTop + activeThumb.offsetHeight;
+      const viewTop = strip.scrollTop;
+      const viewBottom = viewTop + strip.clientHeight;
+      if (thumbTop < viewTop + 8) {
+        strip.scrollTop = Math.max(0, thumbTop - 8);
+      } else if (thumbBottom > viewBottom - 8) {
+        strip.scrollTop = thumbBottom - strip.clientHeight + 8;
+      }
+    }
+  }
+
+  if (!scrollStream) {
+    return;
+  }
+  const stream = el.richContent.querySelector("[data-rich-stage-stream]");
+  const stageItem = stream?.querySelector(`[data-rich-stage-index='${clamped}']`);
+  if (!stream || !stageItem) {
+    return;
+  }
+  stream.scrollTo({
+    top: stageItem.offsetTop,
+    behavior,
+  });
+}
+
+function stepRichModal(direction) {
+  if (!Array.isArray(richGallery.items) || richGallery.items.length <= 1) {
+    return;
+  }
+  const next = richGallery.currentIndex + Number(direction || 0);
+  if (next < 0 || next >= richGallery.items.length) {
+    return;
+  }
+  setRichModalIndex(next);
+}
+
+function syncRichModalIndexFromStream(stream) {
+  if (!(stream instanceof HTMLElement) || !Array.isArray(richGallery.items) || richGallery.items.length === 0) {
+    return;
+  }
+  const stageItems = Array.from(stream.querySelectorAll("[data-rich-stage-index]"));
+  if (stageItems.length === 0) {
+    return;
+  }
+
+  const topEdge = stream.scrollTop + 14;
+  let nextIndex = 0;
+  for (const item of stageItems) {
+    const index = Number(item.dataset.richStageIndex);
+    if (!Number.isInteger(index)) {
+      continue;
+    }
+    if (item.offsetTop <= topEdge) {
+      nextIndex = index;
+    } else {
+      break;
+    }
+  }
+
+  if (nextIndex === richGallery.currentIndex) {
+    return;
+  }
+  setRichModalIndex(nextIndex, { scrollStream: false, scrollThumb: true, behavior: "auto" });
+}
+
+async function openRichContent(rowId) {
+  const row = getRowById(rowId);
+  if (!row || !el.richModal || !el.richContent || !el.richCaption) {
+    return;
+  }
+  richGallery.items = [];
+  richGallery.currentIndex = 0;
+  richGallery.titlePrefix = `Артикул ${row.nmId} · Рич-контент`;
+  el.richCaption.textContent = richGallery.titlePrefix;
+  el.richContent.dataset.rowId = row.id;
+  el.richModal.hidden = false;
+
+  if (!row.data) {
+    el.richContent.innerHTML = '<div class="recommendation-empty">Строка еще не загружена. Нажмите "Обновить".</div>';
+    return;
+  }
+
+  if (row.data.hasRich !== true) {
+    el.richContent.innerHTML = '<div class="recommendation-empty">Рич-контент в карточке не обнаружен.</div>';
+    return;
+  }
+
+  const details = normalizeRichDetails(row.data.richDetails) || { blockCount: 0, media: [], links: [], snippets: [] };
+  const richItems = buildRichPreviewItems(details);
+  richGallery.items = richItems;
+  richGallery.currentIndex = 0;
+
+  const mediaHtml =
+    richItems.length > 0
+      ? `<div class="rich-viewer-wrap">
+        <div class="rich-viewer">
+          <div class="rich-strip" data-rich-strip>
+            ${richItems
+              .map(
+                (item, index) => `<button
+                  class="rich-strip-item${index === 0 ? " is-active" : ""}"
+                  type="button"
+                  data-action="rich-select"
+                  data-rich-index="${index}"
+                  aria-label="Рич-медиа ${index + 1}"
+                  aria-current="${index === 0 ? "true" : "false"}"
+                >
+                  <img src="${escapeAttr(item.thumb || item.url)}" alt="Рич медиа ${index + 1}" loading="lazy" decoding="async" />
+                  <span class="rich-strip-index">${index + 1}</span>
+                </button>`,
+              )
+              .join("")}
+          </div>
+          <div class="rich-stage-pane">
+            <div class="rich-stage-stream" data-rich-stage-stream>
+              ${richItems
+                .map(
+                  (item, index) => `<figure class="rich-stage-item" data-rich-stage-index="${index}">
+                    <img src="${escapeAttr(item.url)}" alt="${escapeAttr(item.caption)}" loading="lazy" decoding="async" />
+                  </figure>`,
+                )
+                .join("")}
+            </div>
+          </div>
+        </div>
+      </div>`
+      : '<div class="recommendation-empty">В rich-данных не найдено медиа для предпросмотра.</div>';
+
+  el.richContent.innerHTML = mediaHtml;
+  if (richItems.length > 0) {
+    setRichModalIndex(0, { scrollThumb: false, scrollStream: false, behavior: "auto" });
+  }
+}
+
+function closeRichContent() {
+  if (!el.richModal) {
+    return;
+  }
+  if (richGallery.scrollRaf) {
+    cancelAnimationFrame(richGallery.scrollRaf);
+    richGallery.scrollRaf = 0;
+  }
+  richGallery.items = [];
+  richGallery.currentIndex = 0;
+  richGallery.titlePrefix = "";
+  el.richModal.hidden = true;
+  if (el.richCaption) {
+    el.richCaption.textContent = "Рич-контент";
+  }
+  if (el.richContent) {
+    el.richContent.innerHTML = "";
+    delete el.richContent.dataset.rowId;
+  }
+}
+
+async function openRecommendations(rowId) {
+  const row = getRowById(rowId);
+  if (!row) {
+    return;
+  }
+
+  const data = row.data;
+  el.recommendationsTitle.textContent = `Рекомендации продавца · ${row.nmId}`;
+  el.recommendationsSubtle.textContent =
+    "Показываем рекомендации из zero-блока (rich.json) и публичного API WB.";
+  el.recommendationsModal.hidden = false;
+
+  if (!data) {
+    el.recommendationsContent.innerHTML =
+      '<div class="recommendation-empty">Строка еще не загружена. Нажмите "Обновить".</div>';
+    return;
+  }
+
+  if (data.hasSellerRecommendations !== true) {
+    el.recommendationsContent.innerHTML =
+      '<div class="recommendation-empty">Для этой карточки блок рекомендаций не обнаружен.</div>';
+    return;
+  }
+
+  const hasResolved =
+    data.recommendationsResolvedAt ||
+    data.recommendationDetailsError ||
+    (Array.isArray(data.recommendationDetails) && data.recommendationDetails.length >= 0);
+
+  if (!hasResolved) {
+    el.recommendationsContent.innerHTML =
+      '<div class="recommendation-empty">Загружаем список рекомендаций...</div>';
+    await loadRecommendationDetails(rowId);
+  }
+
+  const freshRow = getRowById(rowId);
+  if (!freshRow) {
+    return;
+  }
+
+  renderRecommendationsOverlay(freshRow);
+}
+
+function closeRecommendations() {
+  el.recommendationsModal.hidden = true;
+  el.recommendationsTitle.textContent = "Рекомендации продавца";
+  el.recommendationsSubtle.textContent = "";
+  el.recommendationsContent.innerHTML = "";
+}
+
+function renderRecommendationsOverlay(row) {
+  const data = row.data;
+  if (!data || data.hasSellerRecommendations !== true) {
+    el.recommendationsContent.innerHTML =
+      '<div class="recommendation-empty">Для этой карточки блок рекомендаций не обнаружен.</div>';
+    return;
+  }
+
+  const details = Array.isArray(data.recommendationDetails) ? data.recommendationDetails : [];
+  const warning = data.recommendationDetailsError ? escapeHtml(data.recommendationDetailsError) : "";
+  const sourceRefs = getRecommendationSourceRefs(data, row.nmId);
+  const detailsRefs = details.map((item) => String(item?.nmId || "").trim()).filter(Boolean);
+  const idsForListing =
+    sourceRefs.mergedRefs.length > 0
+      ? sourceRefs.mergedRefs
+      : Array.from(new Set(detailsRefs));
+  const knownCount = Number.isInteger(data.recommendationKnownCount)
+    ? Math.max(data.recommendationKnownCount, idsForListing.length)
+    : idsForListing.length;
+  const summaryParts = [`Найдено артикулов: ${knownCount}`];
+  if (details.length > 0) {
+    summaryParts.push(
+      knownCount > details.length ? `карточек загружено: ${details.length} из ${knownCount}` : `карточек загружено: ${details.length}`,
+    );
+  }
+  if (knownCount > RECOMMENDATION_ITEMS_LIMIT) {
+    summaryParts.push(`лимит детальной загрузки: ${RECOMMENDATION_ITEMS_LIMIT}`);
+  }
+
+  const summaryBlock = `<div class="recommendation-summary">${summaryParts.join(" · ")}</div>`;
+  const idsBlock =
+    idsForListing.length > 0
+      ? `<div class="recommendation-ids">
+        <strong>Все найденные артикулы:</strong> <span class="mono">${escapeHtml(idsForListing.join(", "))}</span>
+        ${data.recommendationRefsTruncated ? '<div class="recommendation-meta">Список в интерфейсе сокращен.</div>' : ""}
+      </div>`
+      : "";
+
+  const sourceItems = [
+    {
+      label: "Zero-блок (rich.json)",
+      ids: sourceRefs.richRefs,
+      truncated: data.recommendationRefsFromRichTruncated === true,
+      hint: "Ссылки/артикулы, найденные в rich-данных карточки",
+    },
+    {
+      label: "API seller-recommendations",
+      ids: sourceRefs.apiRefs,
+      truncated: data.recommendationRefsFromApiTruncated === true,
+      hint: "Ответ публичного endpoint рекомендаций WB",
+    },
+  ];
+
+  if (sourceRefs.legacyRefs.length > 0) {
+    sourceItems.push({
+      label: "Ранее сохраненные (legacy)",
+      ids: sourceRefs.legacyRefs,
+      truncated: false,
+      hint: "Старые данные без точной привязки к источнику",
+    });
+  }
+
+  const sourcesBlock = `<div class="recommendation-sources">
+    ${sourceItems
+      .map((source) => {
+        const count = source.ids.length;
+        const idsText = count > 0 ? escapeHtml(source.ids.join(", ")) : "не найдено";
+        return `<div class="recommendation-source">
+          <div class="recommendation-source-head">
+            <strong>${escapeHtml(source.label)}</strong>
+            <span class="recommendation-source-count">${count}</span>
+          </div>
+          <div class="recommendation-source-ids mono">${idsText}</div>
+          <div class="recommendation-meta">${escapeHtml(source.hint)}${
+            source.truncated ? " · список сокращен" : ""
+          }</div>
+        </div>`;
+      })
+      .join("")}
+  </div>`;
+
+  el.recommendationsSubtle.textContent =
+    knownCount > 0
+      ? `Публичные данные WB. Найдено: ${knownCount}. Zero-блок: ${sourceRefs.richRefs.length}, API: ${sourceRefs.apiRefs.length}.`
+      : "Публичные данные WB. WB может не раскрывать полный состав блока.";
+
+  if (details.length === 0) {
+    const extra = warning
+      ? warning
+      : "WB подтвердил наличие блока, но не раскрыл список/количество товаров в публичных данных.";
+    el.recommendationsContent.innerHTML = `${summaryBlock}${sourcesBlock}${idsBlock}<div class="recommendation-empty">${extra}</div>`;
+    return;
+  }
+
+  const warningBlock = warning ? `<div class="recommendation-empty">${warning}</div>` : "";
+  const itemsHtml = details
+    .map((item) => {
+      const slidesHtml =
+        Array.isArray(item.slides) && item.slides.length > 0
+          ? `<div class="recommendation-slides">${item.slides
+              .map(
+                (url, index) =>
+                  `<a href="${toSlidePreviewUrl(url)}" class="slide-thumb" data-action="preview" data-url="${toSlidePreviewUrl(
+                    url,
+                  )}" data-caption="${escapeAttr(
+                    `${item.nmId} · слайд ${index + 1}`,
+                  )}" title="Открыть слайд"><img src="${toSlideThumbUrl(url)}" alt="Слайд рекомендации" loading="lazy" decoding="async" /></a>`,
+              )
+              .join("")}</div>`
+          : '<div class="recommendation-meta">Листинг недоступен в публичных данных.</div>';
+
+      return `<article class="recommendation-item">
+        <div class="recommendation-title">
+          <a class="wb-link" href="${item.link}" target="_blank" rel="noopener noreferrer">${escapeHtml(
+            item.name || `Артикул ${item.nmId}`,
+          )}</a>
+          <span class="mono">${escapeHtml(item.nmId)}</span>
+        </div>
+        <div class="recommendation-meta">${escapeHtml(item.category || "-")} · ${escapeHtml(item.brand || "-")}</div>
+        ${slidesHtml}
+      </article>`;
+    })
+    .join("");
+
+  el.recommendationsContent.innerHTML = warningBlock + summaryBlock + sourcesBlock + idsBlock + itemsHtml;
+}
+
+async function loadRecommendationDetails(rowId) {
+  const row = getRowById(rowId);
+  if (!row || !row.data || row.data.hasSellerRecommendations !== true) {
+    return;
+  }
+
+  const sourceBefore = getRecommendationSourceRefs(row.data, row.nmId);
+  const richRefs = sourceBefore.richRefs;
+  let apiRefs = [];
+  try {
+    apiRefs = normalizeRecommendationRefs(await fetchRecommendationRefsFromApi(row.nmId), row.nmId);
+  } catch {
+    apiRefs = [];
+  }
+
+  const uniqueRefsAll = normalizeRecommendationRefs([...apiRefs, ...richRefs], row.nmId);
+  const uniqueRefs = uniqueRefsAll.slice(0, RECOMMENDATION_ITEMS_LIMIT);
+
+  row.data.recommendationRefs = richRefs;
+  row.data.recommendationRefsFromRich = richRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  row.data.recommendationRefsFromApi = apiRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  row.data.recommendationRefsFromRichTruncated = richRefs.length > RECOMMENDATION_IDS_LIST_LIMIT;
+  row.data.recommendationRefsFromApiTruncated = apiRefs.length > RECOMMENDATION_IDS_LIST_LIMIT;
+  row.data.recommendationKnownCount = uniqueRefsAll.length;
+  row.data.recommendationResolvedRefs = uniqueRefsAll.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  row.data.recommendationRefsTruncated = uniqueRefsAll.length > RECOMMENDATION_IDS_LIST_LIMIT;
+
+  if (uniqueRefs.length === 0) {
+    row.data.recommendationDetails = [];
+    row.data.recommendationDetailsError =
+      "Для этой карточки WB не раскрыл список/количество рекомендованных товаров в публичных источниках.";
+    row.data.recommendationsResolvedAt = new Date().toISOString();
+    persistState();
+    return;
+  }
+
+  const queue = uniqueRefs.map((nmId, idx) => ({ nmId, idx }));
+  const resolved = new Array(queue.length).fill(null);
+
+  await runWithConcurrency(queue, 3, async (entry) => {
+    try {
+      resolved[entry.idx] = await fetchRecommendationSummary(entry.nmId);
+    } catch {
+      resolved[entry.idx] = {
+        nmId: String(entry.nmId),
+        link: `https://www.wildberries.ru/catalog/${entry.nmId}/detail.aspx`,
+        name: "",
+        category: "",
+        brand: "",
+        slides: [],
+      };
+    }
+  });
+
+  const target = getRowById(rowId);
+  if (!target || !target.data) {
+    return;
+  }
+
+  target.data.recommendationDetails = resolved.filter(Boolean);
+  target.data.recommendationRefs = richRefs;
+  target.data.recommendationRefsFromRich = richRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  target.data.recommendationRefsFromApi = apiRefs.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  target.data.recommendationRefsFromRichTruncated = richRefs.length > RECOMMENDATION_IDS_LIST_LIMIT;
+  target.data.recommendationRefsFromApiTruncated = apiRefs.length > RECOMMENDATION_IDS_LIST_LIMIT;
+  target.data.recommendationKnownCount = uniqueRefsAll.length;
+  target.data.recommendationResolvedRefs = uniqueRefsAll.slice(0, RECOMMENDATION_IDS_LIST_LIMIT);
+  target.data.recommendationRefsTruncated = uniqueRefsAll.length > RECOMMENDATION_IDS_LIST_LIMIT;
+  target.data.recommendationDetailsError =
+    target.data.recommendationDetails.length === 0
+      ? "Список/количество рекомендаций не найден в публичных источниках."
+      : "";
+  target.data.recommendationsResolvedAt = new Date().toISOString();
+  persistState();
+}
+
+async function fetchRecommendationSummary(nmIdRaw) {
+  const nmId = Number(nmIdRaw);
+  if (!Number.isInteger(nmId) || nmId <= 0) {
+    throw new Error("Некорректный артикул рекомендации");
+  }
+
+  const vol = Math.floor(nmId / 100000);
+  const part = Math.floor(nmId / 1000);
+  const hostSuffix = await resolveBasketHost({ nmId, vol, part });
+  const base = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}`;
+  const card = await fetchJson(`${base}/info/ru/card.json`);
+
+  const photoCount = Number(card?.media?.photo_count) || 0;
+  const slides = [];
+  for (let index = 1; index <= Math.min(photoCount, RECOMMENDATION_SLIDES_PER_ITEM); index += 1) {
+    slides.push(`${base}/images/c246x328/${index}.webp`);
+  }
+
+  return {
+    nmId: String(nmId),
+    link: `https://www.wildberries.ru/catalog/${nmId}/detail.aspx`,
+    name: card?.imt_name || "",
+    category: card?.subj_name || "",
+    brand: card?.selling?.brand_name || "",
+    slides,
+  };
+}
+
+async function fetchRecommendationRefsFromApi(nmIdRaw) {
+  const nmId = Number(nmIdRaw);
+  if (!Number.isInteger(nmId) || nmId <= 0) {
+    return [];
+  }
+
+  const endpoint = `https://recom.wb.ru/personal/seller-recommendations?nm=${nmId}`;
+  const payload = await fetchJson(endpoint);
+  return extractRecommendationRefsFromPayload(payload, nmId);
+}
+
+function extractRecommendationRefsFromPayload(payload, sourceNmId) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const ids = new Set();
+  const sourceId = String(sourceNmId || "");
+  const stack = [payload];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        stack.push(item);
+      }
+      continue;
+    }
+
+    if (typeof current === "number" && Number.isInteger(current) && current >= 100000) {
+      const id = String(current);
+      if (id !== sourceId) {
+        ids.add(id);
+      }
+      continue;
+    }
+
+    if (typeof current === "string") {
+      const text = current.trim();
+      const fromUrl = text.match(/wildberries\.ru\/catalog\/(\d{6,})/i);
+      if (fromUrl?.[1] && String(fromUrl[1]) !== sourceId) {
+        ids.add(String(fromUrl[1]));
+      }
+
+      if (/^\d{6,}$/.test(text) && text !== sourceId) {
+        ids.add(text);
+      }
+      continue;
+    }
+
+    if (!current || typeof current !== "object") {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(current)) {
+      const normalizedKey = key.toLowerCase();
+
+      if (
+        typeof value === "number" &&
+        Number.isInteger(value) &&
+        value >= 100000 &&
+        /(^nm$|nmid|nm_id|wbid|productid|product_id|itemid|item_id)/i.test(normalizedKey)
+      ) {
+        if (String(value) !== String(sourceNmId)) {
+          ids.add(String(value));
+        }
+      }
+
+      if (
+        typeof value === "string" &&
+        /(^nm$|nmid|nm_id|wbid|productid|product_id|itemid|item_id|link|url)/i.test(normalizedKey)
+      ) {
+        const fromUrl = value.match(/wildberries\.ru\/catalog\/(\d{6,})/i);
+        if (fromUrl?.[1] && String(fromUrl[1]) !== String(sourceNmId)) {
+          ids.add(String(fromUrl[1]));
+        }
+
+        if (/^\d{6,}$/.test(value) && String(value) !== String(sourceNmId)) {
+          ids.add(String(value));
+        }
+      }
+
+      if (value && typeof value === "object") {
+        stack.push(value);
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
+function setBulkLoading(isLoading, loadingText = "Обновляю карточки...") {
+  state.isBulkLoading = isLoading;
+
+  if (state.isBulkLoading) {
+    el.loadAllBtn.textContent = loadingText;
+  } else {
+    el.loadAllBtn.textContent = "Обновить карточки";
+  }
+
+  syncButtonState();
+}
+
+function setSellerLoading(isLoading) {
+  state.isSellerLoading = isLoading;
+
+  if (state.isSellerLoading) {
+    el.loadSellersBtn.textContent = "Обновляю продавцов...";
+  } else {
+    el.loadSellersBtn.textContent = "Обновить карточки продавцов";
+  }
+
+  syncButtonState();
+}
+
+function syncButtonState() {
+  const disabled = state.isSellerLoading || state.isBulkLoading;
+  el.loadAllBtn.disabled = disabled;
+  el.loadSellersBtn.disabled = disabled;
+  if (el.loadProblemBtn) {
+    const hasProblems = getProblemRowIds().length > 0;
+    el.loadProblemBtn.disabled = disabled || !hasProblems;
+  }
+  if (el.addSingleBtn) {
+    el.addSingleBtn.disabled = disabled;
+  }
+  el.addBulkBtn.disabled = disabled;
+  el.clearBtn.disabled = disabled;
+  if (el.rowsLimitSelect) {
+    el.rowsLimitSelect.disabled = disabled;
+  }
+  if (el.autoplayLimitInput) {
+    el.autoplayLimitInput.disabled = disabled;
+  }
+  for (const input of document.querySelectorAll(
+    "[data-autoplay-global-limit], [data-cabinet-limit], [data-tags-global-limit], [data-tags-cabinet-limit]",
+  )) {
+    input.disabled = disabled;
+  }
+  renderRowsPagination();
+  if (el.pagePrevBtn) {
+    el.pagePrevBtn.disabled =
+      disabled || (Number(state.pagination.filtered) || 0) === 0 || state.rowsPage <= 1;
+  }
+  if (el.pageNextBtn) {
+    el.pageNextBtn.disabled =
+      disabled ||
+      (Number(state.pagination.filtered) || 0) === 0 ||
+      state.rowsPage >= Math.max(1, Number(state.pagination.totalPages) || 1);
+  }
+  if (el.resetAllFiltersBtn) {
+    el.resetAllFiltersBtn.disabled = disabled;
+  }
+}
+
+async function runWithConcurrency(items, limit, worker) {
+  let pointer = 0;
+
+  async function runner() {
+    while (pointer < items.length) {
+      const current = items[pointer];
+      pointer += 1;
+      await worker(current);
+    }
+  }
+
+  const workers = [];
+  const count = Math.min(limit, items.length);
+  for (let index = 0; index < count; index += 1) {
+    workers.push(runner());
+  }
+
+  await Promise.all(workers);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
+function persistState() {
+  const payload = {
+    rows: state.rows.map((row) => ({
+      id: row.id,
+      nmId: row.nmId,
+      cabinet: row.cabinet,
+      supplierId: row.supplierId,
+      stockValue: row.stockValue,
+      inStock: row.inStock,
+      stockSource: row.stockSource,
+      currentPrice: row.currentPrice,
+      basePrice: row.basePrice,
+      priceSource: row.priceSource,
+      error: row.error,
+      data: row.data,
+      updatedAt: row.updatedAt,
+    })),
+    basketByVol: state.basketByVol,
+    lastSyncAt: state.lastSyncAt,
+    filters: state.filters,
+    controlsCollapsed: state.controlsCollapsed,
+    rowsLimit: state.rowsLimit,
+    autoplayLimitPerCabinet: state.autoplayLimitPerCabinet,
+    autoplayLimitByCabinet: state.autoplayLimitByCabinet,
+    tagsLimitPerCabinet: state.tagsLimitPerCabinet,
+    tagsLimitByCabinet: state.tagsLimitByCabinet,
+    onlyErrors: state.onlyErrors,
+    checksFiltersOpen: state.checksFiltersOpen,
+    globalFiltersCollapsed: state.globalFiltersCollapsed,
+    globalCategoriesOpen: state.globalCategoriesOpen,
+    globalColumnsOpen: state.globalColumnsOpen,
+    autoplayProblemOnly: state.autoplayProblemOnly,
+    tagsProblemOnly: state.tagsProblemOnly,
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+}
+
+function restoreState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+
+    state.rows = rows.map((row) => ({
+      id: row.id || `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      nmId: String(row.nmId || "").trim(),
+      cabinet: String(row.cabinet || "").trim(),
+      supplierId: normalizeSupplierId(row.supplierId),
+      stockValue: Number.isFinite(row.stockValue) ? row.stockValue : null,
+      inStock: typeof row.inStock === "boolean" ? row.inStock : null,
+      stockSource: String(row.stockSource || ""),
+      currentPrice: Number.isFinite(row.currentPrice)
+        ? row.currentPrice
+        : Number.isFinite(row?.data?.currentPrice)
+          ? row.data.currentPrice
+          : null,
+      basePrice: Number.isFinite(row.basePrice)
+        ? row.basePrice
+        : Number.isFinite(row?.data?.basePrice)
+          ? row.data.basePrice
+          : null,
+      priceSource: String(row.priceSource || ""),
+      loading: false,
+      error: row.error ? String(row.error) : "",
+      data: normalizeRowData(row.data),
+      updatedAt: row.updatedAt || null,
+    }));
+
+    state.basketByVol = parsed.basketByVol && typeof parsed.basketByVol === "object" ? parsed.basketByVol : {};
+    state.lastSyncAt = parsed.lastSyncAt || null;
+    state.controlsCollapsed = Boolean(parsed.controlsCollapsed);
+    state.rowsLimit = normalizeRowsLimit(parsed.rowsLimit);
+    state.autoplayLimitPerCabinet = normalizeAutoplayLimit(parsed.autoplayLimitPerCabinet);
+    state.autoplayLimitByCabinet = normalizeAutoplayLimitMap(parsed.autoplayLimitByCabinet);
+    state.tagsLimitPerCabinet = normalizeTagsLimit(parsed.tagsLimitPerCabinet);
+    state.tagsLimitByCabinet = normalizeTagsLimitMap(parsed.tagsLimitByCabinet);
+    state.onlyErrors = Boolean(parsed.onlyErrors);
+    state.checksFiltersOpen = Boolean(parsed.checksFiltersOpen);
+    state.globalFiltersCollapsed = Boolean(parsed.globalFiltersCollapsed);
+    state.globalCategoriesOpen = Boolean(parsed.globalCategoriesOpen);
+    state.globalColumnsOpen = Boolean(parsed.globalColumnsOpen);
+    state.autoplayProblemOnly = Boolean(parsed.autoplayProblemOnly);
+    state.tagsProblemOnly = Boolean(parsed.tagsProblemOnly);
+    state.rowsPage = 1;
+
+    state.filters = {
+      ...FILTER_DEFAULTS,
+      ...(parsed.filters && typeof parsed.filters === "object" ? parsed.filters : {}),
+    };
+    if (state.filters.recommendations === "na") {
+      state.filters.recommendations = "no";
+    }
+    if (state.filters.autoplay === "na") {
+      state.filters.autoplay = "no";
+    }
+    if (state.filters.video === "na") {
+      state.filters.video = "no";
+    }
+    if (state.filters.tags === "na") {
+      state.filters.tags = "no";
+    }
+    state.filters.categoryGroup = normalizeCategoryGroupValue(state.filters.categoryGroup, state.rows);
+  } catch {
+    state.rows = [];
+    state.basketByVol = {};
+    state.lastSyncAt = null;
+    state.controlsCollapsed = false;
+    state.rowsLimit = ROWS_LIMIT_DEFAULT;
+    state.autoplayLimitPerCabinet = AUTOPLAY_LIMIT_DEFAULT;
+    state.autoplayLimitByCabinet = {};
+    state.tagsLimitPerCabinet = TAGS_LIMIT_DEFAULT;
+    state.tagsLimitByCabinet = {};
+    state.onlyErrors = false;
+    state.checksFiltersOpen = false;
+    state.globalFiltersCollapsed = false;
+    state.globalCategoriesOpen = false;
+    state.globalColumnsOpen = false;
+    state.autoplayProblemOnly = false;
+    state.tagsProblemOnly = false;
+    state.rowsPage = 1;
+    state.filters = { ...FILTER_DEFAULTS };
+  }
+}
+
+function toBase64(value) {
+  try {
+    return btoa(String(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function toSlideThumbUrl(urlRaw) {
+  const url = String(urlRaw || "").trim();
+  if (!url) {
+    return "";
+  }
+  return url
+    .replace("/images/big/", "/images/c246x328/")
+    .replace("/images/large/", "/images/c246x328/")
+    .replace("/images/c516x688/", "/images/c246x328/");
+}
+
+function toSlidePreviewUrl(urlRaw) {
+  const url = String(urlRaw || "").trim();
+  if (!url) {
+    return "";
+  }
+  return url
+    .replace("/images/c246x328/", "/images/big/")
+    .replace("/images/c516x688/", "/images/big/")
+    .replace("/images/tm/", "/images/big/");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll("`", "&#96;");
+}
