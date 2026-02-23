@@ -906,7 +906,8 @@ function persistState() {
   }
 }
 
-async function restoreState() {
+async function restoreState(options = {}) {
+  const preferRemote = Boolean(options && options.preferRemote);
   const localPayload = readLocalStatePayload();
   let remotePayload = null;
   const shadowPendingPayload = readShadowPendingPayload();
@@ -920,7 +921,10 @@ async function restoreState() {
     }
   }
 
-  const payload = pickStatePayload(localPayload, remotePayload, shadowPendingPayload);
+  const payload =
+    preferRemote && canUseCloudSync && remotePayload
+      ? remotePayload
+      : pickStatePayload(localPayload, remotePayload, shadowPendingPayload);
   if (!payload) {
     return;
   }

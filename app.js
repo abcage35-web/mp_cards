@@ -550,7 +550,7 @@ async function restoreAuthState() {
 }
 
 async function syncStateAfterAuth() {
-  await restoreState();
+  await restoreState({ preferRemote: true });
   state.sellerSettings = normalizeSellerSettings(state.sellerSettings);
   state.colorVariantsCache = normalizeColorVariantCache(state.colorVariantsCache);
   renderCabinetFilterOptions();
