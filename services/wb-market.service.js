@@ -262,7 +262,7 @@
           mode: "cors",
           cache: "no-store",
         },
-        { attempts: 2, timeoutMs: fetchTimeoutMs },
+        { attempts: 1, timeoutMs: fetchTimeoutMs },
       );
 
       if (!response.ok) {
@@ -333,10 +333,15 @@
     const qtyUrl = `https://product-order-qnt.wildberries.ru/by-nm/?nm=${nmId}`;
     const priceHistoryUrl = normalizedBasketBase ? `${normalizedBasketBase}/info/price-history.json` : "";
 
+    const fastConfig = {
+      attempts: 1,
+      timeoutMs: Math.max(1800, Math.min(3600, Number(deps?.fetchTimeoutMs) || 3600)),
+    };
+
     const [qtyResponse, priceHistoryResponse] = await Promise.all([
-      fetchJsonMaybe(qtyUrl),
+      fetchJsonMaybe(qtyUrl, fastConfig),
       priceHistoryUrl
-        ? fetchJsonMaybe(priceHistoryUrl)
+        ? fetchJsonMaybe(priceHistoryUrl, fastConfig)
         : Promise.resolve({ ok: false, message: "no-price-url" }),
     ]);
 
@@ -380,10 +385,15 @@
       return createEmptyMarketSnapshot();
     }
 
+    const fastConfig = {
+      attempts: 1,
+      timeoutMs: Math.max(1800, Math.min(4200, fetchTimeoutMs)),
+    };
+
     const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
     let snapshot = createEmptyMarketSnapshot();
 
-    const response = await fetchJsonMaybe(endpoint);
+    const response = await fetchJsonMaybe(endpoint, fastConfig);
     if (response.ok && response.data) {
       snapshot = mergeMarketSnapshots(
         snapshot,
@@ -407,6 +417,7 @@
     if (snapshot.currentPrice === null || snapshot.stockValue === null) {
       const fallbackSnapshot = await fetchFallbackMarketSnapshot(nmId, basketBase, {
         fetchJsonMaybe,
+        fetchTimeoutMs,
       });
       snapshot = mergeMarketSnapshots(snapshot, fallbackSnapshot);
     }

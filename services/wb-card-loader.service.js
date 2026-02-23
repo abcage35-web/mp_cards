@@ -887,6 +887,7 @@ async function loadRow(
   }
 
   const beforeSnapshot = captureRowUpdateSnapshot(row);
+  const previousData = row.data && typeof row.data === "object" ? row.data : null;
 
   row.loading = true;
   row.error = "";
@@ -909,6 +910,14 @@ async function loadRow(
       forceHostProbe,
       mode: loadMode,
       requestSignal,
+      previousCoverDuplicate:
+        previousData && typeof previousData.coverSlideDuplicate === "boolean"
+          ? previousData.coverSlideDuplicate
+          : null,
+      previousPhotoCount:
+        previousData && Number.isFinite(previousData.photoCount)
+          ? Math.max(0, Math.round(previousData.photoCount))
+          : null,
     });
     if (requestSignal && requestSignal.aborted) {
       canceledByUser = true;
@@ -1044,26 +1053,68 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
   const vol = Math.floor(nmId / 100000);
   const part = Math.floor(nmId / 1000);
 
-  const hostSuffix = await resolveBasketHost({
-    nmId,
-    vol,
-    part,
-    forceProbe: forceHostProbe,
-    requestSignal,
-  });
-  const base = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}`;
-
-  const card = await fetchJson(`${base}/info/ru/card.json`, { signal: requestSignal });
-  if (requestSignal && requestSignal.aborted) {
-    throw new Error("Обновление остановлено пользователем");
-  }
   const shouldLoadMarket = mode !== "content-only";
-  const marketSnapshot = shouldLoadMarket
-    ? await fetchCardMarketSnapshot(nmId, { basketBase: base, requestSignal })
-    : createEmptyMarketSnapshot();
-  if (requestSignal && requestSignal.aborted) {
-    throw new Error("Обновление остановлено пользователем");
+  const loadByHost = async (hostSuffix) => {
+    const base = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}`;
+    const cardPromise = fetchJson(
+      `${base}/info/ru/card.json`,
+      { signal: requestSignal },
+      { attempts: 2, timeoutMs: FAST_CARD_FETCH_TIMEOUT_MS },
+    );
+    const marketPromise = shouldLoadMarket
+      ? fetchCardMarketSnapshot(nmId, { basketBase: base, requestSignal })
+      : Promise.resolve(createEmptyMarketSnapshot());
+
+    const [card, marketSnapshot] = await Promise.all([cardPromise, marketPromise]);
+    if (requestSignal && requestSignal.aborted) {
+      throw new Error("Обновление остановлено пользователем");
+    }
+
+    return {
+      hostSuffix,
+      base,
+      card,
+      marketSnapshot,
+    };
+  };
+
+  let resolved = null;
+  try {
+    resolved = await loadByHost(
+      await resolveBasketHost({
+        nmId,
+        vol,
+        part,
+        forceProbe: forceHostProbe,
+        requestSignal,
+      }),
+    );
+  } catch (error) {
+    if (isUpdateCanceledError(error) || (requestSignal && requestSignal.aborted)) {
+      throw new Error("Обновление остановлено пользователем");
+    }
+    if (forceHostProbe) {
+      throw error;
+    }
+    resolved = await loadByHost(
+      await resolveBasketHost({
+        nmId,
+        vol,
+        part,
+        forceProbe: true,
+        requestSignal,
+      }),
+    );
   }
+
+  if (!resolved || !resolved.card || typeof resolved.card !== "object") {
+    throw new Error("Не удалось загрузить данные карточки");
+  }
+
+  const hostSuffix = resolved.hostSuffix;
+  const base = resolved.base;
+  const card = resolved.card;
+  const marketSnapshot = resolved.marketSnapshot;
 
   const hasSellerRecommendations = card?.has_seller_recommendations === true;
   const hasRich = card?.has_rich === true;
@@ -1074,7 +1125,11 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
 
   if (hasRich || hasSellerRecommendations) {
     try {
-      const rich = await fetchJson(`${base}/info/ru/rich.json`, { signal: requestSignal });
+      const rich = await fetchJson(
+        `${base}/info/ru/rich.json`,
+        { signal: requestSignal },
+        { attempts: 1, timeoutMs: FAST_RICH_FETCH_TIMEOUT_MS },
+      );
       if (hasRich) {
         richBlockCount = Array.isArray(rich?.content) ? rich.content.length : 0;
       }
@@ -1101,7 +1156,22 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
     slides.push(`${base}/images/big/${index}.webp`);
   }
 
-  const coverSlideDuplicate = await detectCoverSlideDuplicate(slides, { requestSignal });
+  let coverSlideDuplicate = null;
+  const previousPhotoCount = Number.isFinite(options.previousPhotoCount)
+    ? Math.max(0, Math.round(options.previousPhotoCount))
+    : null;
+  const previousCoverDuplicate =
+    typeof options.previousCoverDuplicate === "boolean" ? options.previousCoverDuplicate : null;
+
+  if (
+    previousPhotoCount !== null &&
+    previousPhotoCount === photoCount &&
+    typeof previousCoverDuplicate === "boolean"
+  ) {
+    coverSlideDuplicate = previousCoverDuplicate;
+  } else {
+    coverSlideDuplicate = await detectCoverSlideDuplicate(slides, { requestSignal });
+  }
 
   return {
     hostSuffix,
@@ -1159,10 +1229,10 @@ async function fetchCardMarketSnapshot(nmIdRaw, options = {}) {
     throw new Error("Обновление остановлено пользователем");
   }
   const snapshot = await marketService.fetchCardMarketSnapshot(nmIdRaw, options, {
-    fetchJsonMaybe: (url) => fetchJsonMaybe(url, { signal: requestSignal }),
+    fetchJsonMaybe: (url, config = {}) => fetchJsonMaybe(url, { signal: requestSignal }, config),
     fetchWithRetry: (url, fetchOptions = {}, config = {}) =>
       fetchWithRetry(url, { ...fetchOptions, signal: requestSignal }, config),
-    fetchTimeoutMs: FETCH_TIMEOUT_MS,
+    fetchTimeoutMs: FAST_CARD_FETCH_TIMEOUT_MS,
   });
   if (requestSignal && requestSignal.aborted) {
     throw new Error("Обновление остановлено пользователем");
@@ -1387,10 +1457,8 @@ async function resolveBasketHost({ nmId, vol, part, forceProbe = false, requestS
   const cached = state.basketByVol[volKey];
 
   if (cached && !forceProbe) {
-    const alive = await checkHost(cached, nmId, vol, part, requestSignal);
-    if (alive) {
-      return cached;
-    }
+    // Оптимистично используем кэш; перепроверка будет только при реальной ошибке загрузки.
+    return cached;
   }
 
   const probeEnd = forceProbe ? Math.max(BASKET_END, 120) : BASKET_END;
@@ -1411,11 +1479,24 @@ async function resolveBasketHost({ nmId, vol, part, forceProbe = false, requestS
     if (requestSignal && requestSignal.aborted) {
       throw new Error("Обновление остановлено пользователем");
     }
-    if (await checkHost(suffix, nmId, vol, part, requestSignal)) {
+    if (await checkHost(suffix, nmId, vol, part, requestSignal, { fast: true })) {
       resolved = suffix;
       break;
     }
-    await sleep(HOST_PROBE_PAUSE_MS);
+  }
+
+  // fallback: более надежная (медленная) проверка, если быстрый проход ничего не нашел
+  if (!resolved) {
+    for (const suffix of candidates) {
+      if (requestSignal && requestSignal.aborted) {
+        throw new Error("Обновление остановлено пользователем");
+      }
+      if (await checkHost(suffix, nmId, vol, part, requestSignal, { fast: false })) {
+        resolved = suffix;
+        break;
+      }
+      await sleep(HOST_PROBE_PAUSE_MS);
+    }
   }
 
   if (!resolved) {
@@ -1431,8 +1512,11 @@ async function resolveBasketHost({ nmId, vol, part, forceProbe = false, requestS
   return resolved;
 }
 
-async function checkHost(hostSuffix, nmId, vol, part, requestSignal = null) {
+async function checkHost(hostSuffix, nmId, vol, part, requestSignal = null, options = {}) {
   const probeUrl = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}/images/c246x328/1.webp`;
+  const fast = options && options.fast === true;
+  const timeoutMs = fast ? Math.max(1000, Number(FAST_HOST_PROBE_TIMEOUT_MS) || 1800) : 8000;
+  const attempts = fast ? Math.max(1, Number(FAST_HOST_PROBE_ATTEMPTS) || 1) : 2;
 
   try {
     const response = await fetchWithRetry(
@@ -1443,7 +1527,7 @@ async function checkHost(hostSuffix, nmId, vol, part, requestSignal = null) {
         cache: "no-store",
         signal: requestSignal,
       },
-      { attempts: 2, timeoutMs: 8000 },
+      { attempts, timeoutMs },
     );
     if (response.ok) {
       return true;
@@ -1458,7 +1542,7 @@ async function checkHost(hostSuffix, nmId, vol, part, requestSignal = null) {
           cache: "no-store",
           signal: requestSignal,
         },
-        { attempts: 2, timeoutMs: 8000 },
+        { attempts, timeoutMs },
       );
       return fallback.ok;
     }
@@ -1616,14 +1700,14 @@ function isLikelyHtmlPayload(text) {
   return normalized.startsWith("<!doctype html") || normalized.startsWith("<html") || normalized.includes("<body");
 }
 
-async function fetchJson(url, options = {}) {
+async function fetchJson(url, options = {}, config = {}) {
   const requestOptions = options && typeof options === "object" ? options : {};
   const response = await fetchWithRetry(url, {
     method: "GET",
     mode: "cors",
     cache: "no-store",
     ...requestOptions,
-  });
+  }, config);
 
   if (!response.ok) {
     throw new Error(httpStatusErrorMessage(response.status));
@@ -1640,8 +1724,9 @@ async function fetchJson(url, options = {}) {
   }
 }
 
-async function fetchJsonMaybe(url, options = {}) {
+async function fetchJsonMaybe(url, options = {}, config = {}) {
   const requestOptions = options && typeof options === "object" ? options : {};
+  const retryConfig = config && typeof config === "object" ? config : {};
   try {
     const response = await fetchWithRetry(
       url,
@@ -1651,7 +1736,7 @@ async function fetchJsonMaybe(url, options = {}) {
         cache: "no-store",
         ...requestOptions,
       },
-      { attempts: 2 },
+      { attempts: 2, ...retryConfig },
     );
 
     const text = await response.text();
