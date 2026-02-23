@@ -931,7 +931,7 @@ async function loadRow(
     target.updatedAt = new Date().toISOString();
     target.error = "";
 
-    const previousData = target.data && typeof target.data === "object" ? target.data : null;
+    const targetPreviousData = target.data && typeof target.data === "object" ? target.data : null;
     target.data = payload;
 
     if (payload.supplierId) {
@@ -955,20 +955,24 @@ async function loadRow(
         basePrice: payload.basePrice,
         source: payload.priceSource || "card-v4",
       });
-    } else if (loadMode === "content-only" && previousData) {
-      target.data.stockValue = Number.isFinite(previousData.stockValue) ? previousData.stockValue : target.stockValue;
-      target.data.inStock = typeof previousData.inStock === "boolean" ? previousData.inStock : target.inStock;
-      target.data.stockSource = String(previousData.stockSource || target.stockSource || "");
-      target.data.currentPrice = Number.isFinite(previousData.currentPrice)
-        ? previousData.currentPrice
+    } else if (loadMode === "content-only" && targetPreviousData) {
+      target.data.stockValue = Number.isFinite(targetPreviousData.stockValue)
+        ? targetPreviousData.stockValue
+        : target.stockValue;
+      target.data.inStock = typeof targetPreviousData.inStock === "boolean" ? targetPreviousData.inStock : target.inStock;
+      target.data.stockSource = String(targetPreviousData.stockSource || target.stockSource || "");
+      target.data.currentPrice = Number.isFinite(targetPreviousData.currentPrice)
+        ? targetPreviousData.currentPrice
         : target.currentPrice;
-      target.data.basePrice = Number.isFinite(previousData.basePrice) ? previousData.basePrice : target.basePrice;
-      target.data.priceSource = String(previousData.priceSource || target.priceSource || "");
-      target.data.rating = Number.isFinite(previousData.rating)
-        ? Math.round(Number(previousData.rating) * 10) / 10
+      target.data.basePrice = Number.isFinite(targetPreviousData.basePrice)
+        ? targetPreviousData.basePrice
+        : target.basePrice;
+      target.data.priceSource = String(targetPreviousData.priceSource || target.priceSource || "");
+      target.data.rating = Number.isFinite(targetPreviousData.rating)
+        ? Math.round(Number(targetPreviousData.rating) * 10) / 10
         : null;
-      target.data.reviewCount = Number.isFinite(previousData.reviewCount)
-        ? Math.max(0, Math.round(previousData.reviewCount))
+      target.data.reviewCount = Number.isFinite(targetPreviousData.reviewCount)
+        ? Math.max(0, Math.round(targetPreviousData.reviewCount))
         : null;
     }
 
