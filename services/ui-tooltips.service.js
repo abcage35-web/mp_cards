@@ -21,7 +21,9 @@ function getBreakSegmentTarget(target) {
   if (!(target instanceof Element)) {
     return null;
   }
-  return target.closest(".agreement-break-segment[data-tooltip-title]");
+  return target.closest(
+    ".agreement-break-segment[data-tooltip-title], .problems-chart-point[data-tooltip-title]",
+  );
 }
 
 function handleBreakSegmentPointerOver(event) {
@@ -85,19 +87,46 @@ function showBreakSegmentTooltip(segment, clientX, clientY) {
   const share = String(segment.dataset.tooltipShare || "").trim();
   const colorRaw = String(segment.dataset.tooltipColor || "").trim();
   const color = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(colorRaw) ? colorRaw : "#d5644a";
-  const rowsLine = rows ? `<li><span>Доля от всех строк:</span> <strong>${escapeHtml(rows)}%</strong></li>` : "";
-  const shareLine = share ? `<li><span>Доля в структуре проблем:</span> <strong>${escapeHtml(share)}%</strong></li>` : "";
+  const tooltipKind = String(segment.dataset.tooltipKind || "").trim();
+  if (tooltipKind === "chart") {
+    const value = String(segment.dataset.tooltipValue || "").trim();
+    const valueLabel = String(segment.dataset.tooltipValueLabel || "Значение").trim();
+    const total = String(segment.dataset.tooltipTotal || "").trim();
+    const at = String(segment.dataset.tooltipAt || "").trim();
+    const meta = String(segment.dataset.tooltipMeta || "").trim();
+    const cabinet = String(segment.dataset.tooltipCabinet || "").trim();
+    const atLine = at ? `<li><span>Дата:</span> <strong>${escapeHtml(at)}</strong></li>` : "";
+    const valueLine = value ? `<li><span>${escapeHtml(valueLabel)}:</span> <strong>${escapeHtml(value)}</strong></li>` : "";
+    const totalLine = total ? `<li><span>Всего проблем:</span> <strong>${escapeHtml(total)}</strong></li>` : "";
+    const cabinetLine = cabinet ? `<li><span>Кабинет:</span> <strong>${escapeHtml(cabinet)}</strong></li>` : "";
+    const metaLine = meta ? `<li><span>Обновление:</span> <strong>${escapeHtml(meta)}</strong></li>` : "";
 
-  breakTooltip.text.innerHTML = `<div class="agreement-break-tooltip-title">
-    <span class="agreement-break-tooltip-dot" style="background:${color}"></span>
-    <span>${escapeHtml(title)}</span>
-  </div>
-  <ul class="agreement-break-tooltip-list">
-    <li><span>Проблем:</span> <strong>${escapeHtml(problems)}</strong></li>
-    ${rowsLine}
-    ${shareLine}
-    <li><span>Клик:</span> <strong>показать такие строки</strong></li>
-  </ul>`;
+    breakTooltip.text.innerHTML = `<div class="agreement-break-tooltip-title">
+      <span class="agreement-break-tooltip-dot" style="background:${color}"></span>
+      <span>${escapeHtml(title)}</span>
+    </div>
+    <ul class="agreement-break-tooltip-list">
+      ${atLine}
+      ${valueLine}
+      ${totalLine}
+      ${cabinetLine}
+      ${metaLine}
+    </ul>`;
+  } else {
+    const rowsLine = rows ? `<li><span>Доля от всех строк:</span> <strong>${escapeHtml(rows)}%</strong></li>` : "";
+    const shareLine = share ? `<li><span>Доля в структуре проблем:</span> <strong>${escapeHtml(share)}%</strong></li>` : "";
+
+    breakTooltip.text.innerHTML = `<div class="agreement-break-tooltip-title">
+      <span class="agreement-break-tooltip-dot" style="background:${color}"></span>
+      <span>${escapeHtml(title)}</span>
+    </div>
+    <ul class="agreement-break-tooltip-list">
+      <li><span>Проблем:</span> <strong>${escapeHtml(problems)}</strong></li>
+      ${rowsLine}
+      ${shareLine}
+      <li><span>Клик:</span> <strong>показать такие строки</strong></li>
+    </ul>`;
+  }
   breakTooltip.root.hidden = false;
   breakTooltip.root.classList.add("is-visible");
   moveBreakSegmentTooltip(clientX, clientY);
@@ -417,4 +446,3 @@ function registerServiceWorker() {
 
   navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {});
 }
-

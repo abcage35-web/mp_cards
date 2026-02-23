@@ -2201,14 +2201,19 @@ function renderProblemsChartContent() {
           (point) => `<circle
               class="problems-chart-point"
               style="--series-color:${escapeAttr(series.color)}"
+              data-tooltip-kind="chart"
+              data-tooltip-title="${escapeAttr(series.label)}"
+              data-tooltip-color="${escapeAttr(series.color)}"
+              data-tooltip-value-label="${escapeAttr(series.label)}"
+              data-tooltip-value="${escapeAttr(String(point.values[series.key]))}"
+              data-tooltip-total="${escapeAttr(String(point.total))}"
+              data-tooltip-at="${escapeAttr(point.atLabel)}"
+              data-tooltip-meta="${escapeAttr(`${point.source} · ${point.action} · ${point.mode}`)}"
+              data-tooltip-cabinet="${escapeAttr(cabinetLabel)}"
               cx="${point.x.toFixed(2)}"
               cy="${Number(point.yBySeries[series.key]).toFixed(2)}"
-              r="3.4"
-            >
-              <title>${escapeHtml(
-                `${point.atLabel}\n${series.label}: ${point.values[series.key]}\nВсего проблем: ${point.total}\nТип: ${point.source} · ${point.action} · ${point.mode}`,
-              )}</title>
-            </circle>`,
+              r="5.2"
+            ></circle>`,
         )
         .join("");
 
