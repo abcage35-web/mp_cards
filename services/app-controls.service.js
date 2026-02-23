@@ -954,6 +954,11 @@ function handlePresetActionsClick(event) {
 }
 
 function handleAddBulk() {
+  if (typeof hasAdminAccess === "function" && !hasAdminAccess()) {
+    window.alert("Добавление товаров доступно только администратору.");
+    return;
+  }
+
   const nmIds = parseBulkInput(el.bulkInput.value);
 
   if (nmIds.length === 0) {

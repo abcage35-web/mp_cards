@@ -23,6 +23,9 @@ function render() {
     renderProblemsChartCabinetFilter();
     renderProblemsChartContent();
   }
+  if (typeof applyRoleAccessState === "function") {
+    applyRoleAccessState();
+  }
   syncButtonState();
   syncGlobalFilterOffset();
   persistState();
@@ -49,6 +52,7 @@ function renderRows() {
 
   const rowsHtml = visibleRows
     .map((row, index) => {
+      const canDeleteRows = typeof hasAdminAccess === "function" ? hasAdminAccess() : true;
       const data = row.data;
       const wbLink = `https://www.wildberries.ru/catalog/${row.nmId}/detail.aspx`;
       const status = buildStatus(row);
@@ -82,7 +86,9 @@ function renderRows() {
             >
               ${renderIcon("refresh")}
             </button>
-            <button
+            ${
+              canDeleteRows
+                ? `<button
               class="icon-btn icon-btn-remove"
               data-action="remove"
               data-id="${row.id}"
@@ -91,7 +97,9 @@ function renderRows() {
               data-hint="Удалить строку"
             >
               ${renderIcon("trash")}
-            </button>
+            </button>`
+                : ""
+            }
           </div>
         </td>
         <td>${startIndex + index + 1}</td>

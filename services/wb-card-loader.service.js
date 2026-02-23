@@ -606,12 +606,19 @@ function enqueueSingleRowWithProgress(rowIdRaw, options = {}) {
 }
 
 function removeRow(rowId) {
+  if (typeof hasAdminAccess === "function" && !hasAdminAccess()) {
+    return;
+  }
   removeSingleRowRefreshFromQueue(rowId);
   state.rows = state.rows.filter((row) => row.id !== rowId);
   render();
 }
 
 function upsertRowsFromNmIds(nmIds) {
+  if (typeof hasAdminAccess === "function" && !hasAdminAccess()) {
+    return [];
+  }
+
   const createdIds = [];
 
   for (const nmIdRaw of nmIds) {

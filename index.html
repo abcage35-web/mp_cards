@@ -49,6 +49,11 @@
               </label>
               <button id="globalFiltersToggleBtn" class="btn btn-mini btn-has-icon" type="button">Фильтры</button>
               <button id="resetAllFiltersBtn" class="btn btn-mini btn-has-icon" type="button">Сбросить</button>
+              <div id="authStatus" class="auth-status" hidden>
+                <span id="authRoleBadge" class="auth-role-badge"></span>
+                <span id="authUserLabel" class="auth-user-label"></span>
+                <button id="logoutBtn" class="btn btn-mini btn-has-icon" type="button">Выйти</button>
+              </div>
             </div>
           </div>
 
@@ -252,6 +257,27 @@
         </section>
       </div>
     </main>
+
+    <div id="authGate" class="auth-gate" hidden>
+      <div class="auth-card panel">
+        <h2>Вход в систему</h2>
+        <p class="subtle auth-note">
+          Пользователь: <span class="mono">user / user</span><br />
+          Админ: <span class="mono">admin / admin 1</span>
+        </p>
+        <form id="authForm" class="auth-form" autocomplete="off">
+          <label class="field auth-field">
+            <span>Логин</span>
+            <input id="authLoginInput" class="filter-input" type="text" autocomplete="username" required />
+          </label>
+          <label class="field auth-field">
+            <span>Пароль</span>
+            <input id="authPasswordInput" class="filter-input" type="password" autocomplete="current-password" required />
+          </label>
+          <button id="authSubmitBtn" class="btn btn-primary" type="submit">Войти</button>
+        </form>
+      </div>
+    </div>
 
     <div id="bulkProgressToast" class="bulk-progress-toast" hidden>
       <div class="bulk-progress-card">

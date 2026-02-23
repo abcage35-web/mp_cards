@@ -1,4 +1,9 @@
 const STORAGE_KEY = "wb-dashboard-v2";
+const AUTH_STORAGE_KEY = `${STORAGE_KEY}:auth-v1`;
+const AUTH_USERS = Object.freeze({
+  user: Object.freeze({ login: "user", password: "user", role: "user" }),
+  admin: Object.freeze({ login: "admin", password: "admin 1", role: "admin" }),
+});
 const BASKET_START = 1;
 const BASKET_END = 80;
 const BULK_CONCURRENCY = 2;
@@ -152,6 +157,11 @@ const ICON_LIBRARY = {
 };
 
 const state = {
+  auth: {
+    isAuthenticated: false,
+    role: "guest",
+    login: "",
+  },
   rows: [],
   basketByVol: {},
   filters: { ...FILTER_DEFAULTS },
@@ -239,6 +249,15 @@ const richGallery = {
 };
 
 const el = {
+  mainView: document.getElementById("mainView"),
+  authGate: document.getElementById("authGate"),
+  authForm: document.getElementById("authForm"),
+  authLoginInput: document.getElementById("authLoginInput"),
+  authPasswordInput: document.getElementById("authPasswordInput"),
+  authStatus: document.getElementById("authStatus"),
+  authRoleBadge: document.getElementById("authRoleBadge"),
+  authUserLabel: document.getElementById("authUserLabel"),
+  logoutBtn: document.getElementById("logoutBtn"),
   agreementDashboardMain: document.getElementById("agreementDashboardMain"),
   globalFiltersFrame: document.getElementById("globalFiltersFrame"),
   globalFiltersBody: document.getElementById("globalFiltersBody"),
@@ -327,10 +346,12 @@ init().catch(() => {});
 
 async function init() {
   await restoreState();
+  restoreAuthState();
   state.sellerSettings = normalizeSellerSettings(state.sellerSettings);
   state.colorVariantsCache = normalizeColorVariantCache(state.colorVariantsCache);
   hydrateStaticIcons();
   bindEvents();
+  applyAuthState();
   applyControlsState();
   renderCabinetFilterOptions();
   renderFilterInputs();
@@ -370,7 +391,219 @@ function hydrateStaticIcons() {
   setStaticButtonIcon(el.previewNextBtn, "chevronRight");
 }
 
+function createGuestAuthState() {
+  return {
+    isAuthenticated: false,
+    role: "guest",
+    login: "",
+  };
+}
+
+function normalizeAuthRole(roleRaw) {
+  const role = String(roleRaw || "")
+    .trim()
+    .toLowerCase();
+  if (role === "admin") {
+    return "admin";
+  }
+  if (role === "user") {
+    return "user";
+  }
+  return "guest";
+}
+
+function normalizeAuthLogin(loginRaw) {
+  return String(loginRaw || "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 60);
+}
+
+function isAuthenticated() {
+  return state.auth?.isAuthenticated === true && normalizeAuthRole(state.auth?.role) !== "guest";
+}
+
+function hasAdminAccess() {
+  return isAuthenticated() && normalizeAuthRole(state.auth?.role) === "admin";
+}
+
+function ensureAdminAccess(actionName = "Это действие") {
+  if (hasAdminAccess()) {
+    return true;
+  }
+  window.alert(`${actionName} доступно только администратору.`);
+  return false;
+}
+
+function findAuthUserByCredentials(loginRaw, passwordRaw) {
+  const login = normalizeAuthLogin(loginRaw);
+  const password = String(passwordRaw || "").trim();
+  if (!login || !password) {
+    return null;
+  }
+
+  const users = Object.values(AUTH_USERS);
+  for (const user of users) {
+    if (login === user.login && password === user.password) {
+      return user;
+    }
+  }
+
+  return null;
+}
+
+function persistAuthState() {
+  const payload = {
+    isAuthenticated: isAuthenticated(),
+    role: normalizeAuthRole(state.auth?.role),
+    login: normalizeAuthLogin(state.auth?.login),
+  };
+
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // noop
+  }
+}
+
+function restoreAuthState() {
+  let parsed = null;
+  try {
+    const raw = String(localStorage.getItem(AUTH_STORAGE_KEY) || "");
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    state.auth = createGuestAuthState();
+    return;
+  }
+
+  const role = normalizeAuthRole(parsed.role);
+  const login = normalizeAuthLogin(parsed.login);
+  const hasKnownUser = Object.values(AUTH_USERS).some((user) => user.login === login && user.role === role);
+
+  if (parsed.isAuthenticated === true && hasKnownUser) {
+    state.auth = {
+      isAuthenticated: true,
+      role,
+      login,
+    };
+    return;
+  }
+
+  state.auth = createGuestAuthState();
+}
+
+function getAuthRoleLabel() {
+  return hasAdminAccess() ? "Админ" : "Пользователь";
+}
+
+function applyRoleAccessState() {
+  const canManageRows = hasAdminAccess();
+  const bulkField = el.bulkInput ? el.bulkInput.closest(".field") : null;
+  const singleField = el.singleInput ? el.singleInput.closest(".field") : null;
+
+  if (bulkField) {
+    bulkField.hidden = !canManageRows;
+  }
+  if (singleField) {
+    singleField.hidden = !canManageRows;
+  }
+
+  if (el.bulkInput) {
+    el.bulkInput.disabled = !canManageRows;
+  }
+  if (el.singleInput) {
+    el.singleInput.disabled = !canManageRows;
+  }
+  if (el.addSingleBtn) {
+    el.addSingleBtn.hidden = !canManageRows;
+    el.addSingleBtn.disabled = !canManageRows;
+  }
+  if (el.addBulkBtn) {
+    el.addBulkBtn.hidden = !canManageRows;
+    el.addBulkBtn.disabled = !canManageRows;
+  }
+  if (el.clearBtn) {
+    el.clearBtn.hidden = !canManageRows;
+    el.clearBtn.disabled = !canManageRows;
+  }
+}
+
+function applyAuthState(options = {}) {
+  const focusLogin = options.focusLogin !== false;
+  const loggedIn = isAuthenticated();
+
+  if (el.mainView) {
+    el.mainView.hidden = !loggedIn;
+  }
+  if (el.authGate) {
+    el.authGate.hidden = loggedIn;
+  }
+  if (el.authStatus) {
+    el.authStatus.hidden = !loggedIn;
+  }
+  if (el.authRoleBadge) {
+    el.authRoleBadge.textContent = getAuthRoleLabel();
+    el.authRoleBadge.classList.toggle("is-admin", hasAdminAccess());
+    el.authRoleBadge.classList.toggle("is-user", !hasAdminAccess());
+  }
+  if (el.authUserLabel) {
+    el.authUserLabel.textContent = loggedIn ? normalizeAuthLogin(state.auth?.login) : "";
+  }
+
+  applyRoleAccessState();
+
+  if (!loggedIn && focusLogin && el.authLoginInput) {
+    el.authLoginInput.focus();
+  }
+}
+
+function handleAuthSubmit(event) {
+  event.preventDefault();
+  const login = normalizeAuthLogin(el.authLoginInput?.value);
+  const password = String(el.authPasswordInput?.value || "").trim();
+  const user = findAuthUserByCredentials(login, password);
+
+  if (!user) {
+    window.alert("Неверный логин или пароль.");
+    if (el.authPasswordInput) {
+      el.authPasswordInput.value = "";
+      el.authPasswordInput.focus();
+    }
+    return;
+  }
+
+  state.auth = {
+    isAuthenticated: true,
+    role: user.role,
+    login: user.login,
+  };
+
+  persistAuthState();
+  if (el.authPasswordInput) {
+    el.authPasswordInput.value = "";
+  }
+  applyAuthState({ focusLogin: false });
+  render();
+}
+
+function handleLogout() {
+  state.auth = createGuestAuthState();
+  persistAuthState();
+  applyAuthState({ focusLogin: true });
+}
+
 function bindEvents() {
+  if (el.authForm) {
+    el.authForm.addEventListener("submit", handleAuthSubmit);
+  }
+  if (el.logoutBtn) {
+    el.logoutBtn.addEventListener("click", handleLogout);
+  }
+
   if (el.addSingleBtn) {
     el.addSingleBtn.addEventListener("click", handleAddSingle);
   }
@@ -467,6 +700,9 @@ function bindEvents() {
     const rowId = actionTarget.dataset.id || actionTarget.closest("tr")?.dataset.id;
 
     if (action === "remove" && rowId) {
+      if (!ensureAdminAccess("Удаление товара")) {
+        return;
+      }
       const row = getRowById(rowId);
       const nmId = String(row?.nmId || "").trim();
       const confirmText = nmId
@@ -575,6 +811,9 @@ function bindEvents() {
     const addToBaseBtn = event.target.closest("[data-action='color-variant-add']");
     if (addToBaseBtn) {
       event.preventDefault();
+      if (!ensureAdminAccess("Добавление товара")) {
+        return;
+      }
       const nmId = String(addToBaseBtn.dataset.nmId || "").trim();
       if (/^\d{6,}$/.test(nmId)) {
         upsertRowsFromNmIds([nmId]);
@@ -770,6 +1009,10 @@ function bindEvents() {
 
 
 function handleClear() {
+  if (!ensureAdminAccess("Очистка списка")) {
+    return;
+  }
+
   if (state.rows.length === 0) {
     return;
   }

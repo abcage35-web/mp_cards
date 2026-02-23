@@ -750,6 +750,11 @@ function renderCabinetFilterOptions() {
 }
 
 function handleAddSingle() {
+  if (typeof hasAdminAccess === "function" && !hasAdminAccess()) {
+    window.alert("Добавление товаров доступно только администратору.");
+    return;
+  }
+
   const raw = el.singleInput.value.trim();
   const nmId = extractNmId(raw);
 

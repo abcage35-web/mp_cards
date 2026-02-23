@@ -1044,6 +1044,7 @@ async function openColorVariants(rowId, options = {}) {
 function renderColorVariantsOverlayContent(ids, variants) {
   const count = Array.isArray(ids) ? ids.length : 0;
   const list = Array.isArray(variants) ? variants : [];
+  const canManageRows = typeof hasAdminAccess === "function" ? hasAdminAccess() : true;
 
   const cardsHtml = list
     .map((item) => {
@@ -1056,7 +1057,7 @@ function renderColorVariantsOverlayContent(ids, variants) {
       const brand = item.brand || "-";
       const coverThumb = toSlideThumbUrl(item.cover || "");
       const existsInBase = Boolean(getRowByNmId(item.nmId));
-      const canAddToBase = !existsInBase && /^\d{6,}$/.test(String(item.nmId || ""));
+      const canAddToBase = canManageRows && !existsInBase && /^\d{6,}$/.test(String(item.nmId || ""));
 
       const coverHtml =
         coverThumb || item.cover
