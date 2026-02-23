@@ -17,6 +17,27 @@ function parsePayloadSize(payload) {
   }
 }
 
+function parsePayloadJson(payloadJsonRaw) {
+  const payloadJson = String(payloadJsonRaw || "").trim();
+  if (!payloadJson) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(payloadJson);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getRowsCount(payloadRaw) {
+  const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : null;
+  if (!payload) {
+    return 0;
+  }
+  return Array.isArray(payload.rows) ? payload.rows.length : 0;
+}
+
 export async function onRequestOptions() {
   return new Response(null, { status: 204 });
 }
@@ -91,6 +112,37 @@ export async function onRequestPut(context) {
   const payloadBytes = parsePayloadSize(payload);
   if (!Number.isFinite(payloadBytes) || payloadBytes > MAX_PAYLOAD_BYTES) {
     return json({ ok: false, error: "payload is too large" }, { status: 413 });
+  }
+
+  const currentRow = await env.DB.prepare(
+    `SELECT payload_json
+     FROM dashboard_state
+     WHERE state_key = ?1
+     LIMIT 1`,
+  )
+    .bind(key)
+    .first();
+  const currentPayload = parsePayloadJson(currentRow?.payload_json || "");
+  const currentRowsCount = getRowsCount(currentPayload);
+  const nextRowsCount = getRowsCount(payload);
+  const role = String(session?.user?.role || "").trim().toLowerCase();
+  const isAdmin = role === "admin";
+
+  if (nextRowsCount !== currentRowsCount && !isAdmin) {
+    return json(
+      { ok: false, error: "Only admin can add or remove products." },
+      { status: 403 },
+    );
+  }
+
+  if (currentRowsCount > 1 && nextRowsCount === 0) {
+    return json(
+      {
+        ok: false,
+        error: "Full clear is blocked. Delete products one by one.",
+      },
+      { status: 409 },
+    );
   }
 
   const nowIso = new Date().toISOString();

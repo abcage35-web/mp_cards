@@ -739,7 +739,9 @@ function bindEvents() {
   if (el.loadProblemBtn) {
     el.loadProblemBtn.addEventListener("click", handleLoadProblematic);
   }
-  el.clearBtn.addEventListener("click", handleClear);
+  if (el.clearBtn) {
+    el.clearBtn.addEventListener("click", handleClear);
+  }
   el.toggleControlsBtn.addEventListener("click", handleToggleControls);
   if (el.errorDetailsBtn) {
     el.errorDetailsBtn.addEventListener("click", handleShowErrorsReport);
@@ -1136,24 +1138,17 @@ function bindEvents() {
 
 
 function handleClear() {
-  if (!ensureAdminAccess("Очистка списка")) {
+  if (!ensureAdminAccess("Очистка поля ввода")) {
     return;
   }
 
-  if (state.rows.length === 0) {
-    return;
+  if (el.bulkInput) {
+    el.bulkInput.value = "";
+    el.bulkInput.focus();
   }
-
-  const accepted = window.confirm("Очистить все строки?");
-  if (!accepted) {
-    return;
+  if (el.singleInput) {
+    el.singleInput.value = "";
   }
-
-  state.rows = [];
-  state.lastSyncAt = null;
-  state.updateSnapshots = [];
-  state.chartCabinetFilter = "all";
-  render();
 }
 
 function showRowError(rowId) {

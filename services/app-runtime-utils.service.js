@@ -549,7 +549,9 @@ function syncButtonState() {
     el.addSingleBtn.disabled = disabled;
   }
   el.addBulkBtn.disabled = disabled;
-  el.clearBtn.disabled = disabled;
+  if (el.clearBtn) {
+    el.clearBtn.disabled = disabled;
+  }
   if (el.rowsLimitSelect) {
     el.rowsLimitSelect.disabled = disabled;
   }
