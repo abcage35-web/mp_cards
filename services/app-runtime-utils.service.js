@@ -297,6 +297,37 @@ function formatBulkEta(totalSecondsRaw) {
   return `${hours}ч ${restMinutes}м`;
 }
 
+function resetOverflowMarquee(node) {
+  if (!node) {
+    return;
+  }
+  node.classList.remove("is-marquee");
+  node.style.removeProperty("--marquee-shift");
+  node.style.removeProperty("--marquee-duration");
+}
+
+function syncOverflowMarquee(node) {
+  if (!node || !node.isConnected) {
+    return;
+  }
+
+  resetOverflowMarquee(node);
+  const visibleWidth = Math.max(0, Math.round(node.clientWidth || 0));
+  if (visibleWidth <= 0) {
+    return;
+  }
+
+  const overflow = Math.ceil(node.scrollWidth - visibleWidth);
+  if (overflow < 12) {
+    return;
+  }
+
+  const durationSeconds = Math.max(8, Math.min(24, 8 + overflow / 20));
+  node.style.setProperty("--marquee-shift", `${overflow}px`);
+  node.style.setProperty("--marquee-duration", `${durationSeconds.toFixed(2)}s`);
+  node.classList.add("is-marquee");
+}
+
 function renderBulkProgressToast() {
   const progress = ensureBulkProgressState();
   if (!el.bulkProgressToast) {
@@ -324,6 +355,7 @@ function renderBulkProgressToast() {
   }
   if (el.bulkProgressTitle) {
     el.bulkProgressTitle.textContent = progress.loadingText || "Обновляю карточки…";
+    syncOverflowMarquee(el.bulkProgressTitle);
   }
 
   if (el.bulkProgressMeta) {
@@ -365,11 +397,13 @@ function renderBulkProgressToast() {
       if (el.bulkProgressToast) {
         el.bulkProgressToast.classList.add("is-visible");
       }
+      syncOverflowMarquee(el.bulkProgressTitle);
     });
     return;
   }
 
   el.bulkProgressToast.classList.remove("is-visible");
+  resetOverflowMarquee(el.bulkProgressTitle);
   clearBulkProgressTickTimer(progress);
   setTimeout(() => {
     const current = ensureBulkProgressState();

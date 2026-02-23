@@ -348,7 +348,7 @@
     const endpoint = `${MARKET_BACKEND_ENDPOINT}?nm=${nmId}`;
 
     let response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, fastConfig);
-    if (!(response.ok && response.data && response.data.ok === true)) {
+    if (reconnectConfig && !(response.ok && response.data && response.data.ok === true)) {
       response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, reconnectConfig);
     }
 
@@ -384,7 +384,7 @@
     const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
 
     let response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, fastConfig);
-    if (!(response.ok && response.data)) {
+    if (reconnectConfig && !(response.ok && response.data)) {
       response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, reconnectConfig);
     }
 
@@ -412,6 +412,7 @@
     const fetchJsonMaybe = deps?.fetchJsonMaybe;
     const fetchTimeoutMs = Number(deps?.fetchTimeoutMs) || 12000;
     const requestSignal = options?.requestSignal || null;
+    const fastFail = options?.fastFail === true;
 
     const nmId = Number(nmIdRaw);
     if (!Number.isInteger(nmId) || nmId <= 0) {
@@ -422,14 +423,21 @@
       return createEmptyMarketSnapshot();
     }
 
-    const fastConfig = {
-      attempts: 2,
-      timeoutMs: Math.max(2600, Math.min(8000, fetchTimeoutMs)),
-    };
-    const reconnectConfig = {
-      attempts: 2,
-      timeoutMs: Math.max(5000, fetchTimeoutMs),
-    };
+    const fastConfig = fastFail
+      ? {
+          attempts: 1,
+          timeoutMs: Math.max(1600, Math.min(3200, fetchTimeoutMs)),
+        }
+      : {
+          attempts: 2,
+          timeoutMs: Math.max(2600, Math.min(8000, fetchTimeoutMs)),
+        };
+    const reconnectConfig = fastFail
+      ? null
+      : {
+          attempts: 2,
+          timeoutMs: Math.max(5000, fetchTimeoutMs),
+        };
 
     const backend = await fetchMarketSnapshotViaBackend(
       nmId,

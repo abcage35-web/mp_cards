@@ -2001,6 +2001,12 @@ textarea {
   text-overflow: ellipsis;
 }
 
+.bulk-progress-title.is-marquee {
+  text-overflow: clip;
+  animation: bulk-progress-marquee var(--marquee-duration, 12s) ease-in-out infinite alternate;
+  will-change: text-indent;
+}
+
 .bulk-progress-meta {
   margin: 0;
   font: 500 12px/1.15 "IBM Plex Sans", sans-serif;
@@ -2044,6 +2050,25 @@ textarea {
 .bulk-progress-cancel:disabled {
   opacity: 0.72;
   cursor: default;
+}
+
+@keyframes bulk-progress-marquee {
+  0%,
+  14% {
+    text-indent: 0;
+  }
+  86%,
+  100% {
+    text-indent: calc(-1 * var(--marquee-shift, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bulk-progress-title.is-marquee {
+    animation: none;
+    text-indent: 0;
+    text-overflow: ellipsis;
+  }
 }
 
 .hint {
@@ -4444,17 +4469,21 @@ tbody tr:hover {
 
   body {
     padding-top: max(8px, env(safe-area-inset-top));
-    padding-right: 8px;
+    padding-right: max(8px, env(safe-area-inset-right));
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
-    padding-left: 8px;
+    padding-left: max(8px, env(safe-area-inset-left));
   }
 
   .app-shell {
     width: 100%;
+    max-width: 100%;
+    margin: 0;
     min-width: 0;
   }
 
   .panel {
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
   }
 
@@ -4572,6 +4601,59 @@ tbody tr:hover {
 
   .agreement-block-head h2 {
     font-size: 24px;
+  }
+
+  .agreement-inline {
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .agreement-dashboard,
+  .agreement-block,
+  .agreement-block-head,
+  .agreement-head-main,
+  .agreement-topline,
+  .agreement-cards,
+  .agreement-total,
+  .agreement-breakdown,
+  .agreement-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .agreement-card {
+    padding: 9px 10px;
+    overflow: hidden;
+  }
+
+  .agreement-problem-cabinets-wrap,
+  .agreement-problem-cabinets,
+  .agreement-problem-cabinets-head,
+  .agreement-problem-cabinet-item {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .agreement-problem-cabinet-name {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .agreement-problem-cabinet-name-main {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agreement-problem-cabinet-subtle {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .agreement-seller-settings {

@@ -265,6 +265,7 @@ async function updateShadowRow(shadowRow, options = {}) {
   try {
     const payload = await fetchCardPayload(shadowRow.nmId, {
       mode: "full",
+      marketFastFail: true,
       previousCoverDuplicate:
         previousData && typeof previousData.coverSlideDuplicate === "boolean"
           ? previousData.coverSlideDuplicate

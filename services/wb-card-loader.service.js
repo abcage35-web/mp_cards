@@ -822,29 +822,42 @@ async function loadRowsByIds(rowIds, options = {}) {
         concurrency: BULK_CONCURRENCY,
       });
 
-      await sleep(1100);
-      for (let index = 0; index < retryIds.length; index += 1) {
-        if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
-          canceled = true;
-          break;
-        }
-        await loadRow(retryIds[index], {
-          silentStart: true,
-          mode,
-          source,
-          actionKey: `${actionKey}-retry`,
-          recordProblemSnapshot: false,
-        });
-        completed += 1;
-        const cancelRequested =
-          typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
-        setBulkLoading(true, `${loadingText} · повтор (${index + 1}/${retryIds.length})...`, actionKey, {
-          total,
-          completed,
-          cancellable: true,
-          cancelRequested,
-          concurrency: BULK_CONCURRENCY,
-        });
+      let retryCompleted = 0;
+      await sleep(320);
+      await runWithConcurrency(
+        retryIds,
+        BULK_CONCURRENCY,
+        async (rowId) => {
+          if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+            canceled = true;
+            return;
+          }
+          await loadRow(rowId, {
+            silentStart: true,
+            mode,
+            source,
+            actionKey: `${actionKey}-retry`,
+            recordProblemSnapshot: false,
+          });
+          retryCompleted += 1;
+          completed += 1;
+          const cancelRequested =
+            typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
+          setBulkLoading(true, `${loadingText} · повтор (${retryCompleted}/${retryIds.length})...`, actionKey, {
+            total,
+            completed,
+            cancellable: true,
+            cancelRequested,
+            concurrency: BULK_CONCURRENCY,
+          });
+        },
+        {
+          shouldStop: () => typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested(),
+        },
+      );
+
+      if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+        canceled = true;
       }
     }
   }
@@ -998,9 +1011,11 @@ async function loadRow(
     }
 
     const loadMode = String(mode || "full").trim() || "full";
+    const marketFastFail = /^(all|problem|scheduled)(?:-retry)?$/.test(String(actionKey || "").trim());
     const payload = await fetchCardPayload(row.nmId, {
       forceHostProbe,
       mode: loadMode,
+      marketFastFail,
       requestSignal,
       previousCoverDuplicate:
         previousData && typeof previousData.coverSlideDuplicate === "boolean"
@@ -1151,6 +1166,7 @@ function getCabinetBySupplierId(supplierIdRaw) {
 async function fetchCardPayload(nmIdRaw, options = {}) {
   const forceHostProbe = Boolean(options.forceHostProbe);
   const mode = String(options.mode || "full").trim() || "full";
+  const marketFastFail = options.marketFastFail === true;
   const requestSignal = options.requestSignal || null;
   const nmId = Number(nmIdRaw);
   if (!Number.isInteger(nmId) || nmId <= 0) {
@@ -1162,7 +1178,7 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
 
   const shouldLoadMarket = mode !== "content-only";
   const marketSnapshotPromise = shouldLoadMarket
-    ? fetchCardMarketSnapshot(nmId, { requestSignal })
+    ? fetchCardMarketSnapshot(nmId, { requestSignal, fastFail: marketFastFail })
     : Promise.resolve(createEmptyMarketSnapshot());
 
   const loadByHost = async (hostSuffix) => {
