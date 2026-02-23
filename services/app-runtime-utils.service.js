@@ -630,8 +630,11 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-function persistState() {
-  const payload = {
+function buildStatePayload(savedAtRaw = null) {
+  const savedAtDate = savedAtRaw ? new Date(savedAtRaw) : new Date();
+  const savedAt = Number.isNaN(savedAtDate.getTime()) ? new Date().toISOString() : savedAtDate.toISOString();
+  return {
+    savedAt,
     rows: state.rows.map((row) => ({
       id: row.id,
       nmId: row.nmId,
@@ -673,124 +676,208 @@ function persistState() {
     updateSnapshots: normalizeProblemSnapshots(state.updateSnapshots),
     chartCabinetFilter: state.chartCabinetFilter,
   };
+}
 
+function persistStateLocalPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
-function restoreState() {
+function readLocalStatePayload() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getStatePayloadSavedAtMs(payload) {
+  if (!payload || typeof payload !== "object") {
+    return 0;
+  }
+  const savedAtRaw = String(payload.savedAt || payload.lastSyncAt || "").trim();
+  if (!savedAtRaw) {
+    return 0;
+  }
+  const savedAtMs = new Date(savedAtRaw).getTime();
+  return Number.isFinite(savedAtMs) ? savedAtMs : 0;
+}
+
+function pickStatePayload(localPayload, remotePayload) {
+  if (localPayload && !remotePayload) {
+    return localPayload;
+  }
+  if (!localPayload && remotePayload) {
+    return remotePayload;
+  }
+  if (!localPayload && !remotePayload) {
+    return null;
+  }
+
+  const localMs = getStatePayloadSavedAtMs(localPayload);
+  const remoteMs = getStatePayloadSavedAtMs(remotePayload);
+  return remoteMs > localMs ? remotePayload : localPayload;
+}
+
+function applyParsedState(parsed) {
+  const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+
+  state.rows = rows.map((row) => ({
+    id: row.id || `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    nmId: String(row.nmId || "").trim(),
+    cabinet: String(row.cabinet || "").trim(),
+    supplierId: normalizeSupplierId(row.supplierId),
+    stockValue: Number.isFinite(row.stockValue) ? row.stockValue : null,
+    inStock: typeof row.inStock === "boolean" ? row.inStock : null,
+    stockSource: String(row.stockSource || ""),
+    currentPrice: Number.isFinite(row.currentPrice)
+      ? row.currentPrice
+      : Number.isFinite(row?.data?.currentPrice)
+        ? row.data.currentPrice
+        : null,
+    basePrice: Number.isFinite(row.basePrice)
+      ? row.basePrice
+      : Number.isFinite(row?.data?.basePrice)
+        ? row.data.basePrice
+        : null,
+    priceSource: String(row.priceSource || ""),
+    loading: false,
+    queuedForRefresh: false,
+    error: row.error ? String(row.error) : "",
+    data: normalizeRowData(row.data),
+    updatedAt: row.updatedAt || null,
+    updateLogs: normalizeRowUpdateLogs(row.updateLogs),
+  }));
+
+  state.basketByVol = parsed.basketByVol && typeof parsed.basketByVol === "object" ? parsed.basketByVol : {};
+  state.lastSyncAt = parsed.lastSyncAt || null;
+  state.controlsCollapsed = Boolean(parsed.controlsCollapsed);
+  state.rowsLimit = normalizeRowsLimit(parsed.rowsLimit);
+  state.autoplayLimitPerCabinet = normalizeAutoplayLimit(parsed.autoplayLimitPerCabinet);
+  state.autoplayLimitByCabinet = normalizeAutoplayLimitMap(parsed.autoplayLimitByCabinet);
+  state.tagsLimitPerCabinet = normalizeTagsLimit(parsed.tagsLimitPerCabinet);
+  state.tagsLimitByCabinet = normalizeTagsLimitMap(parsed.tagsLimitByCabinet);
+  state.onlyErrors = Boolean(parsed.onlyErrors);
+  state.notLoadedOnly = Boolean(parsed.notLoadedOnly);
+  state.checksFiltersOpen = Boolean(parsed.checksFiltersOpen);
+  state.globalFiltersCollapsed = Boolean(parsed.globalFiltersCollapsed);
+  state.globalCategoriesOpen = Boolean(parsed.globalCategoriesOpen);
+  state.categorySearchQuery = String(parsed.categorySearchQuery || "").slice(0, 120);
+  state.globalColumnsOpen = Boolean(parsed.globalColumnsOpen);
+  state.filterCountMode =
+    typeof normalizeFilterCountMode === "function"
+      ? normalizeFilterCountMode(parsed.filterCountMode)
+      : String(parsed.filterCountMode || "problems") === "rows"
+        ? "rows"
+        : "problems";
+  state.rowHistoryHideNoChanges = Boolean(parsed.rowHistoryHideNoChanges);
+  state.autoplayProblemOnly = Boolean(parsed.autoplayProblemOnly);
+  state.tagsProblemOnly = Boolean(parsed.tagsProblemOnly);
+  state.sellerSettings = normalizeSellerSettings(parsed.sellerSettings);
+  state.colorVariantsCache = normalizeColorVariantCache(parsed.colorVariantsCache);
+  state.updateSnapshots = normalizeProblemSnapshots(parsed.updateSnapshots);
+  state.chartCabinetFilter =
+    typeof normalizeProblemsChartCabinetFilter === "function"
+      ? normalizeProblemsChartCabinetFilter(parsed.chartCabinetFilter, state.updateSnapshots)
+      : normalizeDashboardCabinet(parsed.chartCabinetFilter, state.rows);
+  state.rowsPage = 1;
+
+  state.filters = {
+    ...FILTER_DEFAULTS,
+    ...(parsed.filters && typeof parsed.filters === "object" ? parsed.filters : {}),
+  };
+  if (state.filters.recommendations === "na") {
+    state.filters.recommendations = "no";
+  }
+  if (state.filters.autoplay === "na") {
+    state.filters.autoplay = "no";
+  }
+  if (state.filters.video === "na") {
+    state.filters.video = "no";
+  }
+  if (state.filters.tags === "na") {
+    state.filters.tags = "no";
+  }
+  state.filters.cabinet = normalizeDashboardCabinet(state.filters.cabinet, state.rows);
+  state.filters.categoryGroup = normalizeCategoryGroupValue(state.filters.categoryGroup, state.rows);
+}
+
+function resetStateToDefaults() {
+  state.rows = [];
+  state.basketByVol = {};
+  state.lastSyncAt = null;
+  state.controlsCollapsed = false;
+  state.rowsLimit = ROWS_LIMIT_DEFAULT;
+  state.autoplayLimitPerCabinet = AUTOPLAY_LIMIT_DEFAULT;
+  state.autoplayLimitByCabinet = {};
+  state.tagsLimitPerCabinet = TAGS_LIMIT_DEFAULT;
+  state.tagsLimitByCabinet = {};
+  state.onlyErrors = false;
+  state.notLoadedOnly = false;
+  state.checksFiltersOpen = false;
+  state.globalFiltersCollapsed = false;
+  state.globalCategoriesOpen = false;
+  state.categorySearchQuery = "";
+  state.globalColumnsOpen = false;
+  state.filterCountMode = "problems";
+  state.autoplayProblemOnly = false;
+  state.tagsProblemOnly = false;
+  state.rowHistoryHideNoChanges = false;
+  state.sellerSettings = createDefaultSellerSettings();
+  state.colorVariantsCache = {};
+  state.updateSnapshots = [];
+  state.chartCabinetFilter = "all";
+  state.rowsPage = 1;
+  state.filters = { ...FILTER_DEFAULTS };
+}
+
+function persistState() {
+  const payload = buildStatePayload();
+  persistStateLocalPayload(payload);
+  if (typeof queueCloudStateSync === "function") {
+    queueCloudStateSync(payload);
+  }
+}
+
+async function restoreState() {
+  const localPayload = readLocalStatePayload();
+  let remotePayload = null;
+
+  if (typeof loadCloudStatePayload === "function") {
+    try {
+      remotePayload = await loadCloudStatePayload();
+    } catch {
+      remotePayload = null;
+    }
+  }
+
+  const payload = pickStatePayload(localPayload, remotePayload);
+  if (!payload) {
     return;
   }
 
   try {
-    const parsed = JSON.parse(raw);
-    const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
-
-    state.rows = rows.map((row) => ({
-      id: row.id || `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      nmId: String(row.nmId || "").trim(),
-      cabinet: String(row.cabinet || "").trim(),
-      supplierId: normalizeSupplierId(row.supplierId),
-      stockValue: Number.isFinite(row.stockValue) ? row.stockValue : null,
-      inStock: typeof row.inStock === "boolean" ? row.inStock : null,
-      stockSource: String(row.stockSource || ""),
-      currentPrice: Number.isFinite(row.currentPrice)
-        ? row.currentPrice
-        : Number.isFinite(row?.data?.currentPrice)
-          ? row.data.currentPrice
-          : null,
-      basePrice: Number.isFinite(row.basePrice)
-        ? row.basePrice
-        : Number.isFinite(row?.data?.basePrice)
-          ? row.data.basePrice
-          : null,
-      priceSource: String(row.priceSource || ""),
-      loading: false,
-      queuedForRefresh: false,
-      error: row.error ? String(row.error) : "",
-      data: normalizeRowData(row.data),
-      updatedAt: row.updatedAt || null,
-      updateLogs: normalizeRowUpdateLogs(row.updateLogs),
-    }));
-
-    state.basketByVol = parsed.basketByVol && typeof parsed.basketByVol === "object" ? parsed.basketByVol : {};
-    state.lastSyncAt = parsed.lastSyncAt || null;
-    state.controlsCollapsed = Boolean(parsed.controlsCollapsed);
-    state.rowsLimit = normalizeRowsLimit(parsed.rowsLimit);
-    state.autoplayLimitPerCabinet = normalizeAutoplayLimit(parsed.autoplayLimitPerCabinet);
-    state.autoplayLimitByCabinet = normalizeAutoplayLimitMap(parsed.autoplayLimitByCabinet);
-    state.tagsLimitPerCabinet = normalizeTagsLimit(parsed.tagsLimitPerCabinet);
-    state.tagsLimitByCabinet = normalizeTagsLimitMap(parsed.tagsLimitByCabinet);
-    state.onlyErrors = Boolean(parsed.onlyErrors);
-    state.notLoadedOnly = Boolean(parsed.notLoadedOnly);
-    state.checksFiltersOpen = Boolean(parsed.checksFiltersOpen);
-    state.globalFiltersCollapsed = Boolean(parsed.globalFiltersCollapsed);
-    state.globalCategoriesOpen = Boolean(parsed.globalCategoriesOpen);
-    state.categorySearchQuery = String(parsed.categorySearchQuery || "").slice(0, 120);
-    state.globalColumnsOpen = Boolean(parsed.globalColumnsOpen);
-    state.filterCountMode =
-      typeof normalizeFilterCountMode === "function"
-        ? normalizeFilterCountMode(parsed.filterCountMode)
-        : String(parsed.filterCountMode || "problems") === "rows"
-          ? "rows"
-          : "problems";
-    state.rowHistoryHideNoChanges = Boolean(parsed.rowHistoryHideNoChanges);
-    state.autoplayProblemOnly = Boolean(parsed.autoplayProblemOnly);
-    state.tagsProblemOnly = Boolean(parsed.tagsProblemOnly);
-    state.sellerSettings = normalizeSellerSettings(parsed.sellerSettings);
-    state.colorVariantsCache = normalizeColorVariantCache(parsed.colorVariantsCache);
-    state.updateSnapshots = normalizeProblemSnapshots(parsed.updateSnapshots);
-    state.chartCabinetFilter =
-      typeof normalizeProblemsChartCabinetFilter === "function"
-        ? normalizeProblemsChartCabinetFilter(parsed.chartCabinetFilter, state.updateSnapshots)
-        : normalizeDashboardCabinet(parsed.chartCabinetFilter, state.rows);
-    state.rowsPage = 1;
-
-    state.filters = {
-      ...FILTER_DEFAULTS,
-      ...(parsed.filters && typeof parsed.filters === "object" ? parsed.filters : {}),
-    };
-    if (state.filters.recommendations === "na") {
-      state.filters.recommendations = "no";
-    }
-    if (state.filters.autoplay === "na") {
-      state.filters.autoplay = "no";
-    }
-    if (state.filters.video === "na") {
-      state.filters.video = "no";
-    }
-    if (state.filters.tags === "na") {
-      state.filters.tags = "no";
-    }
-    state.filters.cabinet = normalizeDashboardCabinet(state.filters.cabinet, state.rows);
-    state.filters.categoryGroup = normalizeCategoryGroupValue(state.filters.categoryGroup, state.rows);
+    applyParsedState(payload);
   } catch {
-    state.rows = [];
-    state.basketByVol = {};
-    state.lastSyncAt = null;
-    state.controlsCollapsed = false;
-    state.rowsLimit = ROWS_LIMIT_DEFAULT;
-    state.autoplayLimitPerCabinet = AUTOPLAY_LIMIT_DEFAULT;
-    state.autoplayLimitByCabinet = {};
-    state.tagsLimitPerCabinet = TAGS_LIMIT_DEFAULT;
-    state.tagsLimitByCabinet = {};
-    state.onlyErrors = false;
-    state.notLoadedOnly = false;
-    state.checksFiltersOpen = false;
-    state.globalFiltersCollapsed = false;
-    state.globalCategoriesOpen = false;
-    state.categorySearchQuery = "";
-    state.globalColumnsOpen = false;
-    state.filterCountMode = "problems";
-    state.autoplayProblemOnly = false;
-    state.tagsProblemOnly = false;
-    state.sellerSettings = createDefaultSellerSettings();
-    state.colorVariantsCache = {};
-    state.updateSnapshots = [];
-    state.chartCabinetFilter = "all";
-    state.rowsPage = 1;
-    state.filters = { ...FILTER_DEFAULTS };
+    resetStateToDefaults();
+    return;
+  }
+
+  if (payload === remotePayload) {
+    persistStateLocalPayload(payload);
+  } else if (payload === localPayload && typeof queueCloudStateSync === "function") {
+    const localMs = getStatePayloadSavedAtMs(localPayload);
+    const remoteMs = getStatePayloadSavedAtMs(remotePayload);
+    if (!remotePayload || localMs >= remoteMs) {
+      queueCloudStateSync(localPayload);
+    }
   }
 }
 

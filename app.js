@@ -318,10 +318,10 @@ const el = {
   problemsChartContent: document.getElementById("problemsChartContent"),
 };
 
-init();
+init().catch(() => {});
 
-function init() {
-  restoreState();
+async function init() {
+  await restoreState();
   state.sellerSettings = normalizeSellerSettings(state.sellerSettings);
   state.colorVariantsCache = normalizeColorVariantCache(state.colorVariantsCache);
   hydrateStaticIcons();
