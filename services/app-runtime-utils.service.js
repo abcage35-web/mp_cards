@@ -785,6 +785,13 @@ function pickStatePayload(...payloadsRaw) {
   return best;
 }
 
+function getPayloadRowsCount(payload) {
+  if (!payload || typeof payload !== "object") {
+    return 0;
+  }
+  return Array.isArray(payload.rows) ? payload.rows.length : 0;
+}
+
 function applyParsedState(parsed) {
   const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
 
@@ -921,8 +928,14 @@ async function restoreState(options = {}) {
     }
   }
 
-  const payload =
-    preferRemote && canUseCloudSync && remotePayload
+  const localRowsCount = getPayloadRowsCount(localPayload);
+  const remoteRowsCount = getPayloadRowsCount(remotePayload);
+  const useLocalOverEmptyRemote =
+    preferRemote && canUseCloudSync && localPayload && localRowsCount > 0 && remotePayload && remoteRowsCount <= 0;
+
+  const payload = useLocalOverEmptyRemote
+    ? localPayload
+    : preferRemote && canUseCloudSync && remotePayload
       ? remotePayload
       : pickStatePayload(localPayload, remotePayload, shadowPendingPayload);
   if (!payload) {
@@ -947,7 +960,9 @@ async function restoreState(options = {}) {
   } else if (payload === localPayload && canUseCloudSync && typeof queueCloudStateSync === "function") {
     const localMs = getStatePayloadSavedAtMs(localPayload);
     const remoteMs = getStatePayloadSavedAtMs(remotePayload);
-    if (!remotePayload || localMs >= remoteMs) {
+    const remoteRowsCount = getPayloadRowsCount(remotePayload);
+    const localRowsCount = getPayloadRowsCount(localPayload);
+    if (!remotePayload || localMs >= remoteMs || (localRowsCount > 0 && remoteRowsCount <= 0)) {
       queueCloudStateSync(localPayload);
     }
   }
