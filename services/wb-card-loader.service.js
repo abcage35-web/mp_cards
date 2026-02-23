@@ -654,7 +654,7 @@ function mergePriceIntoRow(row, price) {
 
 function isTrustedMarketSource(sourceRaw) {
   const source = String(sourceRaw || "").trim().toLowerCase();
-  return source === "card-v4" || source === "card-v4-proxy";
+  return source === "card-v4";
 }
 
 function applyMarketStabilityGuard(payload, previousData, row) {
@@ -663,11 +663,32 @@ function applyMarketStabilityGuard(payload, previousData, row) {
   }
 
   const previous = previousData && typeof previousData === "object" ? previousData : null;
+  const trustedStockSource = isTrustedMarketSource(payload.stockSource);
+  const trustedPriceSource = isTrustedMarketSource(payload.priceSource);
+  const hasTrustedMarketSource = trustedStockSource || trustedPriceSource;
+
   if (!previous) {
+    // Для новых карточек принимаем рыночные значения только из прямого card-v4.
+    if (!trustedStockSource) {
+      payload.stockValue = null;
+      payload.inStock = null;
+      payload.stockSource = "";
+    }
+
+    if (!trustedPriceSource) {
+      payload.currentPrice = null;
+      payload.basePrice = null;
+      payload.priceSource = "";
+    }
+
+    if (!hasTrustedMarketSource) {
+      payload.rating = null;
+      payload.reviewCount = null;
+    }
+
     return;
   }
-
-  if (!isTrustedMarketSource(payload.stockSource)) {
+  if (!trustedStockSource) {
     const previousStockValue = Number.isFinite(previous.stockValue)
       ? Math.max(0, Math.round(previous.stockValue))
       : Number.isFinite(row?.stockValue)
@@ -687,7 +708,7 @@ function applyMarketStabilityGuard(payload, previousData, row) {
     payload.stockSource = String(previous.stockSource || row?.stockSource || payload.stockSource || "");
   }
 
-  if (!isTrustedMarketSource(payload.priceSource)) {
+  if (!trustedPriceSource) {
     const previousCurrentPrice = Number.isFinite(previous.currentPrice)
       ? Math.max(0, Math.round(previous.currentPrice))
       : Number.isFinite(row?.currentPrice)
