@@ -654,7 +654,7 @@ function mergePriceIntoRow(row, price) {
 
 function isTrustedMarketSource(sourceRaw) {
   const source = String(sourceRaw || "").trim().toLowerCase();
-  return source === "card-v4";
+  return source === "card-v4" || source === "card-v4-proxy";
 }
 
 function applyMarketStabilityGuard(payload, previousData, row) {
@@ -663,100 +663,58 @@ function applyMarketStabilityGuard(payload, previousData, row) {
   }
 
   const previous = previousData && typeof previousData === "object" ? previousData : null;
-  const trustedStockSource = isTrustedMarketSource(payload.stockSource);
-  const trustedPriceSource = isTrustedMarketSource(payload.priceSource);
-  const hasTrustedMarketSource = trustedStockSource || trustedPriceSource;
+  const payloadHasStock = Number.isFinite(payload.stockValue) || typeof payload.inStock === "boolean";
+  const payloadHasPrice = Number.isFinite(payload.currentPrice) || Number.isFinite(payload.basePrice);
+  const payloadStockTrusted = payloadHasStock && isTrustedMarketSource(payload.stockSource);
+  const payloadPriceTrusted = payloadHasPrice && isTrustedMarketSource(payload.priceSource);
 
-  if (!previous) {
-    // Для новых карточек принимаем рыночные значения только из прямого card-v4.
-    if (!trustedStockSource) {
+  if (!payloadStockTrusted) {
+    const previousStockValue = Number.isFinite(previous?.stockValue)
+      ? Math.max(0, Math.round(previous.stockValue))
+      : Number.isFinite(row?.stockValue)
+        ? Math.max(0, Math.round(row.stockValue))
+        : null;
+    const previousInStock =
+      typeof previous?.inStock === "boolean" ? previous.inStock : typeof row?.inStock === "boolean" ? row.inStock : null;
+
+    if (Number.isFinite(previousStockValue)) {
+      payload.stockValue = previousStockValue;
+      payload.inStock = previousStockValue > 0;
+    } else if (typeof previousInStock === "boolean") {
       payload.stockValue = null;
-      payload.inStock = null;
-      payload.stockSource = "";
+      payload.inStock = previousInStock;
     }
 
-    if (!trustedPriceSource) {
-      payload.currentPrice = null;
-      payload.basePrice = null;
-      payload.priceSource = "";
-    }
-
-    if (!hasTrustedMarketSource) {
-      payload.rating = null;
-      payload.reviewCount = null;
-    }
-
-    return;
-  }
-  if (!trustedStockSource) {
-    const previousStockSource = String(previous.stockSource || row?.stockSource || "").trim();
-    const previousStockTrusted = isTrustedMarketSource(previousStockSource);
-
-    if (!previousStockTrusted) {
-      payload.stockValue = null;
-      payload.inStock = null;
-      payload.stockSource = "";
-    } else {
-      const previousStockValue = Number.isFinite(previous.stockValue)
-        ? Math.max(0, Math.round(previous.stockValue))
-        : Number.isFinite(row?.stockValue)
-          ? Math.max(0, Math.round(row.stockValue))
-          : null;
-      const previousInStock =
-        typeof previous.inStock === "boolean"
-          ? previous.inStock
-          : typeof row?.inStock === "boolean"
-            ? row.inStock
-            : null;
-
-      if (Number.isFinite(previousStockValue)) {
-        payload.stockValue = previousStockValue;
-        payload.inStock = previousStockValue > 0;
-      } else if (typeof previousInStock === "boolean") {
-        payload.stockValue = null;
-        payload.inStock = previousInStock;
-      }
-
-      payload.stockSource = String(previous.stockSource || row?.stockSource || payload.stockSource || "");
-    }
+    payload.stockSource = String(previous?.stockSource || row?.stockSource || payload.stockSource || "");
   }
 
-  if (!trustedPriceSource) {
-    const previousPriceSource = String(previous.priceSource || row?.priceSource || "").trim();
-    const previousPriceTrusted = isTrustedMarketSource(previousPriceSource);
+  if (!payloadPriceTrusted) {
+    const previousCurrentPrice = Number.isFinite(previous?.currentPrice)
+      ? Math.max(0, Math.round(previous.currentPrice))
+      : Number.isFinite(row?.currentPrice)
+        ? Math.max(0, Math.round(row.currentPrice))
+        : null;
+    const previousBasePrice = Number.isFinite(previous?.basePrice)
+      ? Math.max(0, Math.round(previous.basePrice))
+      : Number.isFinite(row?.basePrice)
+        ? Math.max(0, Math.round(row.basePrice))
+        : null;
 
-    if (!previousPriceTrusted) {
-      payload.currentPrice = null;
-      payload.basePrice = null;
-      payload.priceSource = "";
-    } else {
-      const previousCurrentPrice = Number.isFinite(previous.currentPrice)
-        ? Math.max(0, Math.round(previous.currentPrice))
-        : Number.isFinite(row?.currentPrice)
-          ? Math.max(0, Math.round(row.currentPrice))
-          : null;
-      const previousBasePrice = Number.isFinite(previous.basePrice)
-        ? Math.max(0, Math.round(previous.basePrice))
-        : Number.isFinite(row?.basePrice)
-          ? Math.max(0, Math.round(row.basePrice))
-          : null;
-
-      if (Number.isFinite(previousCurrentPrice)) {
-        payload.currentPrice = previousCurrentPrice;
-      }
-      if (Number.isFinite(previousBasePrice)) {
-        payload.basePrice = previousBasePrice;
-      }
-
-      payload.priceSource = String(previous.priceSource || row?.priceSource || payload.priceSource || "");
+    if (Number.isFinite(previousCurrentPrice)) {
+      payload.currentPrice = previousCurrentPrice;
     }
+    if (Number.isFinite(previousBasePrice)) {
+      payload.basePrice = previousBasePrice;
+    }
+
+    payload.priceSource = String(previous?.priceSource || row?.priceSource || payload.priceSource || "");
   }
 
-  if (!Number.isFinite(payload.rating) && Number.isFinite(previous.rating)) {
+  if (!Number.isFinite(payload.rating) && Number.isFinite(previous?.rating)) {
     payload.rating = Math.round(Number(previous.rating) * 10) / 10;
   }
 
-  if (!Number.isFinite(payload.reviewCount) && Number.isFinite(previous.reviewCount)) {
+  if (!Number.isFinite(payload.reviewCount) && Number.isFinite(previous?.reviewCount)) {
     payload.reviewCount = Math.max(0, Math.round(previous.reviewCount));
   }
 }
@@ -1065,23 +1023,6 @@ async function loadRow(
         basePrice: payload.basePrice,
         source: payload.priceSource || "card-v4",
       });
-
-      // Если в текущем обновлении нет доверенных рыночных данных,
-      // не оставляем в строке старые "залипшие" значения.
-      if (!Number.isFinite(payload.stockValue) && typeof payload.inStock !== "boolean") {
-        target.stockValue = null;
-        target.inStock = null;
-        target.stockSource = "";
-      }
-
-      if (!Number.isFinite(payload.currentPrice)) {
-        target.currentPrice = null;
-        target.priceSource = "";
-      }
-
-      if (!Number.isFinite(payload.basePrice)) {
-        target.basePrice = null;
-      }
     } else if (loadMode === "content-only" && targetPreviousData) {
       target.data.stockValue = Number.isFinite(targetPreviousData.stockValue)
         ? targetPreviousData.stockValue
@@ -1194,7 +1135,7 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
       { attempts: 2, timeoutMs: FAST_CARD_FETCH_TIMEOUT_MS },
     );
     const marketPromise = shouldLoadMarket
-      ? fetchCardMarketSnapshot(nmId, { basketBase: base, requestSignal, strictPrimary: true })
+      ? fetchCardMarketSnapshot(nmId, { basketBase: base, requestSignal })
       : Promise.resolve(createEmptyMarketSnapshot());
 
     const [card, marketSnapshot] = await Promise.all([cardPromise, marketPromise]);
@@ -1364,7 +1305,7 @@ async function fetchCardMarketSnapshot(nmIdRaw, options = {}) {
     fetchJsonMaybe: (url, config = {}) => fetchJsonMaybe(url, { signal: requestSignal }, config),
     fetchWithRetry: (url, fetchOptions = {}, config = {}) =>
       fetchWithRetry(url, { ...fetchOptions, signal: requestSignal }, config),
-    fetchTimeoutMs: FAST_CARD_FETCH_TIMEOUT_MS,
+    fetchTimeoutMs: FETCH_TIMEOUT_MS,
   });
   if (requestSignal && requestSignal.aborted) {
     throw new Error("Обновление остановлено пользователем");

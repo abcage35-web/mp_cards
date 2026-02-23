@@ -291,7 +291,7 @@
           mode: "cors",
           cache: "no-store",
         },
-        { attempts: 1, timeoutMs: fetchTimeoutMs },
+        { attempts: 2, timeoutMs: fetchTimeoutMs },
       );
 
       if (!response.ok) {
@@ -375,8 +375,8 @@
     const priceHistoryUrl = normalizedBasketBase ? `${normalizedBasketBase}/info/price-history.json` : "";
 
     const fastConfig = {
-      attempts: 1,
-      timeoutMs: Math.max(1800, Math.min(3600, Number(deps?.fetchTimeoutMs) || 3600)),
+      attempts: 2,
+      timeoutMs: Math.max(3000, Math.min(7000, Number(deps?.fetchTimeoutMs) || 7000)),
     };
 
     const [qtyResponse, priceHistoryResponse] = await Promise.all([
@@ -418,7 +418,6 @@
 
     const nmId = Number(nmIdRaw);
     const basketBase = typeof options?.basketBase === "string" ? options.basketBase.trim() : "";
-    const strictPrimary = options?.strictPrimary === true;
     if (!Number.isInteger(nmId) || nmId <= 0) {
       return createEmptyMarketSnapshot();
     }
@@ -428,8 +427,8 @@
     }
 
     const fastConfig = {
-      attempts: 2,
-      timeoutMs: Math.max(2200, Math.min(5200, fetchTimeoutMs)),
+      attempts: 3,
+      timeoutMs: Math.max(5000, Math.min(10000, fetchTimeoutMs)),
     };
 
     const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
@@ -441,10 +440,6 @@
         snapshot,
         extractMarketSnapshotFromCardV4(response.data, nmId, "card-v4"),
       );
-    }
-
-    if (strictPrimary) {
-      return snapshot;
     }
 
     if (snapshot.currentPrice === null || snapshot.stockValue === null) {
