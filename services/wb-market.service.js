@@ -97,6 +97,24 @@
     );
   }
 
+  function isOutOfStockSnapshot(snapshotRaw) {
+    const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
+    if (typeof snapshot.inStock === "boolean") {
+      return snapshot.inStock === false;
+    }
+    if (Number.isFinite(snapshot.stockValue)) {
+      return Math.max(0, Math.round(snapshot.stockValue)) <= 0;
+    }
+    return false;
+  }
+
+  function hasCoreMarketData(snapshotRaw) {
+    const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
+    const hasStock = Number.isFinite(snapshot.stockValue) || typeof snapshot.inStock === "boolean";
+    const hasPrice = Number.isFinite(snapshot.currentPrice) || Number.isFinite(snapshot.basePrice) || isOutOfStockSnapshot(snapshot);
+    return hasStock && hasPrice;
+  }
+
   function mergeMarketSnapshots(primaryRaw, patchRaw) {
     const primary = primaryRaw && typeof primaryRaw === "object" ? primaryRaw : createEmptyMarketSnapshot();
     const patch = patchRaw && typeof patchRaw === "object" ? patchRaw : createEmptyMarketSnapshot();
@@ -300,11 +318,12 @@
   function buildMissingMarketFields(snapshotRaw) {
     const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
     const missing = [];
+    const outOfStock = isOutOfStockSnapshot(snapshot);
 
     if (!Number.isFinite(snapshot.stockValue) && typeof snapshot.inStock !== "boolean") {
       missing.push("остаток");
     }
-    if (!Number.isFinite(snapshot.currentPrice)) {
+    if (!outOfStock && !Number.isFinite(snapshot.currentPrice) && !Number.isFinite(snapshot.basePrice)) {
       missing.push("цена");
     }
     if (!Number.isFinite(snapshot.rating)) {
@@ -321,9 +340,14 @@
     const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
     const missing = buildMissingMarketFields(snapshot);
     const hasCoreGap = missing.includes("остаток") || missing.includes("цена");
+    const normalizedError = String(snapshot.marketError || "").trim().toLowerCase();
+
     if (hasCoreGap && !snapshot.marketError) {
       snapshot.marketError = `card-v4: не получены поля: ${missing.join(", ")}`;
+    } else if (!hasCoreGap && normalizedError.startsWith("card-v4: не получены поля")) {
+      snapshot.marketError = "";
     }
+
     return snapshot;
   }
 
@@ -447,7 +471,7 @@
       reconnectConfig,
     );
 
-    if (hasAnyMarketData(backend.snapshot)) {
+    if (hasCoreMarketData(backend.snapshot)) {
       return backend.snapshot;
     }
 
@@ -459,12 +483,12 @@
       reconnectConfig,
     );
 
-    if (hasAnyMarketData(direct.snapshot)) {
-      return direct.snapshot;
+    if (hasAnyMarketData(direct.snapshot) || hasAnyMarketData(backend.snapshot)) {
+      return withCoreMarketWarning(mergeMarketSnapshots(backend.snapshot, direct.snapshot));
     }
 
-    const merged = mergeMarketSnapshots(createEmptyMarketSnapshot(), direct.snapshot);
-    merged.marketError = backend.error || direct.error || "Рыночные данные временно недоступны";
+    const merged = withCoreMarketWarning(mergeMarketSnapshots(createEmptyMarketSnapshot(), direct.snapshot));
+    merged.marketError = backend.error || direct.error || merged.marketError || "Рыночные данные временно недоступны";
     return merged;
   }
 
