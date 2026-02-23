@@ -427,8 +427,8 @@
     }
 
     const fastConfig = {
-      attempts: 1,
-      timeoutMs: Math.max(1800, Math.min(4200, fetchTimeoutMs)),
+      attempts: 2,
+      timeoutMs: Math.max(2200, Math.min(5200, fetchTimeoutMs)),
     };
 
     const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;

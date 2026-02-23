@@ -752,20 +752,11 @@ function applyMarketStabilityGuard(payload, previousData, row) {
     }
   }
 
-  const previousStockSource = String(previous.stockSource || row?.stockSource || "").trim();
-  const previousPriceSource = String(previous.priceSource || row?.priceSource || "").trim();
-  const previousHadTrustedMarketSource =
-    isTrustedMarketSource(previousStockSource) || isTrustedMarketSource(previousPriceSource);
-
-  if (!Number.isFinite(payload.rating) && Number.isFinite(previous.rating) && previousHadTrustedMarketSource) {
+  if (!Number.isFinite(payload.rating) && Number.isFinite(previous.rating)) {
     payload.rating = Math.round(Number(previous.rating) * 10) / 10;
   }
 
-  if (
-    !Number.isFinite(payload.reviewCount) &&
-    Number.isFinite(previous.reviewCount) &&
-    previousHadTrustedMarketSource
-  ) {
+  if (!Number.isFinite(payload.reviewCount) && Number.isFinite(previous.reviewCount)) {
     payload.reviewCount = Math.max(0, Math.round(previous.reviewCount));
   }
 }
@@ -1074,6 +1065,23 @@ async function loadRow(
         basePrice: payload.basePrice,
         source: payload.priceSource || "card-v4",
       });
+
+      // Если в текущем обновлении нет доверенных рыночных данных,
+      // не оставляем в строке старые "залипшие" значения.
+      if (!Number.isFinite(payload.stockValue) && typeof payload.inStock !== "boolean") {
+        target.stockValue = null;
+        target.inStock = null;
+        target.stockSource = "";
+      }
+
+      if (!Number.isFinite(payload.currentPrice)) {
+        target.currentPrice = null;
+        target.priceSource = "";
+      }
+
+      if (!Number.isFinite(payload.basePrice)) {
+        target.basePrice = null;
+      }
     } else if (loadMode === "content-only" && targetPreviousData) {
       target.data.stockValue = Number.isFinite(targetPreviousData.stockValue)
         ? targetPreviousData.stockValue
