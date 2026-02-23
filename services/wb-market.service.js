@@ -413,11 +413,9 @@
 
   async function fetchCardMarketSnapshot(nmIdRaw, options, deps) {
     const fetchJsonMaybe = deps?.fetchJsonMaybe;
-    const fetchWithRetry = deps?.fetchWithRetry;
     const fetchTimeoutMs = Number(deps?.fetchTimeoutMs) || 12000;
 
     const nmId = Number(nmIdRaw);
-    const basketBase = typeof options?.basketBase === "string" ? options.basketBase.trim() : "";
     if (!Number.isInteger(nmId) || nmId <= 0) {
       return createEmptyMarketSnapshot();
     }
@@ -430,37 +428,26 @@
       attempts: 3,
       timeoutMs: Math.max(5000, Math.min(10000, fetchTimeoutMs)),
     };
+    const reconnectConfig = {
+      attempts: 2,
+      timeoutMs: Math.max(8000, fetchTimeoutMs),
+    };
 
     const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
     let snapshot = createEmptyMarketSnapshot();
 
-    const response = await fetchJsonMaybe(endpoint, fastConfig);
+    let response = await fetchJsonMaybe(endpoint, fastConfig);
+
+    // Переподключение: повторяем запрос к тому же card-v4 endpoint с более мягкими настройками.
+    if (!(response.ok && response.data)) {
+      response = await fetchJsonMaybe(endpoint, reconnectConfig);
+    }
+
     if (response.ok && response.data) {
       snapshot = mergeMarketSnapshots(
         snapshot,
         extractMarketSnapshotFromCardV4(response.data, nmId, "card-v4"),
       );
-    }
-
-    if (snapshot.currentPrice === null || snapshot.stockValue === null) {
-      const proxyData = await fetchCardV4ViaProxy(endpoint, {
-        fetchWithRetry,
-        fetchTimeoutMs,
-      });
-      if (proxyData) {
-        snapshot = mergeMarketSnapshots(
-          snapshot,
-          extractMarketSnapshotFromCardV4(proxyData, nmId, "card-v4-proxy"),
-        );
-      }
-    }
-
-    if (snapshot.currentPrice === null || snapshot.stockValue === null) {
-      const fallbackSnapshot = await fetchFallbackMarketSnapshot(nmId, basketBase, {
-        fetchJsonMaybe,
-        fetchTimeoutMs,
-      });
-      snapshot = mergeMarketSnapshots(snapshot, fallbackSnapshot);
     }
 
     return snapshot;

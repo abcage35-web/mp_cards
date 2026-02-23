@@ -654,7 +654,7 @@ function mergePriceIntoRow(row, price) {
 
 function isTrustedMarketSource(sourceRaw) {
   const source = String(sourceRaw || "").trim().toLowerCase();
-  return source === "card-v4" || source === "card-v4-proxy";
+  return source === "card-v4";
 }
 
 function applyMarketStabilityGuard(payload, previousData, row) {
