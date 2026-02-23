@@ -1,5 +1,5 @@
-const STATIC_CACHE = "wb-dashboard-static-v1";
-const IMAGE_CACHE = "wb-dashboard-images-v1";
+const STATIC_CACHE = "wb-dashboard-static-v2";
+const IMAGE_CACHE = "wb-dashboard-images-v2";
 
 const STATIC_ASSETS = ["./", "./index.html", "./app.css", "./app.js"];
 
