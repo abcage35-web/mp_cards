@@ -1,4 +1,6 @@
 (function initWBMarketService(global) {
+  const MARKET_BACKEND_ENDPOINT = "/api/wb-market";
+
   function createEmptyMarketSnapshot() {
     return {
       stockValue: null,
@@ -9,6 +11,7 @@
       priceSource: "",
       rating: null,
       reviewCount: null,
+      marketError: "",
     };
   }
 
@@ -68,6 +71,18 @@
     );
   }
 
+  function hasAnyMarketData(snapshotRaw) {
+    const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
+    return (
+      Number.isFinite(snapshot.stockValue) ||
+      typeof snapshot.inStock === "boolean" ||
+      Number.isFinite(snapshot.currentPrice) ||
+      Number.isFinite(snapshot.basePrice) ||
+      Number.isFinite(snapshot.rating) ||
+      Number.isFinite(snapshot.reviewCount)
+    );
+  }
+
   function mergeMarketSnapshots(primaryRaw, patchRaw) {
     const primary = primaryRaw && typeof primaryRaw === "object" ? primaryRaw : createEmptyMarketSnapshot();
     const patch = patchRaw && typeof patchRaw === "object" ? patchRaw : createEmptyMarketSnapshot();
@@ -81,6 +96,7 @@
       priceSource: String(primary.priceSource || ""),
       rating: Number.isFinite(primary.rating) ? Math.round(Number(primary.rating) * 10) / 10 : null,
       reviewCount: Number.isFinite(primary.reviewCount) ? Math.max(0, Math.round(primary.reviewCount)) : null,
+      marketError: String(primary.marketError || ""),
     };
 
     if (!Number.isFinite(merged.stockValue) && Number.isFinite(patch.stockValue)) {
@@ -109,6 +125,10 @@
     }
     if (!Number.isFinite(merged.reviewCount) && Number.isFinite(patch.reviewCount)) {
       merged.reviewCount = Math.max(0, Math.round(patch.reviewCount));
+    }
+
+    if (!merged.marketError && patch.marketError) {
+      merged.marketError = String(patch.marketError);
     }
 
     return merged;
@@ -239,7 +259,6 @@
       return createEmptyMarketSnapshot();
     }
     const products = Array.isArray(payload?.products) ? payload.products : [];
-    // Строгий матч по nmId: не берем products[0], чтобы не подмешивать чужой артикул.
     const product = products.find((item) => extractNmIdFromEntry(item) === targetNmId) || null;
 
     if (!product || typeof product !== "object") {
@@ -260,160 +279,116 @@
       priceSource: price.currentPrice !== null ? snapshotSource : "",
       rating: Number.isFinite(rating) ? Math.round(rating * 10) / 10 : null,
       reviewCount: Number.isFinite(reviewCount) ? reviewCount : null,
+      marketError: "",
     };
   }
 
-  function extractFirstJsonObject(textRaw) {
-    const text = String(textRaw || "");
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start < 0 || end <= start) {
-      return "";
+  function buildMissingMarketFields(snapshotRaw) {
+    const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
+    const missing = [];
+
+    if (!Number.isFinite(snapshot.stockValue) && typeof snapshot.inStock !== "boolean") {
+      missing.push("остаток");
     }
-    return text.slice(start, end + 1).trim();
+    if (!Number.isFinite(snapshot.currentPrice)) {
+      missing.push("цена");
+    }
+    if (!Number.isFinite(snapshot.rating)) {
+      missing.push("рейтинг");
+    }
+    if (!Number.isFinite(snapshot.reviewCount)) {
+      missing.push("отзывы");
+    }
+
+    return missing;
   }
 
-  async function fetchCardV4ViaProxy(endpoint, deps) {
-    const fetchWithRetry = deps?.fetchWithRetry;
-    const fetchTimeoutMs = Number(deps?.fetchTimeoutMs) || 12000;
+  function withCoreMarketWarning(snapshotRaw) {
+    const snapshot = snapshotRaw && typeof snapshotRaw === "object" ? snapshotRaw : createEmptyMarketSnapshot();
+    const missing = buildMissingMarketFields(snapshot);
+    const hasCoreGap = missing.includes("остаток") || missing.includes("цена");
+    if (hasCoreGap && !snapshot.marketError) {
+      snapshot.marketError = `card-v4: не получены поля: ${missing.join(", ")}`;
+    }
+    return snapshot;
+  }
 
-    if (typeof endpoint !== "string" || !endpoint.trim() || typeof fetchWithRetry !== "function") {
+  function normalizeMarketSnapshotFromBackend(payloadRaw) {
+    const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : null;
+    if (!payload || payload.ok !== true || !payload.snapshot || typeof payload.snapshot !== "object") {
       return null;
     }
 
-    const proxyUrl = `https://r.jina.ai/http://${endpoint.replace(/^https?:\/\//i, "")}`;
-
-    try {
-      const response = await fetchWithRetry(
-        proxyUrl,
-        {
-          method: "GET",
-          mode: "cors",
-          cache: "no-store",
-        },
-        { attempts: 2, timeoutMs: fetchTimeoutMs },
-      );
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const text = await response.text();
-      const payloadText = extractFirstJsonObject(text);
-      if (!payloadText) {
-        return null;
-      }
-
-      const parsed = JSON.parse(payloadText);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      return null;
+    const snapshot = mergeMarketSnapshots(createEmptyMarketSnapshot(), payload.snapshot);
+    if (snapshot.stockSource) {
+      snapshot.stockSource = "card-v4";
     }
+    if (snapshot.priceSource) {
+      snapshot.priceSource = "card-v4";
+    }
+    snapshot.marketError = String(payload.snapshot.marketError || "").trim();
+    return snapshot;
   }
 
-  function extractStockFromProductOrderQntPayload(payload, nmIdRaw) {
-    const targetNmId = toPositiveInteger(nmIdRaw);
-    if (!Number.isInteger(targetNmId) || targetNmId <= 0) {
-      return {
-        stockValue: null,
-        inStock: null,
-      };
-    }
-    const items = Array.isArray(payload) ? payload : [];
-    const item = items.find((entry) => extractNmIdFromEntry(entry) === targetNmId) || null;
-    if (!item || typeof item !== "object") {
-      return {
-        stockValue: null,
-        inStock: null,
-      };
-    }
-    const value = toFiniteNumber(item?.qnt ?? item?.qty ?? item?.quantity ?? item?.stock ?? item?.totalQuantity);
+  async function fetchMarketSnapshotViaBackend(nmId, requestSignal, fetchJsonMaybe, fastConfig, reconnectConfig) {
+    const endpoint = `${MARKET_BACKEND_ENDPOINT}?nm=${nmId}`;
 
-    if (value !== null) {
-      const normalized = Math.max(0, Math.round(value));
+    let response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, fastConfig);
+    if (!(response.ok && response.data && response.data.ok === true)) {
+      response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, reconnectConfig);
+    }
+
+    const snapshot = normalizeMarketSnapshotFromBackend(response.data);
+    if (snapshot) {
       return {
-        stockValue: normalized,
-        inStock: normalized > 0,
+        snapshot: withCoreMarketWarning(snapshot),
+        error: "",
       };
     }
+
+    const backendError =
+      String(response?.data?.error || "").trim() ||
+      String(response?.message || "").trim() ||
+      "Cloudflare market endpoint недоступен";
 
     return {
-      stockValue: null,
-      inStock: null,
+      snapshot: createEmptyMarketSnapshot(),
+      error: `backend: ${backendError}`,
     };
   }
 
-  function extractCurrentPriceFromPriceHistoryPayload(payload) {
-    const items = Array.isArray(payload) ? payload : [];
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const entry = items[index];
-      if (!entry || typeof entry !== "object") {
-        continue;
-      }
+  async function fetchMarketSnapshotDirect(nmId, requestSignal, fetchJsonMaybe, fastConfig, reconnectConfig) {
+    const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
 
-      const value =
-        toRubFromMinorUnits(entry?.price?.RUB) ??
-        toRubFromMinorUnits(entry?.price?.rub) ??
-        toRubFromMinorUnits(entry?.RUB) ??
-        toRubFromMinorUnits(entry?.rub);
-      if (Number.isFinite(value)) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  async function fetchFallbackMarketSnapshot(nmIdRaw, basketBase, deps) {
-    const fetchJsonMaybe = deps?.fetchJsonMaybe;
-    const nmId = Number(nmIdRaw);
-    if (!Number.isInteger(nmId) || nmId <= 0 || typeof fetchJsonMaybe !== "function") {
-      return createEmptyMarketSnapshot();
+    let response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, fastConfig);
+    if (!(response.ok && response.data)) {
+      response = await fetchJsonMaybe(endpoint, { signal: requestSignal }, reconnectConfig);
     }
 
-    const normalizedBasketBase = typeof basketBase === "string" ? basketBase.trim() : "";
-    const qtyUrl = `https://product-order-qnt.wildberries.ru/by-nm/?nm=${nmId}`;
-    const priceHistoryUrl = normalizedBasketBase ? `${normalizedBasketBase}/info/price-history.json` : "";
+    if (response.ok && response.data) {
+      return {
+        snapshot: withCoreMarketWarning(
+          extractMarketSnapshotFromCardV4(response.data, nmId, "card-v4"),
+        ),
+        error: "",
+      };
+    }
 
-    const fastConfig = {
-      attempts: 2,
-      timeoutMs: Math.max(3000, Math.min(7000, Number(deps?.fetchTimeoutMs) || 7000)),
+    const directError =
+      String(response?.message || "").trim() ||
+      String(response?.data?.error || "").trim() ||
+      "card-v4 недоступен";
+
+    return {
+      snapshot: createEmptyMarketSnapshot(),
+      error: `direct: ${directError}`,
     };
-
-    const [qtyResponse, priceHistoryResponse] = await Promise.all([
-      fetchJsonMaybe(qtyUrl, fastConfig),
-      priceHistoryUrl
-        ? fetchJsonMaybe(priceHistoryUrl, fastConfig)
-        : Promise.resolve({ ok: false, message: "no-price-url" }),
-    ]);
-
-    const snapshot = createEmptyMarketSnapshot();
-
-    if (qtyResponse.ok && qtyResponse.data) {
-      const stock = extractStockFromProductOrderQntPayload(qtyResponse.data, nmId);
-      if (Number.isFinite(stock.stockValue)) {
-        snapshot.stockValue = stock.stockValue;
-        snapshot.inStock = stock.stockValue > 0;
-        snapshot.stockSource = "product-order-qnt";
-      } else if (typeof stock.inStock === "boolean") {
-        snapshot.inStock = stock.inStock;
-        snapshot.stockSource = "product-order-qnt";
-      }
-    }
-
-    if (priceHistoryResponse.ok && priceHistoryResponse.data) {
-      const historyPrice = extractCurrentPriceFromPriceHistoryPayload(priceHistoryResponse.data);
-      if (Number.isFinite(historyPrice)) {
-        snapshot.currentPrice = Math.max(0, Math.round(historyPrice));
-        snapshot.priceSource = "price-history";
-      }
-    }
-
-    return snapshot;
   }
 
   async function fetchCardMarketSnapshot(nmIdRaw, options, deps) {
     const fetchJsonMaybe = deps?.fetchJsonMaybe;
     const fetchTimeoutMs = Number(deps?.fetchTimeoutMs) || 12000;
+    const requestSignal = options?.requestSignal || null;
 
     const nmId = Number(nmIdRaw);
     if (!Number.isInteger(nmId) || nmId <= 0) {
@@ -425,32 +400,41 @@
     }
 
     const fastConfig = {
-      attempts: 3,
-      timeoutMs: Math.max(5000, Math.min(10000, fetchTimeoutMs)),
+      attempts: 2,
+      timeoutMs: Math.max(2600, Math.min(8000, fetchTimeoutMs)),
     };
     const reconnectConfig = {
       attempts: 2,
-      timeoutMs: Math.max(8000, fetchTimeoutMs),
+      timeoutMs: Math.max(5000, fetchTimeoutMs),
     };
 
-    const endpoint = `https://card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm=${nmId}`;
-    let snapshot = createEmptyMarketSnapshot();
+    const backend = await fetchMarketSnapshotViaBackend(
+      nmId,
+      requestSignal,
+      fetchJsonMaybe,
+      fastConfig,
+      reconnectConfig,
+    );
 
-    let response = await fetchJsonMaybe(endpoint, fastConfig);
-
-    // Переподключение: повторяем запрос к тому же card-v4 endpoint с более мягкими настройками.
-    if (!(response.ok && response.data)) {
-      response = await fetchJsonMaybe(endpoint, reconnectConfig);
+    if (hasAnyMarketData(backend.snapshot)) {
+      return backend.snapshot;
     }
 
-    if (response.ok && response.data) {
-      snapshot = mergeMarketSnapshots(
-        snapshot,
-        extractMarketSnapshotFromCardV4(response.data, nmId, "card-v4"),
-      );
+    const direct = await fetchMarketSnapshotDirect(
+      nmId,
+      requestSignal,
+      fetchJsonMaybe,
+      fastConfig,
+      reconnectConfig,
+    );
+
+    if (hasAnyMarketData(direct.snapshot)) {
+      return direct.snapshot;
     }
 
-    return snapshot;
+    const merged = mergeMarketSnapshots(createEmptyMarketSnapshot(), direct.snapshot);
+    merged.marketError = backend.error || direct.error || "Рыночные данные временно недоступны";
+    return merged;
   }
 
   global.WBMarketService = {

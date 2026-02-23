@@ -168,6 +168,7 @@ function captureRowUpdateSnapshot(row) {
   return {
     hasData: Boolean(data),
     error: String(row?.error || "").trim(),
+    marketError: String(data?.marketError || "").trim(),
     hasRich: data?.hasRich === true ? true : data?.hasRich === false ? false : null,
     richCount: Number.isFinite(richCount) ? Number(richCount) : null,
     hasRecommendations:
@@ -223,6 +224,10 @@ function getActionLabel(actionKeyRaw) {
 
 function formatSnapshotValue(field, value) {
   if (field === "error") {
+    return value ? String(value) : "нет";
+  }
+
+  if (field === "marketError") {
     return value ? String(value) : "нет";
   }
 
@@ -291,6 +296,7 @@ function getRowUpdateChanges(beforeSnapshot, afterSnapshot) {
   const fieldMap = [
     { key: "hasData", label: "Данные карточки" },
     { key: "error", label: "Ошибка" },
+    { key: "marketError", label: "Рынок: ошибка источника" },
     { key: "hasRecommendations", label: "Рекомендации" },
     { key: "recommendationKnownCount", label: "Кол-во рекомендаций" },
     { key: "hasRich", label: "Рич-контент" },
@@ -717,6 +723,15 @@ function applyMarketStabilityGuard(payload, previousData, row) {
   if (!Number.isFinite(payload.reviewCount) && Number.isFinite(previous?.reviewCount)) {
     payload.reviewCount = Math.max(0, Math.round(previous.reviewCount));
   }
+
+  const nextMarketError = String(payload.marketError || "").trim();
+  if (payloadStockTrusted && payloadPriceTrusted && Number.isFinite(payload.rating) && Number.isFinite(payload.reviewCount)) {
+    payload.marketError = "";
+  } else if (!nextMarketError && previous?.marketError) {
+    payload.marketError = String(previous.marketError).trim();
+  } else {
+    payload.marketError = nextMarketError;
+  }
 }
 
 async function loadRowsByIds(rowIds, options = {}) {
@@ -1042,6 +1057,7 @@ async function loadRow(
       target.data.reviewCount = Number.isFinite(targetPreviousData.reviewCount)
         ? Math.max(0, Math.round(targetPreviousData.reviewCount))
         : null;
+      target.data.marketError = String(targetPreviousData.marketError || "");
     }
 
     if (typeof prefetchColorVariantsForRow === "function") {
@@ -1079,6 +1095,14 @@ async function loadRow(
     if (target) {
       const afterSnapshot = captureRowUpdateSnapshot(target);
       const changes = getRowUpdateChanges(beforeSnapshot, afterSnapshot);
+      if (changes.length === 0 && afterSnapshot.marketError) {
+        changes.push({
+          field: "marketError",
+          label: "Рынок: ошибка источника",
+          beforeText: "повтор",
+          afterText: afterSnapshot.marketError,
+        });
+      }
       appendRowUpdateLog(target, {
         at: new Date().toISOString(),
         source,
@@ -1289,6 +1313,7 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
     reviewCount: Number.isFinite(marketSnapshot.reviewCount)
       ? Math.max(0, Math.round(marketSnapshot.reviewCount))
       : null,
+    marketError: String(marketSnapshot.marketError || "").trim(),
   };
 }
 
@@ -1324,6 +1349,7 @@ function createEmptyMarketSnapshot() {
     priceSource: "",
     rating: null,
     reviewCount: null,
+    marketError: "",
   };
 }
 
@@ -1354,6 +1380,7 @@ function normalizeRowData(dataRaw) {
   data.priceSource = String(data.priceSource || "");
   data.rating = Number.isFinite(data.rating) ? Math.round(Number(data.rating) * 10) / 10 : null;
   data.reviewCount = Number.isFinite(data.reviewCount) ? Math.max(0, Math.round(data.reviewCount)) : null;
+  data.marketError = String(data.marketError || "").trim();
   data.cardCode = normalizeCardCode(data.cardCode ?? data.vendorCode ?? data.vendor_code);
   data.coverSlideDuplicate =
     data.coverSlideDuplicate === true ? true : data.coverSlideDuplicate === false ? false : null;

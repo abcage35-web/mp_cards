@@ -10,7 +10,7 @@
 ### Данные WB
 - `wb-market.service.js`
   - Снимок рынка по карточке: остатки, текущая и базовая цена.
-  - Fallback-цепочка источников (`card.wb.ru` + запасные источники).
+  - Backend-first цепочка: `/api/wb-market` (Cloudflare) и fallback на прямой `card.wb.ru`.
   - API: `window.WBMarketService.fetchCardMarketSnapshot(...)`.
 
 - `wb-seller.service.js`
