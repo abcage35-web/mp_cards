@@ -547,6 +547,7 @@ async function handleLoadProblematic() {
       total,
       completed: 0,
       cancellable: true,
+      concurrency: 1,
     });
 
     for (let index = 0; index < total; index += 1) {
@@ -587,6 +588,7 @@ async function handleLoadProblematic() {
         completed,
         cancellable: true,
         cancelRequested,
+        concurrency: 1,
       });
 
       if (cancelRequested) {
@@ -620,6 +622,7 @@ async function handleLoadProblematic() {
         total,
         completed,
         canceled,
+        concurrency: 1,
       },
     );
     renderSummary();

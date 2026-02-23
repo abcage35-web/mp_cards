@@ -8,9 +8,45 @@ function ensureBulkProgressState() {
       completed: 0,
       startedAt: 0,
       hideTimer: 0,
+      tickTimer: 0,
+      singleEstimateMs: 10000,
+      lastSingleDurationMs: 0,
+      concurrency: 1,
+      lastCompletedAt: 0,
+      etaAnchorAt: 0,
+      etaAnchorMs: NaN,
+      etaCheckpointCompleted: 0,
       finalState: "idle",
       cancelRequested: false,
     };
+  }
+
+  if (!Number.isFinite(state.bulkProgress.tickTimer)) {
+    state.bulkProgress.tickTimer = 0;
+  }
+  if (!Number.isFinite(state.bulkProgress.singleEstimateMs)) {
+    state.bulkProgress.singleEstimateMs = 10000;
+  }
+  if (!Number.isFinite(state.bulkProgress.lastSingleDurationMs)) {
+    state.bulkProgress.lastSingleDurationMs = 0;
+  }
+  if (!Number.isFinite(state.bulkProgress.concurrency)) {
+    state.bulkProgress.concurrency = 1;
+  }
+  if (!Number.isFinite(state.bulkProgress.lastCompletedAt)) {
+    state.bulkProgress.lastCompletedAt = 0;
+  }
+  if (!Number.isFinite(state.bulkProgress.etaAnchorAt)) {
+    state.bulkProgress.etaAnchorAt = 0;
+  }
+  if (
+    !Number.isFinite(state.bulkProgress.etaCheckpointCompleted) ||
+    state.bulkProgress.etaCheckpointCompleted < 0
+  ) {
+    state.bulkProgress.etaCheckpointCompleted = 0;
+  }
+  if (!Number.isFinite(state.bulkProgress.etaAnchorMs) || state.bulkProgress.etaAnchorMs < 0) {
+    state.bulkProgress.etaAnchorMs = NaN;
   }
 
   return state.bulkProgress;
@@ -21,6 +57,224 @@ function clearBulkProgressHideTimer(progress = ensureBulkProgressState()) {
     clearTimeout(progress.hideTimer);
     progress.hideTimer = 0;
   }
+}
+
+function clearBulkProgressTickTimer(progress = ensureBulkProgressState()) {
+  if (progress.tickTimer) {
+    clearTimeout(progress.tickTimer);
+    progress.tickTimer = 0;
+  }
+}
+
+function normalizeSingleEstimateMs(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return 10000;
+  }
+  return Math.max(3500, Math.min(45000, Math.round(value)));
+}
+
+function normalizeBulkConcurrency(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.min(8, Math.round(value)));
+}
+
+function ensureBulkSingleEstimate(progress = ensureBulkProgressState()) {
+  progress.singleEstimateMs = normalizeSingleEstimateMs(progress.singleEstimateMs);
+  return progress.singleEstimateMs;
+}
+
+function getBulkEstimatedItemMs(progress, elapsedMs, completed) {
+  const baseEstimateMs = ensureBulkSingleEstimate(progress);
+  if (!(completed > 0) || !(elapsedMs > 280)) {
+    return baseEstimateMs;
+  }
+
+  const concurrency = normalizeBulkConcurrency(progress.concurrency);
+  const inferredMs = (Math.max(1, elapsedMs) * concurrency) / Math.max(1, completed);
+  if (!Number.isFinite(inferredMs) || inferredMs <= 0) {
+    return baseEstimateMs;
+  }
+
+  return normalizeSingleEstimateMs(baseEstimateMs * 0.35 + inferredMs * 0.65);
+}
+
+function getBulkEstimatedRemainingMs(progress, elapsedMs, completed, total) {
+  if (!(total > 0) || completed >= total) {
+    return 0;
+  }
+
+  const concurrency = normalizeBulkConcurrency(progress.concurrency);
+  const estimateMs = getBulkEstimatedItemMs(progress, elapsedMs, completed);
+  const remainingItems = Math.max(0, total - completed);
+  const queueMs = (remainingItems * Math.max(1200, estimateMs)) / Math.max(1, concurrency);
+  const overheadMs = remainingItems > 0 ? Math.min(5000, remainingItems * 260) : 0;
+  return Math.max(900, Math.round(queueMs + overheadMs));
+}
+
+function getBulkEtaRemainingMs(progress, nowMs = Date.now()) {
+  if (
+    !Number.isFinite(progress.etaAnchorMs) ||
+    progress.etaAnchorMs < 0 ||
+    !Number.isFinite(progress.etaAnchorAt) ||
+    progress.etaAnchorAt <= 0
+  ) {
+    return NaN;
+  }
+
+  const elapsedFromAnchor = Math.max(0, nowMs - progress.etaAnchorAt);
+  return progress.etaAnchorMs - elapsedFromAnchor;
+}
+
+function refreshBulkEtaAnchor(progress, elapsedMs, completed, total, options = {}) {
+  const force = options && options.force === true;
+  const allowIncrease = options && options.allowIncrease === true;
+  if (!(total > 0)) {
+    progress.etaAnchorAt = 0;
+    progress.etaAnchorMs = NaN;
+    progress.etaCheckpointCompleted = Math.max(0, Math.round(Number(completed) || 0));
+    return;
+  }
+
+  if (completed >= total) {
+    progress.etaAnchorAt = Date.now();
+    progress.etaAnchorMs = 0;
+    progress.etaCheckpointCompleted = total;
+    return;
+  }
+
+  const normalizedCompleted = Math.max(0, Math.round(Number(completed) || 0));
+  const shouldRecalculate =
+    force ||
+    !Number.isFinite(progress.etaAnchorMs) ||
+    progress.etaAnchorMs <= 0 ||
+    normalizedCompleted !== progress.etaCheckpointCompleted;
+
+  if (!shouldRecalculate) {
+    return;
+  }
+
+  const now = Date.now();
+  const predictedMs = getBulkEstimatedRemainingMs(progress, elapsedMs, normalizedCompleted, total);
+  const prevRemainingMs = getBulkEtaRemainingMs(progress, now);
+
+  let nextMs = predictedMs;
+  if (Number.isFinite(prevRemainingMs) && prevRemainingMs > 0) {
+    if (nextMs > prevRemainingMs) {
+      if (allowIncrease) {
+        const increase = nextMs - prevRemainingMs;
+        nextMs = prevRemainingMs + Math.min(120000, increase * 0.9);
+      } else {
+        nextMs = prevRemainingMs;
+      }
+    } else {
+      const decrease = prevRemainingMs - nextMs;
+      nextMs = prevRemainingMs - decrease * 0.82;
+    }
+  }
+
+  if (total > 1 && normalizedCompleted < total) {
+    nextMs = Math.max(3500, nextMs);
+  }
+
+  progress.etaAnchorAt = now;
+  progress.etaAnchorMs = Math.max(1000, Math.round(nextMs));
+  progress.etaCheckpointCompleted = normalizedCompleted;
+}
+
+function getSingleProgressVisualRatio(progress, elapsedMs, completed, total) {
+  if (total !== 1) {
+    return total > 0 ? Math.min(1, completed / total) : 0;
+  }
+  if (completed >= 1) {
+    return 1;
+  }
+  const estimateMs = ensureBulkSingleEstimate(progress);
+  const tauMs = Math.max(1200, estimateMs / 3);
+  const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  const easedRatio = 1 - Math.exp(-elapsed / tauMs);
+  return Math.max(0, Math.min(0.97, easedRatio));
+}
+
+function getSingleProgressEtaSeconds(progress, elapsedMs, completed, total) {
+  if (total !== 1) {
+    return NaN;
+  }
+  if (completed >= 1) {
+    return 0;
+  }
+  const estimateMs = ensureBulkSingleEstimate(progress);
+  const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  const projectedTotalMs = Math.max(estimateMs, elapsed + Math.round(estimateMs * 0.22));
+  const remainingMs = Math.max(900, projectedTotalMs - elapsed);
+  return remainingMs / 1000;
+}
+
+function getBulkProgressVisualRatio(progress, elapsedMs, completed, total) {
+  if (total <= 0) {
+    return 0;
+  }
+  if (completed >= total) {
+    return 1;
+  }
+  if (total === 1) {
+    return getSingleProgressVisualRatio(progress, elapsedMs, completed, total);
+  }
+
+  const estimateMs = getBulkEstimatedItemMs(progress, elapsedMs, completed);
+  const stepStartAt = Number(progress.lastCompletedAt) > 0 ? progress.lastCompletedAt : progress.startedAt;
+  const stepElapsedMs = stepStartAt > 0 ? Math.max(0, Date.now() - stepStartAt) : 0;
+  const stepRatio = Math.min(0.96, stepElapsedMs / Math.max(1200, estimateMs));
+  const visualCompleted = Math.max(completed, Math.min(total - 0.01, completed + stepRatio));
+  return Math.max(0, Math.min(1, visualCompleted / total));
+}
+
+function getBulkProgressEtaSeconds(progress, elapsedMs, completed, total) {
+  if (total <= 0) {
+    return NaN;
+  }
+  if (completed >= total) {
+    return 0;
+  }
+  if (total === 1) {
+    return getSingleProgressEtaSeconds(progress, elapsedMs, completed, total);
+  }
+
+  refreshBulkEtaAnchor(progress, elapsedMs, completed, total, { force: false });
+  const remainingMs = getBulkEtaRemainingMs(progress);
+  if (!Number.isFinite(remainingMs)) {
+    return NaN;
+  }
+
+  if (remainingMs <= 1200) {
+    return 1;
+  }
+
+  return remainingMs / 1000;
+}
+
+function ensureBulkProgressTickTimer(progress = ensureBulkProgressState()) {
+  const shouldTick = progress.active === true && Number(progress.total) > 0 && progress.finalState === "idle";
+  if (!shouldTick) {
+    clearBulkProgressTickTimer(progress);
+    return;
+  }
+  if (progress.tickTimer) {
+    return;
+  }
+
+  progress.tickTimer = setTimeout(() => {
+    const current = ensureBulkProgressState();
+    current.tickTimer = 0;
+    if (!(current.active === true && Number(current.total) > 0 && current.finalState === "idle")) {
+      return;
+    }
+    renderBulkProgressToast();
+    ensureBulkProgressTickTimer(current);
+  }, 120);
 }
 
 function formatBulkEta(totalSecondsRaw) {
@@ -52,11 +306,18 @@ function renderBulkProgressToast() {
   const total = Math.max(0, Math.round(Number(progress.total) || 0));
   const completedRaw = Math.max(0, Math.round(Number(progress.completed) || 0));
   const completed = total > 0 ? Math.min(total, completedRaw) : completedRaw;
-  const ratio = total > 0 ? Math.min(1, completed / total) : 0;
-  const percent = Math.round(ratio * 100);
+  const elapsedMs = progress.startedAt > 0 ? Math.max(0, Date.now() - progress.startedAt) : 0;
+  const ratio =
+    progress.active === true
+      ? getBulkProgressVisualRatio(progress, elapsedMs, completed, total)
+      : total > 0
+        ? Math.min(1, completed / total)
+        : 0;
+  const ringPercent = Math.max(0, Math.min(100, ratio * 100));
+  const percent = Math.round(ringPercent);
 
   if (el.bulkProgressRing) {
-    el.bulkProgressRing.style.setProperty("--bulk-progress", `${percent}%`);
+    el.bulkProgressRing.style.setProperty("--bulk-progress", `${ringPercent.toFixed(2)}%`);
   }
   if (el.bulkProgressPercent) {
     el.bulkProgressPercent.textContent = `${percent}%`;
@@ -73,12 +334,18 @@ function renderBulkProgressToast() {
       el.bulkProgressMeta.textContent = `${countText} · остановлено`;
     } else if (progress.cancelRequested) {
       el.bulkProgressMeta.textContent = `${countText} · останавливаю…`;
-    } else if (total > 0 && completed > 0 && progress.startedAt > 0) {
-      const elapsedSeconds = Math.max(0.3, (Date.now() - progress.startedAt) / 1000);
-      const pace = completed / elapsedSeconds;
-      const remaining = Math.max(0, total - completed);
-      const etaSeconds = pace > 0 ? remaining / pace : NaN;
-      el.bulkProgressMeta.textContent = `${countText} · осталось ~${formatBulkEta(etaSeconds)}`;
+    } else if (progress.active === true && total > 0 && progress.startedAt > 0) {
+      const etaSeconds = getBulkProgressEtaSeconds(progress, elapsedMs, completed, total);
+      if (Number.isFinite(etaSeconds) && etaSeconds >= 0) {
+        if (total > 1 && completed > 0 && completed < total && etaSeconds <= 5) {
+          el.bulkProgressMeta.textContent = `${countText} · почти готово`;
+        } else {
+          const etaPrefix = total > 1 && completed === 0 ? "оценка ~" : "осталось ~";
+          el.bulkProgressMeta.textContent = `${countText} · ${etaPrefix}${formatBulkEta(etaSeconds)}`;
+        }
+      } else {
+        el.bulkProgressMeta.textContent = `${countText} · расчёт времени…`;
+      }
     } else {
       el.bulkProgressMeta.textContent = `${countText} · расчёт времени…`;
     }
@@ -92,6 +359,7 @@ function renderBulkProgressToast() {
 
   const shouldShow = progress.active || progress.finalState === "done" || progress.finalState === "canceled";
   if (shouldShow) {
+    ensureBulkProgressTickTimer(progress);
     el.bulkProgressToast.hidden = false;
     requestAnimationFrame(() => {
       if (el.bulkProgressToast) {
@@ -102,6 +370,7 @@ function renderBulkProgressToast() {
   }
 
   el.bulkProgressToast.classList.remove("is-visible");
+  clearBulkProgressTickTimer(progress);
   setTimeout(() => {
     const current = ensureBulkProgressState();
     if (!current.active && current.finalState === "idle" && el.bulkProgressToast) {
@@ -128,6 +397,7 @@ function requestBulkLoadingCancel() {
   }
   const progress = ensureBulkProgressState();
   progress.cancelRequested = true;
+  ensureBulkProgressTickTimer(progress);
   renderBulkProgressToast();
 }
 
@@ -155,13 +425,21 @@ function setBulkLoading(isLoading, loadingText = "Обновляю карточ�
   if (isLoading) {
     clearBulkProgressHideTimer(progress);
     const shouldReset = meta.reset === true || progress.active !== true || progress.actionKey !== actionKey;
+    const prevCompleted = Math.max(0, Math.round(Number(progress.completed) || 0));
+    const prevTotal = Math.max(0, Math.round(Number(progress.total) || 0));
     if (shouldReset) {
+      clearBulkProgressTickTimer(progress);
       progress.startedAt = Date.now();
       progress.completed = 0;
       progress.total = 0;
       progress.cancelRequested = false;
       progress.finalState = "idle";
       state.bulkCancelRequested = false;
+      progress.concurrency = normalizeBulkConcurrency(meta.concurrency);
+      progress.lastCompletedAt = progress.startedAt;
+      progress.etaAnchorAt = progress.startedAt;
+      progress.etaAnchorMs = NaN;
+      progress.etaCheckpointCompleted = 0;
     }
 
     progress.active = true;
@@ -174,8 +452,15 @@ function setBulkLoading(isLoading, loadingText = "Обновляю карточ�
     if (Number.isFinite(meta.total)) {
       progress.total = Math.max(0, Math.round(meta.total));
     }
+    if (Number.isFinite(meta.concurrency)) {
+      progress.concurrency = normalizeBulkConcurrency(meta.concurrency);
+    }
     if (Number.isFinite(meta.completed)) {
-      progress.completed = Math.max(0, Math.round(meta.completed));
+      const nextCompleted = Math.max(0, Math.round(meta.completed));
+      if (nextCompleted > prevCompleted) {
+        progress.lastCompletedAt = Date.now();
+      }
+      progress.completed = nextCompleted;
     }
     if (typeof meta.cancelRequested === "boolean") {
       progress.cancelRequested = meta.cancelRequested;
@@ -183,20 +468,58 @@ function setBulkLoading(isLoading, loadingText = "Обновляю карточ�
       progress.cancelRequested = state.bulkCancelRequested === true;
     }
     progress.finalState = "idle";
+    progress.singleEstimateMs = ensureBulkSingleEstimate(progress);
+    const elapsedMs = progress.startedAt > 0 ? Math.max(0, Date.now() - progress.startedAt) : 0;
+    const totalChanged = progress.total !== prevTotal;
+    const shouldRefreshEta = shouldReset || progress.completed !== prevCompleted || totalChanged;
+    refreshBulkEtaAnchor(progress, elapsedMs, progress.completed, progress.total, {
+      force: shouldRefreshEta,
+      allowIncrease: progress.total > prevTotal,
+    });
+    if (progress.total > 0) {
+      ensureBulkProgressTickTimer(progress);
+    } else {
+      clearBulkProgressTickTimer(progress);
+    }
     renderBulkProgressToast();
   } else {
+    clearBulkProgressTickTimer(progress);
     progress.active = false;
     progress.actionKey = String(actionKey || progress.actionKey || "all");
     progress.loadingText = String(loadingText || labels[actionKey] || labels.all || "Обновление завершено");
     if (Number.isFinite(meta.total)) {
       progress.total = Math.max(0, Math.round(meta.total));
     }
+    if (Number.isFinite(meta.concurrency)) {
+      progress.concurrency = normalizeBulkConcurrency(meta.concurrency);
+    }
     if (Number.isFinite(meta.completed)) {
       progress.completed = Math.max(0, Math.round(meta.completed));
     }
     const canceled = meta.canceled === true || state.bulkCancelRequested === true;
+    if (!canceled && progress.total === 1 && progress.startedAt > 0) {
+      const elapsedMs = Math.max(0, Date.now() - progress.startedAt);
+      if (elapsedMs > 400) {
+        progress.lastSingleDurationMs = Math.round(elapsedMs);
+        const currentEstimate = ensureBulkSingleEstimate(progress);
+        progress.singleEstimateMs = normalizeSingleEstimateMs(currentEstimate * 0.7 + elapsedMs * 0.3);
+      }
+    } else if (!canceled && progress.total > 1 && progress.startedAt > 0 && progress.completed > 0) {
+      const elapsedMs = Math.max(0, Date.now() - progress.startedAt);
+      if (elapsedMs > 800) {
+        const concurrency = normalizeBulkConcurrency(progress.concurrency);
+        const inferredMs = (elapsedMs * concurrency) / Math.max(1, progress.completed);
+        if (Number.isFinite(inferredMs) && inferredMs > 450) {
+          const currentEstimate = ensureBulkSingleEstimate(progress);
+          progress.singleEstimateMs = normalizeSingleEstimateMs(currentEstimate * 0.8 + inferredMs * 0.2);
+        }
+      }
+    }
     progress.cancelRequested = false;
     progress.finalState = canceled ? "canceled" : "done";
+    progress.etaAnchorAt = 0;
+    progress.etaAnchorMs = NaN;
+    progress.etaCheckpointCompleted = Math.max(0, Math.round(progress.completed || 0));
     state.bulkCancelRequested = false;
     if (state.singleRowAbortController && typeof state.singleRowAbortController.abort === "function") {
       state.singleRowAbortController = null;
@@ -342,6 +665,7 @@ function persistState() {
     categorySearchQuery: state.categorySearchQuery,
     globalColumnsOpen: state.globalColumnsOpen,
     filterCountMode: state.filterCountMode,
+    rowHistoryHideNoChanges: state.rowHistoryHideNoChanges,
     autoplayProblemOnly: state.autoplayProblemOnly,
     tagsProblemOnly: state.tagsProblemOnly,
     sellerSettings: state.sellerSettings,
@@ -383,6 +707,7 @@ function restoreState() {
           : null,
       priceSource: String(row.priceSource || ""),
       loading: false,
+      queuedForRefresh: false,
       error: row.error ? String(row.error) : "",
       data: normalizeRowData(row.data),
       updatedAt: row.updatedAt || null,
@@ -410,6 +735,7 @@ function restoreState() {
         : String(parsed.filterCountMode || "problems") === "rows"
           ? "rows"
           : "problems";
+    state.rowHistoryHideNoChanges = Boolean(parsed.rowHistoryHideNoChanges);
     state.autoplayProblemOnly = Boolean(parsed.autoplayProblemOnly);
     state.tagsProblemOnly = Boolean(parsed.tagsProblemOnly);
     state.sellerSettings = normalizeSellerSettings(parsed.sellerSettings);

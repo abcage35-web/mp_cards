@@ -175,6 +175,7 @@ const state = {
   filterCountMode: "problems",
   bulkCancelRequested: false,
   singleRowAbortController: null,
+  rowHistoryHideNoChanges: false,
   bulkProgress: {
     active: false,
     actionKey: "all",
@@ -183,6 +184,12 @@ const state = {
     completed: 0,
     startedAt: 0,
     hideTimer: 0,
+    tickTimer: 0,
+    singleEstimateMs: 10000,
+    lastSingleDurationMs: 0,
+    etaAnchorAt: 0,
+    etaAnchorMs: NaN,
+    etaCheckpointCompleted: 0,
     finalState: "idle",
     cancelRequested: false,
   },
@@ -301,6 +308,7 @@ const el = {
   sellersContent: document.getElementById("sellersContent"),
   rowHistoryModal: document.getElementById("rowHistoryModal"),
   rowHistoryCloseBtn: document.getElementById("rowHistoryCloseBtn"),
+  rowHistoryChangesFilterBtn: document.getElementById("rowHistoryChangesFilterBtn"),
   rowHistoryTitle: document.getElementById("rowHistoryTitle"),
   rowHistorySubtle: document.getElementById("rowHistorySubtle"),
   rowHistoryContent: document.getElementById("rowHistoryContent"),
@@ -451,12 +459,21 @@ function bindEvents() {
     const rowId = actionTarget.dataset.id || actionTarget.closest("tr")?.dataset.id;
 
     if (action === "remove" && rowId) {
+      const row = getRowById(rowId);
+      const nmId = String(row?.nmId || "").trim();
+      const confirmText = nmId
+        ? `Удалить товар ${nmId} из списка?`
+        : "Удалить товар из списка?";
+      const accepted = window.confirm(confirmText);
+      if (!accepted) {
+        return;
+      }
       removeRow(rowId);
       return;
     }
 
     if (action === "reload" && rowId) {
-      await loadSingleRowWithProgress(rowId, {
+      enqueueSingleRowWithProgress(rowId, {
         source: "manual",
         actionKey: "row-refresh",
         mode: "full",
@@ -636,6 +653,9 @@ function bindEvents() {
   }
   if (el.rowHistoryCloseBtn) {
     el.rowHistoryCloseBtn.addEventListener("click", closeRowHistory);
+  }
+  if (el.rowHistoryChangesFilterBtn) {
+    el.rowHistoryChangesFilterBtn.addEventListener("click", toggleRowHistoryChangesOnlyFilter);
   }
   if (el.rowHistoryModal) {
     el.rowHistoryModal.addEventListener("click", (event) => {

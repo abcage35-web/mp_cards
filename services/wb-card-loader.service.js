@@ -3,6 +3,19 @@
  * карточки, загрузка, сеть, basket-host и проверки дублей.
  */
 
+const singleRowRefreshQueue = [];
+const singleRowRefreshQueuedIds = new Set();
+let singleRowRefreshQueueRunning = false;
+let singleRowRefreshActiveRowId = "";
+const singleRowRefreshProgress = {
+  startedAt: 0,
+  total: 0,
+  completed: 0,
+  source: "manual",
+  actionKey: "row-refresh",
+  mode: "full",
+};
+
 function createRow(nmId, initial = {}) {
   return {
     id: `row-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -16,6 +29,7 @@ function createRow(nmId, initial = {}) {
     basePrice: Number.isFinite(initial.basePrice) ? Math.max(0, Math.round(initial.basePrice)) : null,
     priceSource: initial.priceSource || "",
     loading: false,
+    queuedForRefresh: false,
     error: "",
     data: initial.data || null,
     updatedAt: initial.updatedAt || null,
@@ -87,6 +101,53 @@ function normalizeRowUpdateLogChange(raw) {
   };
 }
 
+function normalizeNmIdsForSnapshot(valuesRaw, sourceNmIdRaw = null) {
+  const values = Array.isArray(valuesRaw) ? valuesRaw : [];
+  const sourceNmId = String(sourceNmIdRaw || "").trim();
+  const seen = new Set();
+  const output = [];
+
+  for (const value of values) {
+    let nmId = "";
+    if (typeof value === "number" && Number.isInteger(value) && value >= 100000) {
+      nmId = String(value);
+    } else if (typeof value === "string" && /^\d{6,}$/.test(value.trim())) {
+      nmId = value.trim();
+    }
+
+    if (!nmId || (sourceNmId && nmId === sourceNmId) || seen.has(nmId)) {
+      continue;
+    }
+    seen.add(nmId);
+    output.push(nmId);
+  }
+
+  return output.sort((a, b) => Number(a) - Number(b));
+}
+
+function formatNmIdListForLog(valuesRaw) {
+  const values = normalizeNmIdsForSnapshot(valuesRaw);
+  if (values.length <= 0) {
+    return "—";
+  }
+  if (values.length <= 12) {
+    return values.join(", ");
+  }
+  return `${values.slice(0, 12).join(", ")}, ... (+${values.length - 12})`;
+}
+
+function buildNmIdListDiff(beforeRaw, afterRaw) {
+  const before = normalizeNmIdsForSnapshot(beforeRaw);
+  const after = normalizeNmIdsForSnapshot(afterRaw);
+  const beforeSet = new Set(before);
+  const afterSet = new Set(after);
+
+  const added = after.filter((nmId) => !beforeSet.has(nmId));
+  const removed = before.filter((nmId) => !afterSet.has(nmId));
+
+  return { added, removed };
+}
+
 function captureRowUpdateSnapshot(row) {
   const data = row?.data || null;
   const recommendationKnownCount = Number.isInteger(data?.recommendationKnownCount)
@@ -99,8 +160,10 @@ function captureRowUpdateSnapshot(row) {
     : Number.isInteger(data?.richDetails?.blockCount)
       ? data.richDetails.blockCount
       : null;
-  const slidesCount = Array.isArray(data?.slides) ? data.slides.length : 0;
-  const colorCount = Array.isArray(data?.colorNmIds) ? data.colorNmIds.length : 0;
+  const listingSlidesCount = Array.isArray(data?.slides) ? data.slides.length : 0;
+  const richSlidesCount = Array.isArray(data?.richDetails?.media) ? data.richDetails.media.length : 0;
+  const colorNmIds = normalizeNmIdsForSnapshot(Array.isArray(data?.colorNmIds) ? data.colorNmIds : [], row?.nmId);
+  const colorCount = colorNmIds.length;
 
   return {
     hasData: Boolean(data),
@@ -114,7 +177,9 @@ function captureRowUpdateSnapshot(row) {
     hasAutoplay: getAutoplayValue(data),
     hasTags: getTagsValue(data),
     coverDuplicate: getCoverDuplicateValue(data),
-    slidesCount,
+    listingSlidesCount,
+    richSlidesCount,
+    colorNmIds,
     colorCount,
     stockValue: Number.isFinite(row?.stockValue) ? Math.max(0, Math.round(row.stockValue)) : null,
     inStock: typeof row?.inStock === "boolean" ? row.inStock : null,
@@ -170,7 +235,9 @@ function formatSnapshotValue(field, value) {
   }
 
   if (field === "rating") {
-    return Number.isFinite(value) ? `${(Math.round(Number(value) * 10) / 10).toFixed(1)}` : "Н/Д";
+    return Number.isFinite(value)
+      ? `${(Math.round(Number(value) * 10) / 10).toFixed(1).replace(".", ",")}`
+      : "Н/Д";
   }
 
   if (field === "reviewCount") {
@@ -199,10 +266,15 @@ function formatSnapshotValue(field, value) {
   if (
     field === "richCount" ||
     field === "recommendationKnownCount" ||
-    field === "slidesCount" ||
+    field === "listingSlidesCount" ||
+    field === "richSlidesCount" ||
     field === "colorCount"
   ) {
     return Number.isFinite(value) ? String(Math.max(0, Math.round(value))) : "Н/Д";
+  }
+
+  if (field === "colorNmIds") {
+    return formatNmIdListForLog(value);
   }
 
   return value === null || value === undefined || value === "" ? "Н/Д" : String(value);
@@ -227,7 +299,8 @@ function getRowUpdateChanges(beforeSnapshot, afterSnapshot) {
     { key: "hasAutoplay", label: "Автоплей" },
     { key: "hasTags", label: "Тэги" },
     { key: "coverDuplicate", label: "Дубль обложки" },
-    { key: "slidesCount", label: "Кол-во слайдов" },
+    { key: "listingSlidesCount", label: "Слайдов листинга" },
+    { key: "richSlidesCount", label: "Слайдов рича" },
     { key: "colorCount", label: "Кол-во склеек" },
     { key: "stockValue", label: "Остаток" },
     { key: "inStock", label: "Наличие" },
@@ -237,6 +310,24 @@ function getRowUpdateChanges(beforeSnapshot, afterSnapshot) {
   ];
 
   const changes = [];
+  const colorDiff = buildNmIdListDiff(beforeSnapshot?.colorNmIds, afterSnapshot?.colorNmIds);
+  if (colorDiff.added.length > 0) {
+    changes.push({
+      field: "colorNmIdsAdded",
+      label: "Склейка: добавлены артикулы",
+      beforeText: "—",
+      afterText: formatNmIdListForLog(colorDiff.added),
+    });
+  }
+  if (colorDiff.removed.length > 0) {
+    changes.push({
+      field: "colorNmIdsRemoved",
+      label: "Склейка: удалены артикулы",
+      beforeText: formatNmIdListForLog(colorDiff.removed),
+      afterText: "—",
+    });
+  }
+
   for (const field of fieldMap) {
     const before = beforeSnapshot?.[field.key];
     const after = afterSnapshot?.[field.key];
@@ -273,7 +364,240 @@ function getRowByNmId(nmId) {
   return state.rows.find((row) => String(row.nmId) === String(nmId));
 }
 
+function removeSingleRowRefreshFromQueue(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId) {
+    return;
+  }
+
+  if (singleRowRefreshQueuedIds.has(rowId)) {
+    singleRowRefreshQueuedIds.delete(rowId);
+    for (let index = singleRowRefreshQueue.length - 1; index >= 0; index -= 1) {
+      if (singleRowRefreshQueue[index]?.rowId === rowId) {
+        singleRowRefreshQueue.splice(index, 1);
+      }
+    }
+  }
+
+  const row = getRowById(rowId);
+  if (row) {
+    row.queuedForRefresh = false;
+  }
+}
+
+function clearSingleRowRefreshQueue() {
+  for (const item of singleRowRefreshQueue) {
+    const row = getRowById(item?.rowId);
+    if (row) {
+      row.queuedForRefresh = false;
+    }
+  }
+  singleRowRefreshQueue.length = 0;
+  singleRowRefreshQueuedIds.clear();
+}
+
+function getSingleRowQueueTotalEstimate() {
+  const activeCount = singleRowRefreshActiveRowId ? 1 : 0;
+  return Math.max(0, singleRowRefreshProgress.completed + activeCount + singleRowRefreshQueue.length);
+}
+
+function syncSingleRowQueueProgressTotal() {
+  const estimateTotal = getSingleRowQueueTotalEstimate();
+  if (estimateTotal > singleRowRefreshProgress.total) {
+    singleRowRefreshProgress.total = estimateTotal;
+  }
+  if (singleRowRefreshProgress.total <= 0 && estimateTotal > 0) {
+    singleRowRefreshProgress.total = estimateTotal;
+  }
+}
+
+function updateSingleRowQueueBulkProgress(reset = false) {
+  if (singleRowRefreshProgress.startedAt <= 0) {
+    singleRowRefreshProgress.startedAt = Date.now();
+  }
+
+  syncSingleRowQueueProgressTotal();
+  const total = Math.max(0, singleRowRefreshProgress.total);
+  const completed = Math.max(0, Math.min(total || Number.MAX_SAFE_INTEGER, singleRowRefreshProgress.completed));
+  const cancelRequested =
+    typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
+
+  setBulkLoading(
+    true,
+    `Обновляю товары (очередь) (${completed}/${total})...`,
+    singleRowRefreshProgress.actionKey,
+    {
+      reset,
+      total,
+      completed,
+      cancellable: true,
+      cancelRequested,
+      concurrency: 1,
+      startedAt: singleRowRefreshProgress.startedAt,
+    },
+  );
+}
+
+async function processSingleRowRefreshQueue() {
+  if (singleRowRefreshQueueRunning) {
+    return;
+  }
+
+  if (singleRowRefreshQueue.length <= 0) {
+    return;
+  }
+
+  singleRowRefreshQueueRunning = true;
+  let canceled = false;
+
+  try {
+    const firstTask = singleRowRefreshQueue[0];
+    const firstOptions = firstTask?.options && typeof firstTask.options === "object" ? firstTask.options : {};
+    singleRowRefreshProgress.startedAt = Date.now();
+    singleRowRefreshProgress.completed = 0;
+    singleRowRefreshProgress.total = Math.max(1, singleRowRefreshQueue.length);
+    singleRowRefreshProgress.source = String(firstOptions.source || "manual").trim() || "manual";
+    singleRowRefreshProgress.actionKey = String(firstOptions.actionKey || "row-refresh").trim() || "row-refresh";
+    singleRowRefreshProgress.mode = String(firstOptions.mode || "full").trim() || "full";
+    updateSingleRowQueueBulkProgress(true);
+
+    while (singleRowRefreshQueue.length > 0) {
+      if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+        canceled = true;
+        break;
+      }
+
+      const task = singleRowRefreshQueue.shift();
+      if (!task) {
+        continue;
+      }
+
+      const rowId = String(task.rowId || "").trim();
+      const options = task.options && typeof task.options === "object" ? { ...task.options } : {};
+      singleRowRefreshQueuedIds.delete(rowId);
+
+      const row = getRowById(rowId);
+      if (!row) {
+        continue;
+      }
+
+      row.queuedForRefresh = false;
+      singleRowRefreshActiveRowId = rowId;
+      render();
+
+      try {
+        const mode = String(options.mode || "full").trim() || "full";
+        const source = String(options.source || singleRowRefreshProgress.source || "manual").trim() || "manual";
+        const forceHostProbe = options.forceHostProbe === true;
+        const actionKey =
+          String(options.actionKey || singleRowRefreshProgress.actionKey || "row-refresh").trim() || "row-refresh";
+        const abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+        state.singleRowAbortController = abortController;
+
+        await loadRow(rowId, {
+          silentStart: false,
+          forceHostProbe,
+          mode,
+          source,
+          actionKey,
+          recordProblemSnapshot: false,
+          requestSignal: abortController ? abortController.signal : null,
+        });
+      } finally {
+        if (state.singleRowAbortController) {
+          state.singleRowAbortController = null;
+        }
+        singleRowRefreshProgress.completed += 1;
+        singleRowRefreshActiveRowId = "";
+        if (!(typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested())) {
+          updateSingleRowQueueBulkProgress(false);
+        }
+      }
+
+      if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+        canceled = true;
+        break;
+      }
+    }
+  } finally {
+    if (canceled) {
+      clearSingleRowRefreshQueue();
+    }
+
+    state.lastSyncAt = new Date().toISOString();
+    if (typeof recordProblemSnapshot === "function") {
+      recordProblemSnapshot({
+        source: singleRowRefreshProgress.source,
+        actionKey: singleRowRefreshProgress.actionKey,
+        mode: singleRowRefreshProgress.mode,
+      });
+    }
+
+    const completed = Math.max(0, singleRowRefreshProgress.completed);
+    const total = Math.max(completed, singleRowRefreshProgress.total);
+
+    setBulkLoading(
+      false,
+      canceled ? `Обновление остановлено (${completed}/${total})` : "Обновление завершено",
+      singleRowRefreshProgress.actionKey,
+      {
+        total,
+        completed,
+        canceled,
+        concurrency: 1,
+      },
+    );
+
+    singleRowRefreshActiveRowId = "";
+    singleRowRefreshQueueRunning = false;
+    singleRowRefreshProgress.startedAt = 0;
+    singleRowRefreshProgress.total = 0;
+    singleRowRefreshProgress.completed = 0;
+    singleRowRefreshProgress.source = "manual";
+    singleRowRefreshProgress.actionKey = "row-refresh";
+    singleRowRefreshProgress.mode = "full";
+    render();
+  }
+}
+
+function enqueueSingleRowWithProgress(rowIdRaw, options = {}) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId) {
+    return false;
+  }
+
+  const row = getRowById(rowId);
+  if (!row) {
+    return false;
+  }
+
+  if (state.isBulkLoading && !singleRowRefreshQueueRunning && !singleRowRefreshActiveRowId) {
+    return false;
+  }
+
+  if (row.loading || singleRowRefreshActiveRowId === rowId || singleRowRefreshQueuedIds.has(rowId)) {
+    return false;
+  }
+
+  singleRowRefreshQueue.push({
+    rowId,
+    options: options && typeof options === "object" ? { ...options } : {},
+  });
+  singleRowRefreshQueuedIds.add(rowId);
+  row.queuedForRefresh = true;
+
+  if (singleRowRefreshQueueRunning) {
+    syncSingleRowQueueProgressTotal();
+    updateSingleRowQueueBulkProgress(false);
+  }
+
+  render();
+  void processSingleRowRefreshQueue();
+  return true;
+}
+
 function removeRow(rowId) {
+  removeSingleRowRefreshFromQueue(rowId);
   state.rows = state.rows.filter((row) => row.id !== rowId);
   render();
 }
@@ -353,6 +677,7 @@ async function loadRowsByIds(rowIds, options = {}) {
     total,
     completed: 0,
     cancellable: true,
+    concurrency: BULK_CONCURRENCY,
   });
 
   await runWithConcurrency(
@@ -379,6 +704,7 @@ async function loadRowsByIds(rowIds, options = {}) {
         completed,
         cancellable: true,
         cancelRequested,
+        concurrency: BULK_CONCURRENCY,
       });
     },
     {
@@ -401,6 +727,7 @@ async function loadRowsByIds(rowIds, options = {}) {
         total,
         completed,
         cancellable: true,
+        concurrency: BULK_CONCURRENCY,
       });
 
       await sleep(1100);
@@ -424,6 +751,7 @@ async function loadRowsByIds(rowIds, options = {}) {
           completed,
           cancellable: true,
           cancelRequested,
+          concurrency: BULK_CONCURRENCY,
         });
       }
     }
@@ -445,6 +773,7 @@ async function loadRowsByIds(rowIds, options = {}) {
       total,
       completed,
       canceled,
+      concurrency: BULK_CONCURRENCY,
     },
   );
   render();
@@ -453,8 +782,13 @@ async function loadRowsByIds(rowIds, options = {}) {
 async function loadSingleRowWithProgress(rowId, options = {}) {
   const row = getRowById(rowId);
   if (!row || row.loading || state.isBulkLoading) {
-    return;
+    return {
+      started: false,
+      canceled: false,
+    };
   }
+
+  row.queuedForRefresh = false;
 
   const source = String(options.source || "manual").trim() || "manual";
   const actionKey = String(options.actionKey || "row-refresh").trim() || "row-refresh";
@@ -473,41 +807,42 @@ async function loadSingleRowWithProgress(rowId, options = {}) {
     completed: 0,
     cancellable: true,
     startedAt,
+    concurrency: 1,
   });
 
   try {
     if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
       canceled = true;
-      return;
-    }
-
-    await loadRow(rowId, {
-      silentStart: false,
-      forceHostProbe,
-      mode,
-      source,
-      actionKey,
-      recordProblemSnapshot: false,
-      requestSignal: abortController ? abortController.signal : null,
-    });
-
-    canceled = typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
-
-    if (!canceled) {
-      setBulkLoading(true, `${loadingText} (1/1)...`, actionKey, {
-        total: 1,
-        completed: 1,
-        cancellable: true,
-      });
-    }
-
-    state.lastSyncAt = new Date().toISOString();
-    if (typeof recordProblemSnapshot === "function") {
-      recordProblemSnapshot({
+    } else {
+      await loadRow(rowId, {
+        silentStart: false,
+        forceHostProbe,
+        mode,
         source,
         actionKey,
-        mode,
+        recordProblemSnapshot: false,
+        requestSignal: abortController ? abortController.signal : null,
       });
+
+      canceled = typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
+
+      if (!canceled) {
+        setBulkLoading(true, `${loadingText} (1/1)...`, actionKey, {
+          total: 1,
+          completed: 1,
+          cancellable: true,
+          concurrency: 1,
+        });
+      }
+
+      state.lastSyncAt = new Date().toISOString();
+      if (typeof recordProblemSnapshot === "function") {
+        recordProblemSnapshot({
+          source,
+          actionKey,
+          mode,
+        });
+      }
     }
   } finally {
     if (state.singleRowAbortController === abortController) {
@@ -522,10 +857,16 @@ async function loadSingleRowWithProgress(rowId, options = {}) {
         total: 1,
         completed: canceled ? 0 : 1,
         canceled,
+        concurrency: 1,
       },
     );
     render();
   }
+
+  return {
+    started: true,
+    canceled,
+  };
 }
 
 async function loadRow(
@@ -569,6 +910,10 @@ async function loadRow(
       mode: loadMode,
       requestSignal,
     });
+    if (requestSignal && requestSignal.aborted) {
+      canceledByUser = true;
+      throw new Error("Обновление остановлено пользователем");
+    }
     const target = getRowById(rowId);
     if (!target) {
       return;
@@ -640,11 +985,7 @@ async function loadRow(
     }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const aborted =
-      canceledByUser ||
-      (requestSignal && requestSignal.aborted) ||
-      String(error?.name || "").trim() === "AbortError" ||
-      /остановлен[ао]\s+пользователем/i.test(errorMessage);
+    const aborted = canceledByUser || (requestSignal && requestSignal.aborted) || isUpdateCanceledError(error);
 
     if (aborted) {
       canceledByUser = true;
@@ -713,10 +1054,16 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
   const base = `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}`;
 
   const card = await fetchJson(`${base}/info/ru/card.json`, { signal: requestSignal });
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
   const shouldLoadMarket = mode !== "content-only";
   const marketSnapshot = shouldLoadMarket
     ? await fetchCardMarketSnapshot(nmId, { basketBase: base, requestSignal })
     : createEmptyMarketSnapshot();
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
 
   const hasSellerRecommendations = card?.has_seller_recommendations === true;
   const hasRich = card?.has_rich === true;
@@ -733,7 +1080,10 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
       }
       recommendationRefs = extractRecommendationRefsFromRich(rich, nmId);
       richDetails = extractRichDetailsFromPayload(rich);
-    } catch {
+    } catch (error) {
+      if (isUpdateCanceledError(error) || (requestSignal && requestSignal.aborted)) {
+        throw new Error("Обновление остановлено пользователем");
+      }
       if (hasRich) {
         richBlockCount = 0;
       }
@@ -751,7 +1101,7 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
     slides.push(`${base}/images/big/${index}.webp`);
   }
 
-  const coverSlideDuplicate = await detectCoverSlideDuplicate(slides);
+  const coverSlideDuplicate = await detectCoverSlideDuplicate(slides, { requestSignal });
 
   return {
     hostSuffix,
@@ -805,12 +1155,19 @@ async function fetchCardMarketSnapshot(nmIdRaw, options = {}) {
   }
 
   const requestSignal = options.requestSignal || null;
-  return marketService.fetchCardMarketSnapshot(nmIdRaw, options, {
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
+  const snapshot = await marketService.fetchCardMarketSnapshot(nmIdRaw, options, {
     fetchJsonMaybe: (url) => fetchJsonMaybe(url, { signal: requestSignal }),
     fetchWithRetry: (url, fetchOptions = {}, config = {}) =>
       fetchWithRetry(url, { ...fetchOptions, signal: requestSignal }, config),
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
   });
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
+  return snapshot;
 }
 
 function createEmptyMarketSnapshot() {
@@ -856,6 +1213,12 @@ function normalizeRowData(dataRaw) {
   data.cardCode = normalizeCardCode(data.cardCode ?? data.vendorCode ?? data.vendor_code);
   data.coverSlideDuplicate =
     data.coverSlideDuplicate === true ? true : data.coverSlideDuplicate === false ? false : null;
+  if (data.coverSlideDuplicate === null) {
+    const slides = Array.isArray(data.slides) ? data.slides : [];
+    if (slides.length === 1) {
+      data.coverSlideDuplicate = false;
+    }
+  }
   const colorNmIds = normalizeColorNmIds(data.colorNmIds || data.full_colors || data.fullColors, data.colors);
   data.colorNmIds = colorNmIds;
   data.colorCount = colorNmIds.length;
@@ -1163,6 +1526,11 @@ function normalizeFetchError(error) {
   return new Error(String(error));
 }
 
+function isUpdateCanceledError(error) {
+  const message = String(error?.message || error || "");
+  return String(error?.name || "").trim() === "AbortError" || /остановлен[ао]\s+пользователем/i.test(message);
+}
+
 async function fetchWithRetry(url, options = {}, config = {}) {
   const attempts = Math.max(1, Number(config.attempts) || FETCH_RETRY_ATTEMPTS);
   const timeoutMs = Math.max(1000, Number(config.timeoutMs) || FETCH_TIMEOUT_MS);
@@ -1322,9 +1690,16 @@ async function fetchJsonMaybe(url, options = {}) {
   }
 }
 
-async function detectCoverSlideDuplicate(slides) {
-  if (!Array.isArray(slides) || slides.length < 2) {
+async function detectCoverSlideDuplicate(slides, options = {}) {
+  const requestSignal = options.requestSignal || null;
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
+  if (!Array.isArray(slides) || slides.length <= 0) {
     return null;
+  }
+  if (slides.length === 1) {
+    return false;
   }
 
   const firstThumb = toSlideThumbUrl(slides[0]);
@@ -1333,7 +1708,13 @@ async function detectCoverSlideDuplicate(slides) {
     return null;
   }
 
-  const [metaA, metaB] = await Promise.all([fetchImageMeta(firstThumb), fetchImageMeta(secondThumb)]);
+  const [metaA, metaB] = await Promise.all([
+    fetchImageMeta(firstThumb, { requestSignal }),
+    fetchImageMeta(secondThumb, { requestSignal }),
+  ]);
+  if (requestSignal && requestSignal.aborted) {
+    throw new Error("Обновление остановлено пользователем");
+  }
   if (metaA && metaB) {
     if (metaA.etag && metaB.etag && metaA.etag === metaB.etag) {
       return true;
@@ -1347,17 +1728,27 @@ async function detectCoverSlideDuplicate(slides) {
   }
 
   try {
-    const [hashA, hashB] = await Promise.all([hashRemoteImage(firstThumb), hashRemoteImage(secondThumb)]);
+    const [hashA, hashB] = await Promise.all([
+      hashRemoteImage(firstThumb, { requestSignal }),
+      hashRemoteImage(secondThumb, { requestSignal }),
+    ]);
+    if (requestSignal && requestSignal.aborted) {
+      throw new Error("Обновление остановлено пользователем");
+    }
     if (!hashA || !hashB) {
       return null;
     }
     return hashA === hashB;
-  } catch {
+  } catch (error) {
+    if (isUpdateCanceledError(error) || (requestSignal && requestSignal.aborted)) {
+      throw new Error("Обновление остановлено пользователем");
+    }
     return null;
   }
 }
 
-async function fetchImageMeta(url) {
+async function fetchImageMeta(url, options = {}) {
+  const requestSignal = options.requestSignal || null;
   try {
     const response = await fetchWithRetry(
       url,
@@ -1365,6 +1756,7 @@ async function fetchImageMeta(url) {
         method: "HEAD",
         mode: "cors",
         cache: "no-store",
+        signal: requestSignal,
       },
       { attempts: 2, timeoutMs: Math.min(FETCH_TIMEOUT_MS, DUPLICATE_CHECK_TIMEOUT_MS) },
     );
@@ -1378,18 +1770,23 @@ async function fetchImageMeta(url) {
       etag: etag || "",
       contentLength: Number.isFinite(contentLength) ? contentLength : null,
     };
-  } catch {
+  } catch (error) {
+    if (isUpdateCanceledError(error) || (requestSignal && requestSignal.aborted)) {
+      throw new Error("Обновление остановлено пользователем");
+    }
     return null;
   }
 }
 
-async function hashRemoteImage(url) {
+async function hashRemoteImage(url, options = {}) {
+  const requestSignal = options.requestSignal || null;
   const response = await fetchWithRetry(
     url,
     {
       method: "GET",
       mode: "cors",
       cache: "no-store",
+      signal: requestSignal,
     },
     { attempts: 2, timeoutMs: DUPLICATE_CHECK_TIMEOUT_MS },
   );

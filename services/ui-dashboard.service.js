@@ -411,6 +411,10 @@ function getCoverDuplicateValue(data) {
   if (data.coverSlideDuplicate === false) {
     return false;
   }
+  const slides = Array.isArray(data.slides) ? data.slides : [];
+  if (slides.length === 1) {
+    return false;
+  }
   return null;
 }
 

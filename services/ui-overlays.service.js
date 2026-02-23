@@ -1332,7 +1332,7 @@ function formatVariantRating(ratingRaw) {
   if (!Number.isFinite(rating)) {
     return "Н/Д";
   }
-  return rating.toFixed(1);
+  return rating.toFixed(1).replace(".", ",");
 }
 
 async function openRecommendations(rowId) {
@@ -1781,12 +1781,34 @@ function openRowHistory(rowId) {
 
   const logs = normalizeRowUpdateLogs(row.updateLogs);
   el.rowHistoryTitle.textContent = `История обновлений · ${row.nmId}`;
-  if (el.rowHistorySubtle) {
-    el.rowHistorySubtle.textContent = logs.length > 0 ? `Записей: ${logs.length}` : "По строке пока нет записей обновлений.";
-  }
   el.rowHistoryContent.dataset.rowId = row.id;
   el.rowHistoryModal.hidden = false;
   renderRowHistoryContent(row, logs);
+}
+
+function getRowHistoryVisibleChanges(entry) {
+  return Array.isArray(entry?.changes)
+    ? entry.changes.filter((change) => {
+        const field = String(change?.field || "").trim();
+        const label = String(change?.label || "").trim().toLowerCase();
+        return field !== "basePrice" && label !== "базовая цена";
+      })
+    : [];
+}
+
+function renderRowHistoryFilterButtonState(totalLogs, logsWithChanges, visibleLogs) {
+  if (!el.rowHistoryChangesFilterBtn) {
+    return;
+  }
+  const active = state.rowHistoryHideNoChanges === true;
+  el.rowHistoryChangesFilterBtn.classList.toggle("is-active", active);
+  el.rowHistoryChangesFilterBtn.setAttribute("aria-pressed", active ? "true" : "false");
+  el.rowHistoryChangesFilterBtn.textContent = active ? "Только изменения: вкл" : "Только изменения";
+  el.rowHistoryChangesFilterBtn.disabled = totalLogs <= 0 || logsWithChanges <= 0;
+  const title = active
+    ? `Показаны только записи с изменениями (${visibleLogs}/${totalLogs})`
+    : `Показать только записи с изменениями (${logsWithChanges}/${totalLogs})`;
+  el.rowHistoryChangesFilterBtn.title = title;
 }
 
 function renderRowHistoryContent(row, logsRaw) {
@@ -1798,6 +1820,28 @@ function renderRowHistoryContent(row, logsRaw) {
   const logs = (Array.isArray(logsRaw) ? logsRaw : normalizeRowUpdateLogs(row?.updateLogs))
     .slice()
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  const preparedLogs = logs.map((entry) => ({
+    entry,
+    visibleChanges: getRowHistoryVisibleChanges(entry),
+  }));
+  const logsWithChanges = preparedLogs.filter((item) => item.visibleChanges.length > 0).length;
+  const hideNoChanges = state.rowHistoryHideNoChanges === true;
+  const visibleItems = hideNoChanges ? preparedLogs.filter((item) => item.visibleChanges.length > 0) : preparedLogs;
+  const visibleLogs = visibleItems.length;
+
+  if (el.rowHistorySubtle) {
+    if (logs.length > 0) {
+      const parts = [`Записей: ${logs.length}`];
+      parts.push(`с изменениями: ${logsWithChanges}`);
+      if (hideNoChanges) {
+        parts.push(`показано: ${visibleLogs}`);
+      }
+      el.rowHistorySubtle.textContent = parts.join(" · ");
+    } else {
+      el.rowHistorySubtle.textContent = "По строке пока нет записей обновлений.";
+    }
+  }
+  renderRowHistoryFilterButtonState(logs.length, logsWithChanges, visibleLogs);
 
   if (!rowId || logs.length <= 0) {
     el.rowHistoryContent.innerHTML =
@@ -1805,20 +1849,19 @@ function renderRowHistoryContent(row, logsRaw) {
     return;
   }
 
-  const itemsHtml = logs
-    .map((entry) => {
+  if (visibleItems.length <= 0) {
+    el.rowHistoryContent.innerHTML =
+      '<div class="recommendation-empty">Нет записей с изменениями. Отключите фильтр "Только изменения".</div>';
+    return;
+  }
+
+  const itemsHtml = visibleItems
+    .map(({ entry, visibleChanges }) => {
       const statusClass = entry.status === "error" ? " is-error" : " is-ok";
       const statusLabel = entry.status === "error" ? "Ошибка" : "OK";
       const sourceLabel = entry.source === "system" ? "Системное" : "Ручное";
       const modeLabel = getModeLabel(entry.mode);
       const actionLabel = getActionLabel(entry.actionKey);
-      const visibleChanges = Array.isArray(entry.changes)
-        ? entry.changes.filter((change) => {
-            const field = String(change?.field || "").trim();
-            const label = String(change?.label || "").trim().toLowerCase();
-            return field !== "basePrice" && label !== "базовая цена";
-          })
-        : [];
       const changesHtml =
         visibleChanges.length > 0
           ? `<ul class="row-history-changes">
@@ -1864,6 +1907,18 @@ function closeRowHistory() {
   }
   if (el.rowHistorySubtle) {
     el.rowHistorySubtle.textContent = "";
+  }
+  renderRowHistoryFilterButtonState(0, 0, 0);
+}
+
+function toggleRowHistoryChangesOnlyFilter() {
+  state.rowHistoryHideNoChanges = !(state.rowHistoryHideNoChanges === true);
+  const rowId = String(el.rowHistoryContent?.dataset?.rowId || "").trim();
+  const row = rowId ? getRowById(rowId) : null;
+  if (row) {
+    renderRowHistoryContent(row);
+  } else {
+    renderRowHistoryFilterButtonState(0, 0, 0);
   }
 }
 

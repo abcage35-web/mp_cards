@@ -450,7 +450,8 @@ function formatRub(valueRaw) {
   if (!Number.isFinite(value)) {
     return "";
   }
-  return new Intl.NumberFormat("ru-RU").format(Math.max(0, Math.round(value)));
+  const rounded = Math.max(0, Math.round(value));
+  return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202F");
 }
 
 function renderProductInfoCell(row) {
@@ -492,7 +493,73 @@ function renderProductPriceValue(row) {
   }
 
   const current = formatRub(row.currentPrice);
-  return `<span class="pill pill-info pill-compact"><span class="mono">${escapeHtml(current)}</span><span class="stock-note">&nbsp;р</span></span>`;
+  const trend = getProductPriceTrend(row);
+  const trendHtml = trend
+    ? `<span class="product-price-trend product-price-trend-${escapeAttr(trend.direction)}" title="${escapeAttr(trend.title)}" aria-hidden="true">${
+        trend.direction === "up" ? "▲" : "▼"
+      }</span>`
+    : "";
+
+  return `<span class="price-info-wrap">
+    <span class="pill pill-info pill-compact"><span class="mono">${escapeHtml(current)}</span><span class="stock-note">&nbsp;р</span></span>
+    ${trendHtml}
+  </span>`;
+}
+
+function parsePriceFromLogText(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value || /^н\/д$/i.test(value) || value === "—" || value === "-") {
+    return null;
+  }
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) {
+    return null;
+  }
+  const price = Number(digits);
+  return Number.isFinite(price) ? Math.max(0, Math.round(price)) : null;
+}
+
+function getLatestCurrentPriceChange(row) {
+  const logs = Array.isArray(row?.updateLogs) ? row.updateLogs : [];
+  for (let logIndex = logs.length - 1; logIndex >= 0; logIndex -= 1) {
+    const entry = logs[logIndex];
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (let changeIndex = changes.length - 1; changeIndex >= 0; changeIndex -= 1) {
+      const change = changes[changeIndex];
+      if (String(change?.field || "").trim() !== "currentPrice") {
+        continue;
+      }
+      return {
+        before: parsePriceFromLogText(change?.beforeText),
+        after: parsePriceFromLogText(change?.afterText),
+      };
+    }
+  }
+  return null;
+}
+
+function getProductPriceTrend(row) {
+  const latestPriceChange = getLatestCurrentPriceChange(row);
+  if (!latestPriceChange) {
+    return null;
+  }
+
+  const before = latestPriceChange.before;
+  const after = latestPriceChange.after;
+  if (!Number.isFinite(before) || !Number.isFinite(after) || before === after) {
+    return null;
+  }
+
+  if (after > before) {
+    return {
+      direction: "up",
+      title: `Цена выросла: ${formatRub(before)} р → ${formatRub(after)} р`,
+    };
+  }
+  return {
+    direction: "down",
+    title: `Цена снизилась: ${formatRub(before)} р → ${formatRub(after)} р`,
+  };
 }
 
 function renderProductRatingValue(row) {
@@ -501,7 +568,8 @@ function renderProductRatingValue(row) {
   if (!Number.isFinite(rating)) {
     return '<span class="pill pill-na pill-compact">Н/Д</span>';
   }
-  return `<span class="pill pill-info pill-compact"><span class="mono">${escapeHtml((Math.round(rating * 10) / 10).toFixed(1))}</span></span>`;
+  const ratingText = (Math.round(rating * 10) / 10).toFixed(1).replace(".", ",");
+  return `<span class="pill pill-info pill-compact"><span class="mono">${escapeHtml(ratingText)}</span></span>`;
 }
 
 function renderProductReviewCountValue(row) {
@@ -510,7 +578,7 @@ function renderProductReviewCountValue(row) {
   if (!Number.isFinite(reviewCount)) {
     return '<span class="pill pill-na pill-compact">Н/Д</span>';
   }
-  return `<span class="pill pill-info pill-compact"><span class="mono">${escapeHtml(String(Math.max(0, Math.round(reviewCount))))}</span></span>`;
+  return `<span class="pill pill-info pill-compact"><span class="mono">${escapeHtml(formatRub(reviewCount))}</span></span>`;
 }
 
 function renderProductColorVariantsValue(row) {
@@ -552,6 +620,14 @@ function buildStatus(row) {
     };
   }
 
+  if (row.queuedForRefresh) {
+    return {
+      key: "queued",
+      text: "Ожидает очереди",
+      title: "Строка ожидает обновления в очереди",
+    };
+  }
+
   if (row.error) {
     return {
       key: "error",
@@ -587,6 +663,8 @@ function renderStatusIcon(row, status) {
     svg = renderIcon("alert");
   } else if (status.key === "loading") {
     svg = renderIcon("loader", "status-icon-spin");
+  } else if (status.key === "queued") {
+    svg = renderIcon("clock");
   }
 
   if (status.key === "error") {
