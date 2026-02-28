@@ -253,15 +253,16 @@ function renderAgreementDashboardTo(targetEl, problemStats, meta = {}) {
             <span>График</span>
           </button>
           <button
-            class="agreement-head-chart-btn${stockPositiveActive ? " is-active" : ""}"
+            class="agreement-stock-toggle${stockPositiveActive ? " is-active" : ""}"
             type="button"
             data-action="toggle-preset"
             data-preset-id="stockPositive"
-            data-hint="Показать товары с остатками"
-            aria-label="Показать товары с остатками"
+            data-hint="Показывать только товары с остатками"
+            aria-label="Показывать только товары с остатками"
+            aria-pressed="${stockPositiveActive ? "true" : "false"}"
           >
-            ${renderIcon("filter")}
-            <span>Товары с остатками</span>
+            <span class="agreement-stock-toggle-label">Товары с остатками</span>
+            <span class="agreement-stock-toggle-switch" aria-hidden="true"></span>
           </button>
         </div>
       </article>

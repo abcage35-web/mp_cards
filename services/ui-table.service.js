@@ -176,17 +176,81 @@ function formatRowUpdatedAtCompact(valueRaw) {
     return null;
   }
 
-  const pad = (value) => String(value).padStart(2, "0");
-  const day = pad(date.getDate());
-  const month = pad(date.getMonth() + 1);
-  const year = String(date.getFullYear()).slice(-2);
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
+  const now = new Date();
+  const nowMs = now.getTime();
+  const targetMs = date.getTime();
+  const diffMs = Math.max(0, nowMs - targetMs);
+  const diffMinutes = Math.floor(diffMs / (60 * 1000));
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTargetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((startOfToday.getTime() - startOfTargetDay.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (diffDays <= 0) {
+    if (diffMinutes <= 30) {
+      return {
+        date: "недавно",
+        time: "до 30 минут",
+      };
+    }
+
+    const hoursAgo = Math.max(1, Math.floor(diffMinutes / 60));
+    return {
+      date: `${hoursAgo} ${formatHourWord(hoursAgo)}`,
+      time: "назад",
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      date: "вчера",
+      time: "назад",
+    };
+  }
+
+  if (diffDays <= 30) {
+    return {
+      date: `${diffDays} ${formatDayWord(diffDays)}`,
+      time: "назад",
+    };
+  }
 
   return {
-    date: `${day}.${month}.${year}`,
-    time: `${hours}:${minutes}`,
+    date: "более месяца",
+    time: "назад",
   };
+}
+
+function formatHourWord(valueRaw) {
+  const value = Math.abs(Math.round(Number(valueRaw) || 0));
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  if (mod100 >= 11 && mod100 <= 19) {
+    return "часов";
+  }
+  if (mod10 === 1) {
+    return "час";
+  }
+  if (mod10 >= 2 && mod10 <= 4) {
+    return "часа";
+  }
+  return "часов";
+}
+
+function formatDayWord(valueRaw) {
+  const value = Math.abs(Math.round(Number(valueRaw) || 0));
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  if (mod100 >= 11 && mod100 <= 19) {
+    return "дней";
+  }
+  if (mod10 === 1) {
+    return "день";
+  }
+  if (mod10 >= 2 && mod10 <= 4) {
+    return "дня";
+  }
+  return "дней";
 }
 
 function renderRowsPagination() {
@@ -367,6 +431,9 @@ function getDashboardScopeRows(rows = state.rows, options = {}) {
       return false;
     }
     if (!matchCategoryGroupFilter(row?.data?.category || "", activeFilters.categoryGroup)) {
+      return false;
+    }
+    if (state.stockPositiveOnly && !(Number.isFinite(row?.stockValue) && row.stockValue > 0)) {
       return false;
     }
     return true;

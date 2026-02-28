@@ -790,6 +790,53 @@ body {
     box-shadow 0.16s ease;
 }
 
+.agreement-stock-toggle {
+  border: 1px solid rgba(17, 33, 42, 0.2);
+  background: rgba(255, 255, 255, 0.94);
+  color: #264454;
+  border-radius: 999px;
+  padding: 4px 9px 4px 11px;
+  min-height: 34px;
+  font: 600 12px/1 "IBM Plex Sans", sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.1s ease,
+    box-shadow 0.16s ease;
+}
+
+.agreement-stock-toggle-label {
+  white-space: nowrap;
+}
+
+.agreement-stock-toggle-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(76, 98, 111, 0.34);
+  background: rgba(76, 98, 111, 0.22);
+  flex: 0 0 auto;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.agreement-stock-toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(23, 55, 68, 0.28);
+  transform: translateY(-50%);
+  transition: transform 0.16s ease;
+}
+
 .agreement-head-chart-btn .ui-icon {
   width: 15px;
   height: 15px;
@@ -807,6 +854,25 @@ body {
   transform: translateY(0);
   background: rgba(0, 117, 143, 0.16);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.agreement-stock-toggle:hover {
+  border-color: rgba(0, 117, 143, 0.58);
+  background: rgba(0, 117, 143, 0.1);
+  color: #0b5568;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(9, 58, 72, 0.14);
+}
+
+.agreement-stock-toggle:active {
+  transform: translateY(0);
+  background: rgba(0, 117, 143, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.agreement-stock-toggle:focus-visible {
+  outline: 2px solid rgba(0, 117, 143, 0.28);
+  outline-offset: 2px;
 }
 
 .agreement-head-main .subtle {
@@ -977,6 +1043,21 @@ body {
   border-color: rgba(0, 117, 143, 0.6);
   background: rgba(0, 117, 143, 0.18);
   color: #0b5568;
+}
+
+.agreement-stock-toggle.is-active {
+  border-color: rgba(0, 117, 143, 0.6);
+  background: rgba(0, 117, 143, 0.16);
+  color: #0b5568;
+}
+
+.agreement-stock-toggle.is-active .agreement-stock-toggle-switch {
+  background: rgba(0, 117, 143, 0.38);
+  border-color: rgba(0, 117, 143, 0.54);
+}
+
+.agreement-stock-toggle.is-active .agreement-stock-toggle-switch::after {
+  transform: translate(16px, -50%);
 }
 
 .agreement-breakdown-cabinet-filters {
