@@ -112,6 +112,28 @@
                   <input data-filter-key="cardCode" class="filter-input" type="text" placeholder="Вендор-код" />
                 </label>
                 <label class="global-filter-field">
+                  <input
+                    data-filter-key="stockFrom"
+                    class="filter-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    placeholder="Ост. от"
+                  />
+                </label>
+                <label class="global-filter-field">
+                  <input
+                    data-filter-key="stockTo"
+                    class="filter-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    placeholder="Ост. до"
+                  />
+                </label>
+                <label class="global-filter-field">
                   <select id="filterCabinet" data-filter-key="cabinet" class="filter-select">
                     <option value="all">Кабинет</option>
                   </select>
@@ -217,17 +239,38 @@
 
         <section class="panel table-panel reveal delay-2">
           <div class="table-tools">
-            <label class="rows-limit-control" for="rowsLimitSelect">
-              <span>Лимит строк</span>
-              <select id="rowsLimitSelect" class="rows-limit-select">
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="150">150</option>
-                <option value="200">200</option>
-                <option value="250">250</option>
-                <option value="300">300</option>
-              </select>
-            </label>
+            <div class="table-tools-left">
+              <label class="rows-limit-control" for="rowsLimitSelect">
+                <span>Лимит строк</span>
+                <select id="rowsLimitSelect" class="rows-limit-select">
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="150">150</option>
+                  <option value="200">200</option>
+                  <option value="250">250</option>
+                  <option value="300">300</option>
+                </select>
+              </label>
+
+              <label class="table-sort-control" for="tableSortMetricSelect">
+                <span>Сортировка</span>
+                <select id="tableSortMetricSelect" class="rows-limit-select">
+                  <option value="default">По умолчанию</option>
+                  <option value="nmid">Артикул</option>
+                  <option value="stock">Остаток</option>
+                  <option value="price">Цена</option>
+                  <option value="rating">Рейтинг</option>
+                  <option value="reviews">Отзывы</option>
+                  <option value="slides">Слайды</option>
+                  <option value="problems">Проблемы</option>
+                  <option value="updated">Обновлено</option>
+                </select>
+                <select id="tableSortDirectionSelect" class="rows-limit-select">
+                  <option value="asc">По возрастанию</option>
+                  <option value="desc">По убыванию</option>
+                </select>
+              </label>
+            </div>
             <div class="table-pagination">
               <button id="pagePrevBtn" class="page-btn" type="button" aria-label="Предыдущая страница" data-hint="Предыдущая страница"></button>
               <span id="pageInfo" class="page-info">Страница 1 / 1</span>

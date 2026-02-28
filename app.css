@@ -968,7 +968,15 @@ body {
 .agreement-breakdown-actions {
   margin-top: 8px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   justify-content: flex-end;
+}
+
+.agreement-head-chart-btn.is-active {
+  border-color: rgba(0, 117, 143, 0.6);
+  background: rgba(0, 117, 143, 0.18);
+  color: #0b5568;
 }
 
 .agreement-breakdown-cabinet-filters {
@@ -2222,6 +2230,13 @@ textarea {
   margin-bottom: 8px;
 }
 
+.table-tools-left {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .rows-limit-control {
   display: inline-flex;
   align-items: center;
@@ -2248,6 +2263,28 @@ textarea {
   letter-spacing: normal;
   background-position: right 9px center;
   background-size: 13px 13px;
+}
+
+.table-sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.table-sort-control > span {
+  line-height: 1;
+}
+
+.table-sort-control .rows-limit-select {
+  min-width: 132px;
+}
+
+.table-sort-control #tableSortDirectionSelect.rows-limit-select {
+  min-width: 150px;
 }
 
 .table-pagination {
@@ -4716,6 +4753,21 @@ tbody tr:hover {
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
+  }
+
+  .table-tools-left {
+    width: 100%;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .table-sort-control {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .table-sort-control .rows-limit-select {
+    min-width: 124px;
   }
 
   .table-pagination {

@@ -34,17 +34,18 @@ function render() {
 function renderRows() {
   hideHoverZoom();
   const filteredRows = applyFilters(state.rows);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / state.rowsLimit));
+  const sortedRows = applyTableSort(filteredRows);
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / state.rowsLimit));
   state.rowsPage = Math.max(1, Math.min(totalPages, state.rowsPage));
   const startIndex = (state.rowsPage - 1) * state.rowsLimit;
-  const visibleRows = filteredRows.slice(startIndex, startIndex + state.rowsLimit);
+  const visibleRows = sortedRows.slice(startIndex, startIndex + state.rowsLimit);
 
-  state.pagination.filtered = filteredRows.length;
+  state.pagination.filtered = sortedRows.length;
   state.pagination.visible = visibleRows.length;
-  state.pagination.totalPages = filteredRows.length > 0 ? totalPages : 0;
+  state.pagination.totalPages = sortedRows.length > 0 ? totalPages : 0;
   renderRowsPagination();
 
-  if (filteredRows.length === 0) {
+  if (sortedRows.length === 0) {
     el.rowsBody.innerHTML =
       `<tr><td class="empty-cell" colspan="${TABLE_COLUMNS}">Нет строк для отображения. Проверьте фильтры или добавьте артикулы.</td></tr>`;
     return;
@@ -147,8 +148,8 @@ function renderRows() {
     .join("");
 
   const limitNote =
-    filteredRows.length > visibleRows.length
-      ? `<tr><td class="empty-cell" colspan="${TABLE_COLUMNS}">Показано ${visibleRows.length} строк на странице ${state.rowsPage} из ${state.pagination.totalPages} (всего ${filteredRows.length}).</td></tr>`
+    sortedRows.length > visibleRows.length
+      ? `<tr><td class="empty-cell" colspan="${TABLE_COLUMNS}">Показано ${visibleRows.length} строк на странице ${state.rowsPage} из ${state.pagination.totalPages} (всего ${sortedRows.length}).</td></tr>`
       : "";
 
   el.rowsBody.innerHTML = rowsHtml + limitNote;
@@ -234,6 +235,10 @@ function applyFilters(rows, filterOverrides = null) {
       return false;
     }
 
+    if (!matchStockRangeFilter(row, activeFilters.stockFrom, activeFilters.stockTo)) {
+      return false;
+    }
+
     if (!matchCabinetFilter(row.cabinet, activeFilters.cabinet)) {
       return false;
     }
@@ -287,7 +292,49 @@ function applyFilters(rows, filterOverrides = null) {
     filteredRows = filteredRows.filter((row) => tagsProblemRowIds.has(row.id));
   }
 
+  if (state.stockPositiveOnly) {
+    filteredRows = filteredRows.filter((row) => Number.isFinite(row?.stockValue) && row.stockValue > 0);
+  }
+
   return filteredRows;
+}
+
+function parseStockBoundary(valueRaw) {
+  const raw = String(valueRaw ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number(raw.replace(",", "."));
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+function matchStockRangeFilter(row, fromRaw, toRaw) {
+  const from = parseStockBoundary(fromRaw);
+  const to = parseStockBoundary(toRaw);
+  if (!Number.isFinite(from) && !Number.isFinite(to)) {
+    return true;
+  }
+
+  if (!Number.isFinite(row?.stockValue)) {
+    return false;
+  }
+
+  const stock = Math.max(0, Math.round(row.stockValue));
+  const min = Number.isFinite(from) ? from : null;
+  const max = Number.isFinite(to) ? to : null;
+  const low = min !== null && max !== null ? Math.min(min, max) : min;
+  const high = min !== null && max !== null ? Math.max(min, max) : max;
+
+  if (low !== null && stock < low) {
+    return false;
+  }
+  if (high !== null && stock > high) {
+    return false;
+  }
+  return true;
 }
 
 function matchQuickSearchFilter(row, data, filterRaw) {
@@ -463,6 +510,94 @@ function matchBoolFilter(value, filterRaw) {
   }
 
   return true;
+}
+
+function getRowProblemsCountForSort(row) {
+  if (!row || !row.data || row.error) {
+    return NaN;
+  }
+
+  let count = 0;
+  if (getRecommendationValue(row.data) === false) {
+    count += 1;
+  }
+  if (row.data.hasRich === false) {
+    count += 1;
+  }
+  if (getVideoValue(row.data) === false) {
+    count += 1;
+  }
+  if (getAutoplayValue(row.data) === false) {
+    count += 1;
+  }
+  if (getTagsValue(row.data) === false) {
+    count += 1;
+  }
+  if (getCoverDuplicateValue(row.data) === true) {
+    count += 1;
+  }
+  return count;
+}
+
+function getRowSortValue(row, metricRaw) {
+  const metric = String(metricRaw || "default").trim().toLowerCase();
+  if (!row) {
+    return NaN;
+  }
+
+  switch (metric) {
+    case "nmid":
+      return Number(row.nmId);
+    case "stock":
+      return Number.isFinite(row.stockValue) ? row.stockValue : NaN;
+    case "price":
+      return Number.isFinite(row.currentPrice) ? row.currentPrice : NaN;
+    case "rating":
+      return Number(row?.data?.rating);
+    case "reviews":
+      return Number(row?.data?.reviewCount);
+    case "slides":
+      return Array.isArray(row?.data?.slides) ? row.data.slides.length : NaN;
+    case "problems":
+      return getRowProblemsCountForSort(row);
+    case "updated":
+      return row?.updatedAt ? new Date(row.updatedAt).getTime() : NaN;
+    default:
+      return NaN;
+  }
+}
+
+function applyTableSort(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const metric = normalizeTableSortMetric(state.tableSortMetric);
+  const direction = normalizeTableSortDirection(state.tableSortDirection);
+  if (metric === "default" || sourceRows.length <= 1) {
+    return sourceRows.slice();
+  }
+
+  const directionSign = direction === "desc" ? -1 : 1;
+
+  return sourceRows
+    .map((row, index) => ({
+      row,
+      index,
+      value: getRowSortValue(row, metric),
+    }))
+    .sort((a, b) => {
+      const aFinite = Number.isFinite(a.value);
+      const bFinite = Number.isFinite(b.value);
+      if (aFinite && bFinite) {
+        if (a.value !== b.value) {
+          return (a.value - b.value) * directionSign;
+        }
+        return a.index - b.index;
+      }
+      if (aFinite !== bFinite) {
+        return aFinite ? -1 : 1;
+      }
+      return a.index - b.index;
+    })
+    .map((item) => item.row);
 }
 
 function getStockState(row) {

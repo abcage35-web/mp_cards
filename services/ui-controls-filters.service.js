@@ -79,6 +79,9 @@ function getActiveGlobalFiltersCount() {
   if (state.tagsProblemOnly) {
     active += 1;
   }
+  if (state.stockPositiveOnly) {
+    active += 1;
+  }
   return active;
 }
 
@@ -86,6 +89,8 @@ function getActiveColumnFiltersCount() {
   const keys = [
     "nmId",
     "cardCode",
+    "stockFrom",
+    "stockTo",
     "cabinet",
     "name",
     "category",
@@ -636,7 +641,15 @@ function handleFilterInput(event) {
     return;
   }
 
-  state.filters[key] = String(control.value || "");
+  if (key === "stockFrom" || key === "stockTo") {
+    const normalizedStockBoundary = normalizeStockFilterBoundary(control.value);
+    state.filters[key] = normalizedStockBoundary;
+    if (control.value !== normalizedStockBoundary) {
+      control.value = normalizedStockBoundary;
+    }
+  } else {
+    state.filters[key] = String(control.value || "");
+  }
   if (
     (key === "recommendations" || key === "autoplay" || key === "video" || key === "tags") &&
     state.filters[key] === "na"
@@ -649,6 +662,19 @@ function handleFilterInput(event) {
     applyChecksFilterPopoverState();
   }
   render();
+}
+
+function normalizeStockFilterBoundary(valueRaw) {
+  const raw = String(valueRaw ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const parsed = Number(raw.replace(",", "."));
+  if (!Number.isFinite(parsed)) {
+    return "";
+  }
+  return String(Math.max(0, Math.floor(parsed)));
 }
 
 function renderFilterInputs() {

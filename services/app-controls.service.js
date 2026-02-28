@@ -518,6 +518,21 @@ function normalizeRowsLimit(value) {
   return Math.min(ROWS_LIMIT_MAX, Math.max(ROWS_LIMIT_DEFAULT, parsed));
 }
 
+function normalizeTableSortMetric(valueRaw) {
+  const value = String(valueRaw || "default")
+    .trim()
+    .toLowerCase();
+  const allowed = new Set(["default", "nmid", "stock", "price", "rating", "reviews", "slides", "problems", "updated"]);
+  return allowed.has(value) ? value : "default";
+}
+
+function normalizeTableSortDirection(valueRaw) {
+  const value = String(valueRaw || "asc")
+    .trim()
+    .toLowerCase();
+  return value === "desc" ? "desc" : "asc";
+}
+
 function normalizeAutoplayLimit(value) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) {
@@ -867,6 +882,31 @@ function applyRowsLimitControl() {
   }
 }
 
+function applyTableSortControls() {
+  state.tableSortMetric = normalizeTableSortMetric(state.tableSortMetric);
+  state.tableSortDirection = normalizeTableSortDirection(state.tableSortDirection);
+
+  if (el.tableSortMetricSelect) {
+    const metric = state.tableSortMetric;
+    const metricOptionExists = Array.from(el.tableSortMetricSelect.options).some((option) => option.value === metric);
+    el.tableSortMetricSelect.value = metricOptionExists ? metric : "default";
+    if (!metricOptionExists) {
+      state.tableSortMetric = "default";
+    }
+  }
+
+  if (el.tableSortDirectionSelect) {
+    const direction = state.tableSortDirection;
+    const directionOptionExists = Array.from(el.tableSortDirectionSelect.options).some(
+      (option) => option.value === direction,
+    );
+    el.tableSortDirectionSelect.value = directionOptionExists ? direction : "asc";
+    if (!directionOptionExists) {
+      state.tableSortDirection = "asc";
+    }
+  }
+}
+
 function handleRowsLimitChange() {
   if (!el.rowsLimitSelect) {
     return;
@@ -875,6 +915,23 @@ function handleRowsLimitChange() {
   state.rowsLimit = normalizeRowsLimit(el.rowsLimitSelect.value);
   state.rowsPage = 1;
   applyRowsLimitControl();
+  render();
+}
+
+function handleTableSortChange() {
+  const metric = el.tableSortMetricSelect ? normalizeTableSortMetric(el.tableSortMetricSelect.value) : "default";
+  const direction = el.tableSortDirectionSelect
+    ? normalizeTableSortDirection(el.tableSortDirectionSelect.value)
+    : "asc";
+
+  if (state.tableSortMetric === metric && state.tableSortDirection === direction) {
+    return;
+  }
+
+  state.tableSortMetric = metric;
+  state.tableSortDirection = direction;
+  state.rowsPage = 1;
+  applyTableSortControls();
   render();
 }
 
@@ -907,6 +964,7 @@ function handleResetAllFilters() {
   state.checksFiltersOpen = false;
   state.autoplayProblemOnly = false;
   state.tagsProblemOnly = false;
+  state.stockPositiveOnly = false;
   state.categorySearchQuery = "";
   if (el.globalCategorySearchInput) {
     el.globalCategorySearchInput.value = "";

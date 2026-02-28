@@ -206,6 +206,7 @@ function renderAgreementDashboardTo(targetEl, problemStats, meta = {}) {
     .map((part) => `<span class="agreement-total-meta-pill agreement-total-meta-pill-extra">${escapeHtml(part)}</span>`)
     .join("");
   const sellerSettingsHtml = buildSellerSettingsHtml();
+  const stockPositiveActive = isPresetActive("stockPositive");
 
   targetEl.innerHTML = `<div class="agreement-block">
     <div class="agreement-block-head">
@@ -250,6 +251,17 @@ function renderAgreementDashboardTo(targetEl, problemStats, meta = {}) {
           >
             ${renderIcon("chartLine")}
             <span>График</span>
+          </button>
+          <button
+            class="agreement-head-chart-btn${stockPositiveActive ? " is-active" : ""}"
+            type="button"
+            data-action="toggle-preset"
+            data-preset-id="stockPositive"
+            data-hint="Показать товары с остатками"
+            aria-label="Показать товары с остатками"
+          >
+            ${renderIcon("filter")}
+            <span>Товары с остатками</span>
           </button>
         </div>
       </article>
@@ -437,6 +449,8 @@ function isPresetActive(presetId) {
       return state.onlyErrors;
     case "notLoaded":
       return state.notLoadedOnly;
+    case "stockPositive":
+      return state.stockPositiveOnly;
     case "recommendationsNo":
       return state.filters.recommendations === "no";
     case "richNo":
@@ -467,6 +481,9 @@ function setPresetActive(presetId, isActive) {
       break;
     case "notLoaded":
       state.notLoadedOnly = enabled;
+      break;
+    case "stockPositive":
+      state.stockPositiveOnly = enabled;
       break;
     case "recommendationsNo":
       state.filters.recommendations = enabled ? "no" : "all";
@@ -501,6 +518,9 @@ function getPresetRowsCount(presetId) {
       return state.rows.filter((row) => Boolean(row.error)).length;
     case "notLoaded":
       return state.rows.filter((row) => !row?.data).length;
+    case "stockPositive":
+      return state.rows.filter((row) => row?.data && !row?.error && Number.isFinite(row.stockValue) && row.stockValue > 0)
+        .length;
     case "recommendationsNo":
       return state.rows.filter((row) => row.data && !row.error && getRecommendationValue(row.data) === false).length;
     case "richNo":

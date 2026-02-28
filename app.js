@@ -75,6 +75,8 @@ const FILTER_DEFAULTS = {
   quickSearch: "",
   nmId: "",
   cardCode: "",
+  stockFrom: "",
+  stockTo: "",
   cabinet: "all",
   categoryGroup: "all",
   name: "",
@@ -90,6 +92,7 @@ const FILTER_DEFAULTS = {
 const PRESET_FILTERS = [
   { id: "problemRows", label: "Только ошибки выгрузки" },
   { id: "notLoaded", label: "Не загруженные" },
+  { id: "stockPositive", label: "Товары с остатками" },
   { id: "recommendationsNo", label: "Рекомендации: нет" },
   { id: "richNo", label: "Рич: нет" },
   { id: "videoNo", label: "Видео: нет" },
@@ -205,6 +208,9 @@ const state = {
   globalColumnsOpen: false,
   autoplayProblemOnly: false,
   tagsProblemOnly: false,
+  stockPositiveOnly: false,
+  tableSortMetric: "default",
+  tableSortDirection: "asc",
   autoplayLimitPerCabinet: AUTOPLAY_LIMIT_DEFAULT,
   autoplayLimitByCabinet: {},
   tagsLimitPerCabinet: TAGS_LIMIT_DEFAULT,
@@ -317,6 +323,8 @@ const el = {
   filterNmId: document.getElementById("filterNmId"),
   filterCabinet: document.getElementById("filterCabinet"),
   rowsLimitSelect: document.getElementById("rowsLimitSelect"),
+  tableSortMetricSelect: document.getElementById("tableSortMetricSelect"),
+  tableSortDirectionSelect: document.getElementById("tableSortDirectionSelect"),
   checksFiltersToggle: document.getElementById("checksFiltersToggle"),
   checksFiltersPanel: document.getElementById("checksFiltersPanel"),
   pagePrevBtn: document.getElementById("pagePrevBtn"),
@@ -386,6 +394,7 @@ async function init() {
   applyAutoplayLimitControl();
   applyTagsLimitControl();
   applyRowsLimitControl();
+  applyTableSortControls();
   render();
   if (typeof ensureProblemSnapshotsInitialized === "function") {
     ensureProblemSnapshotsInitialized();
@@ -563,6 +572,7 @@ async function syncStateAfterAuth() {
   applyAutoplayLimitControl();
   applyTagsLimitControl();
   applyRowsLimitControl();
+  applyTableSortControls();
   render();
 }
 
@@ -778,6 +788,12 @@ function bindEvents() {
   }
   if (el.rowsLimitSelect) {
     el.rowsLimitSelect.addEventListener("change", handleRowsLimitChange);
+  }
+  if (el.tableSortMetricSelect) {
+    el.tableSortMetricSelect.addEventListener("change", handleTableSortChange);
+  }
+  if (el.tableSortDirectionSelect) {
+    el.tableSortDirectionSelect.addEventListener("change", handleTableSortChange);
   }
   document.addEventListener("change", handleAutoplayLimitChange);
   document.addEventListener("blur", handleAutoplayLimitChange, true);

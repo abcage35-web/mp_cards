@@ -592,6 +592,12 @@ function syncButtonState() {
   if (el.rowsLimitSelect) {
     el.rowsLimitSelect.disabled = disabled;
   }
+  if (el.tableSortMetricSelect) {
+    el.tableSortMetricSelect.disabled = disabled;
+  }
+  if (el.tableSortDirectionSelect) {
+    el.tableSortDirectionSelect.disabled = disabled;
+  }
   if (el.autoplayLimitInput) {
     el.autoplayLimitInput.disabled = disabled;
   }
@@ -724,6 +730,9 @@ function buildStatePayload(savedAtRaw = null, overrides = {}) {
     rowHistoryHideNoChanges: state.rowHistoryHideNoChanges,
     autoplayProblemOnly: state.autoplayProblemOnly,
     tagsProblemOnly: state.tagsProblemOnly,
+    stockPositiveOnly: state.stockPositiveOnly,
+    tableSortMetric: state.tableSortMetric,
+    tableSortDirection: state.tableSortDirection,
     sellerSettings: state.sellerSettings,
     colorVariantsCache: state.colorVariantsCache,
     updateSnapshots: normalizeProblemSnapshots(sourceUpdateSnapshots),
@@ -885,6 +894,17 @@ function applyParsedState(parsed) {
   state.rowHistoryHideNoChanges = Boolean(parsed.rowHistoryHideNoChanges);
   state.autoplayProblemOnly = Boolean(parsed.autoplayProblemOnly);
   state.tagsProblemOnly = Boolean(parsed.tagsProblemOnly);
+  state.stockPositiveOnly = Boolean(parsed.stockPositiveOnly);
+  state.tableSortMetric =
+    typeof normalizeTableSortMetric === "function"
+      ? normalizeTableSortMetric(parsed.tableSortMetric)
+      : String(parsed.tableSortMetric || "default");
+  state.tableSortDirection =
+    typeof normalizeTableSortDirection === "function"
+      ? normalizeTableSortDirection(parsed.tableSortDirection)
+      : String(parsed.tableSortDirection || "asc") === "desc"
+        ? "desc"
+        : "asc";
   state.sellerSettings = normalizeSellerSettings(parsed.sellerSettings);
   state.colorVariantsCache = normalizeColorVariantCache(parsed.colorVariantsCache);
   state.updateSnapshots = normalizeProblemSnapshots(parsed.updateSnapshots);
@@ -934,6 +954,9 @@ function resetStateToDefaults() {
   state.filterCountMode = "problems";
   state.autoplayProblemOnly = false;
   state.tagsProblemOnly = false;
+  state.stockPositiveOnly = false;
+  state.tableSortMetric = "default";
+  state.tableSortDirection = "asc";
   state.rowHistoryHideNoChanges = false;
   state.sellerSettings = createDefaultSellerSettings();
   state.colorVariantsCache = {};
