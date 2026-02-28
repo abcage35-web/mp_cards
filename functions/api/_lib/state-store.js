@@ -2,7 +2,7 @@ import { json } from "./auth.js";
 
 export const DEFAULT_STATE_KEY = "wb-dashboard-v2";
 const SNAPSHOT_LIMIT = 4000;
-const ROW_LOG_LIMIT = 320;
+const ROW_LOG_LIMIT = 100;
 const ROW_VERSION_LIMIT = 500;
 const DASHBOARD_SAVE_EVENT_LIMIT = 2000;
 const CSV_SEPARATOR = ",";
@@ -703,10 +703,50 @@ async function getSnapshotCount(db, stateKey) {
   return Math.max(0, Number(row?.total) || 0);
 }
 
-async function getLatestRowLogIds(db, stateKey) {
+function mapRowLogRecord(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const rowId = safeString(row.row_id, 120);
+  const logId = safeString(row.log_id, 120);
+  if (!rowId || !logId) {
+    return null;
+  }
+
+  const changes = (() => {
+    const parsed = parseJson(row.changes_json, []);
+    return Array.isArray(parsed) ? parsed : [];
+  })();
+
+  return {
+    rowId,
+    logId,
+    at: toIsoOrNow(row.at, new Date().toISOString()),
+    sourceType: safeString(row.source, 40).toLowerCase() === "system" ? "system" : "manual",
+    mode: safeString(row.mode, 40) || "full",
+    actionKey: safeString(row.action_key, 80) || "row-refresh",
+    status: safeString(row.status, 20).toLowerCase() === "error" ? "error" : "success",
+    error: safeString(row.error, 4000),
+    changes,
+  };
+}
+
+function isNoChangeLog(logRaw) {
+  const log = logRaw && typeof logRaw === "object" ? logRaw : null;
+  if (!log) {
+    return false;
+  }
+  if (safeString(log.status, 20).toLowerCase() === "error") {
+    return false;
+  }
+  if (safeString(log.error, 4000)) {
+    return false;
+  }
+  return !Array.isArray(log.changes) || log.changes.length <= 0;
+}
+
+async function getLatestRowLogs(db, stateKey) {
   const result = await db
     .prepare(
-      `SELECT row_id, log_id
+      `SELECT row_id, log_id, at, source, mode, action_key, status, error, changes_json
        FROM dashboard_row_logs
        WHERE state_key = ?1
          AND rowid IN (
@@ -722,24 +762,23 @@ async function getLatestRowLogIds(db, stateKey) {
   const rows = Array.isArray(result?.results) ? result.results : [];
   const latestByRowId = new Map();
   for (const row of rows) {
-    const rowId = safeString(row.row_id, 120);
-    const logId = safeString(row.log_id, 120);
-    if (!rowId || !logId) {
+    const mapped = mapRowLogRecord(row);
+    if (!mapped) {
       continue;
     }
-    latestByRowId.set(rowId, logId);
+    latestByRowId.set(mapped.rowId, mapped);
   }
   return latestByRowId;
 }
 
-async function getLatestRowLogIdsForRows(db, stateKey, rowIdsRaw) {
+async function getLatestRowLogsForRows(db, stateKey, rowIdsRaw) {
   const rowIds = normalizeRowIdList(rowIdsRaw);
   if (rowIds.length <= 0) {
     return new Map();
   }
 
   const placeholders = rowIds.map((_, index) => `?${index + 2}`).join(", ");
-  const sql = `SELECT row_id, log_id
+  const sql = `SELECT row_id, log_id, at, source, mode, action_key, status, error, changes_json
     FROM dashboard_row_logs
     WHERE state_key = ?1
       AND row_id IN (${placeholders})
@@ -753,12 +792,11 @@ async function getLatestRowLogIdsForRows(db, stateKey, rowIdsRaw) {
   const rows = Array.isArray(result?.results) ? result.results : [];
   const latestByRowId = new Map();
   for (const row of rows) {
-    const rowId = safeString(row.row_id, 120);
-    const logId = safeString(row.log_id, 120);
-    if (!rowId || !logId || latestByRowId.has(rowId)) {
+    const mapped = mapRowLogRecord(row);
+    if (!mapped || latestByRowId.has(mapped.rowId)) {
       continue;
     }
-    latestByRowId.set(rowId, logId);
+    latestByRowId.set(mapped.rowId, mapped);
   }
   return latestByRowId;
 }
@@ -937,6 +975,24 @@ ON CONFLICT(state_key, row_id, log_id) DO UPDATE SET
   actor_login = excluded.actor_login,
   actor_role = excluded.actor_role,
   actor_ip = excluded.actor_ip`;
+
+const UPDATE_EXISTING_ROW_LOG_SQL = `UPDATE dashboard_row_logs
+SET
+  at = ?1,
+  source = ?2,
+  mode = ?3,
+  action_key = ?4,
+  status = ?5,
+  error = ?6,
+  changes_json = ?7,
+  actor_user_id = ?8,
+  actor_login = ?9,
+  actor_role = ?10,
+  actor_ip = ?11,
+  created_at = ?12
+WHERE state_key = ?13
+  AND row_id = ?14
+  AND log_id = ?15`;
 
 const UPSERT_META_SQL = `INSERT INTO dashboard_state_meta (
   state_key,
@@ -1536,6 +1592,26 @@ function mapLogToBind(stateKey, rowId, log, actor, nowIso) {
   ];
 }
 
+function mapLogUpdateBind(stateKey, rowId, existingLogId, log, actor, nowIso) {
+  return [
+    log.at,
+    log.sourceType,
+    log.mode,
+    log.actionKey,
+    log.status,
+    log.error,
+    toJson(log.changes, "[]"),
+    actor.userId,
+    actor.login,
+    actor.role,
+    actor.ip,
+    nowIso,
+    stateKey,
+    rowId,
+    existingLogId,
+  ];
+}
+
 function mapSnapshotToBind(stateKey, snapshot, nowIso) {
   return [
     stateKey,
@@ -1659,7 +1735,7 @@ export async function saveDashboardState(db, input = {}) {
   })();
 
   const existingRowsById = await getCurrentRowsMap(db, stateKey);
-  const existingLatestLogIds = await getLatestRowLogIds(db, stateKey);
+  const existingLatestLogsByRowId = await getLatestRowLogs(db, stateKey);
   const existingSnapshotCount = await getSnapshotCount(db, stateKey);
   const incomingRowIds = new Set(normalizedRows.map((row) => row.rowId));
 
@@ -1741,20 +1817,34 @@ export async function saveDashboardState(db, input = {}) {
 
       const latestIncomingLog = row.logs.length > 0 ? row.logs[row.logs.length - 1] : null;
       const latestIncomingLogId = latestIncomingLog ? safeString(latestIncomingLog.logId, 120) : "";
-      const latestStoredLogId = existingLatestLogIds.get(row.rowId) || "";
+      const latestStoredLog = existingLatestLogsByRowId.get(row.rowId) || null;
+      const latestStoredLogId = latestStoredLog ? safeString(latestStoredLog.logId, 120) : "";
 
-      const logsToPersist =
-        latestIncomingLog && latestIncomingLogId && latestIncomingLogId !== latestStoredLogId
-          ? [latestIncomingLog]
-          : [];
+      const shouldMergeNoChange =
+        latestIncomingLog &&
+        latestStoredLog &&
+        isNoChangeLog(latestIncomingLog) &&
+        isNoChangeLog(latestStoredLog);
 
-      for (const log of logsToPersist) {
+      if (shouldMergeNoChange) {
+        const mergedLog = {
+          ...latestStoredLog,
+          ...latestIncomingLog,
+          logId: latestStoredLogId,
+          at: toIsoOrNow(latestIncomingLog.at, nowIso),
+        };
+        await db.prepare(UPDATE_EXISTING_ROW_LOG_SQL)
+          .bind(...mapLogUpdateBind(stateKey, row.rowId, latestStoredLogId, mergedLog, actor, nowIso))
+          .run();
+        rowsWithUpdatedLogs.add(row.rowId);
+        existingLatestLogsByRowId.set(row.rowId, mergedLog);
+      } else if (latestIncomingLog && latestIncomingLogId && latestIncomingLogId !== latestStoredLogId) {
         await db.prepare(UPSERT_ROW_LOG_SQL)
-          .bind(...mapLogToBind(stateKey, row.rowId, log, actor, nowIso))
+          .bind(...mapLogToBind(stateKey, row.rowId, latestIncomingLog, actor, nowIso))
           .run();
         logsUpserted += 1;
         rowsWithUpdatedLogs.add(row.rowId);
-        existingLatestLogIds.set(row.rowId, safeString(log.logId, 120));
+        existingLatestLogsByRowId.set(row.rowId, latestIncomingLog);
       }
     }
 
@@ -1947,7 +2037,7 @@ export async function saveDashboardStatePatch(db, input = {}) {
 
   const existingRowsTotal = await getCurrentRowsCount(db, stateKey);
   const existingRowsById = await getCurrentRowsMapByIds(db, stateKey, Array.from(candidateRowIdsSet));
-  const existingLatestLogIds = await getLatestRowLogIdsForRows(db, stateKey, upsertCandidateRowIds);
+  const existingLatestLogsByRowId = await getLatestRowLogsForRows(db, stateKey, upsertCandidateRowIds);
   const existingSnapshotCount = await getSnapshotCount(db, stateKey);
   let maxSortIndex = await getMaxSortIndex(db, stateKey);
 
@@ -2091,19 +2181,34 @@ export async function saveDashboardStatePatch(db, input = {}) {
 
       const latestIncomingLog = row.logs.length > 0 ? row.logs[row.logs.length - 1] : null;
       const latestIncomingLogId = latestIncomingLog ? safeString(latestIncomingLog.logId, 120) : "";
-      const latestStoredLogId = existingLatestLogIds.get(row.rowId) || "";
-      const logsToPersist =
-        latestIncomingLog && latestIncomingLogId && latestIncomingLogId !== latestStoredLogId
-          ? [latestIncomingLog]
-          : [];
+      const latestStoredLog = existingLatestLogsByRowId.get(row.rowId) || null;
+      const latestStoredLogId = latestStoredLog ? safeString(latestStoredLog.logId, 120) : "";
 
-      for (const log of logsToPersist) {
+      const shouldMergeNoChange =
+        latestIncomingLog &&
+        latestStoredLog &&
+        isNoChangeLog(latestIncomingLog) &&
+        isNoChangeLog(latestStoredLog);
+
+      if (shouldMergeNoChange) {
+        const mergedLog = {
+          ...latestStoredLog,
+          ...latestIncomingLog,
+          logId: latestStoredLogId,
+          at: toIsoOrNow(latestIncomingLog.at, nowIso),
+        };
+        await db.prepare(UPDATE_EXISTING_ROW_LOG_SQL)
+          .bind(...mapLogUpdateBind(stateKey, row.rowId, latestStoredLogId, mergedLog, actor, nowIso))
+          .run();
+        rowsWithUpdatedLogs.add(row.rowId);
+        existingLatestLogsByRowId.set(row.rowId, mergedLog);
+      } else if (latestIncomingLog && latestIncomingLogId && latestIncomingLogId !== latestStoredLogId) {
         await db.prepare(UPSERT_ROW_LOG_SQL)
-          .bind(...mapLogToBind(stateKey, row.rowId, log, actor, nowIso))
+          .bind(...mapLogToBind(stateKey, row.rowId, latestIncomingLog, actor, nowIso))
           .run();
         logsUpserted += 1;
         rowsWithUpdatedLogs.add(row.rowId);
-        existingLatestLogIds.set(row.rowId, safeString(log.logId, 120));
+        existingLatestLogsByRowId.set(row.rowId, latestIncomingLog);
       }
     }
 
