@@ -478,13 +478,55 @@ async function hasNormalizedStateData(db, stateKey) {
   return (Number(rowsCountRow?.total) || 0) > 0;
 }
 
+async function getCurrentRowsCount(db, stateKey) {
+  const rowsCountRow = await db
+    .prepare(
+      `SELECT COUNT(1) AS total
+       FROM dashboard_rows_current
+       WHERE state_key = ?1`,
+    )
+    .bind(stateKey)
+    .first();
+  return Math.max(0, Number(rowsCountRow?.total) || 0);
+}
+
+async function compactLegacyStateRecord(db, stateKey) {
+  const nowIso = new Date().toISOString();
+  const rowsCount = await getCurrentRowsCount(db, stateKey);
+  const metaRow = await db
+    .prepare(
+      `SELECT saved_at
+       FROM dashboard_state_meta
+       WHERE state_key = ?1
+       LIMIT 1`,
+    )
+    .bind(stateKey)
+    .first();
+
+  const savedAtIso = toIsoOrNow(metaRow?.saved_at, nowIso);
+  const compactPayload = {
+    savedAt: savedAtIso,
+    lastSyncAt: savedAtIso,
+    rowsCount,
+    migrated: true,
+    updatedAt: nowIso,
+  };
+
+  await db.prepare(UPSERT_LEGACY_STATE_SQL)
+    .bind(stateKey, JSON.stringify(compactPayload), savedAtIso, nowIso)
+    .run();
+
+  return { rowsCount, savedAt: savedAtIso, updatedAt: nowIso };
+}
+
 export async function migrateLegacyStateToNormalizedIfNeeded(db, input = {}) {
   await ensureStateTables(db);
 
   const stateKey = safeString(input.stateKey, 120) || DEFAULT_STATE_KEY;
   const alreadyNormalized = await hasNormalizedStateData(db, stateKey);
   if (alreadyNormalized) {
-    return { migrated: false, reason: "already-normalized" };
+    const compacted = await compactLegacyStateRecord(db, stateKey);
+    return { migrated: false, reason: "already-normalized", compacted: true, ...compacted };
   }
 
   const legacyRow = await db
