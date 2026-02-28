@@ -971,7 +971,16 @@ function persistState() {
   persistStateLocalPayload(payload);
   const canUseCloudSync = typeof isAuthenticated === "function" ? isAuthenticated() : true;
   if (canUseCloudSync && typeof queueCloudStateSync === "function") {
-    queueCloudStateSync(payload);
+    const cloudRows = state.rows.map((row) => ({
+      ...row,
+      updateLogs: normalizeRowUpdateLogs(row?.updateLogs).slice(
+        -Math.max(1, Number(CLOUD_SAVE_LOGS_PER_ROW) || 16),
+      ),
+    }));
+    const cloudPayload = buildStatePayload(payload.savedAt, {
+      rows: cloudRows,
+    });
+    queueCloudStateSync(cloudPayload);
   }
 }
 
@@ -994,13 +1003,23 @@ async function restoreState(options = {}) {
 
   if (cloudAuthoritative) {
     if (remotePayload && typeof remotePayload === "object") {
+      const nonEmptyShadowPayload = getPayloadRowsCount(shadowPendingPayload) > 0 ? shadowPendingPayload : null;
+      const nonEmptyLocalPayload = getPayloadRowsCount(localPayload) > 0 ? localPayload : null;
+      const selectedPayload = pickStatePayload(remotePayload, nonEmptyShadowPayload, nonEmptyLocalPayload);
       try {
-        applyParsedState(remotePayload);
+        applyParsedState(selectedPayload || remotePayload);
       } catch {
         resetStateToDefaults();
         return;
       }
-      persistStateLocalPayload(remotePayload);
+      const appliedPayload = selectedPayload || remotePayload;
+      persistStateLocalPayload(appliedPayload);
+      if (
+        appliedPayload !== remotePayload &&
+        typeof queueCloudStateSync === "function"
+      ) {
+        queueCloudStateSync(appliedPayload);
+      }
       return;
     }
 

@@ -253,37 +253,45 @@ function normalizeRowLogChanges(changesRaw) {
   return output;
 }
 
+function normalizeSingleRowLog(raw, fallbackIso, index = 0) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const at = toIsoOrNow(raw.at, fallbackIso);
+  const sourceType = safeString(raw.source, 40).toLowerCase() === "system" ? "system" : "manual";
+  const mode = safeString(raw.mode, 40) || "full";
+  const actionKey = safeString(raw.actionKey, 80) || "row-refresh";
+  const status = safeString(raw.status, 20).toLowerCase() === "error" ? "error" : "success";
+  const error = safeString(raw.error, 4000);
+  const changes = normalizeRowLogChanges(raw.changes);
+  const logId =
+    safeString(raw.id, 120) ||
+    `log-${Math.floor(new Date(at).getTime())}-${index}-${Math.random().toString(16).slice(2, 8)}`;
+
+  return {
+    logId,
+    at,
+    sourceType,
+    mode,
+    actionKey,
+    status,
+    error,
+    changes,
+  };
+}
+
 function normalizeRowLogs(logsRaw, fallbackIso) {
   const source = Array.isArray(logsRaw) ? logsRaw : [];
   const output = [];
 
   for (let index = 0; index < source.length; index += 1) {
-    const raw = source[index];
-    if (!raw || typeof raw !== "object") {
+    const normalized = normalizeSingleRowLog(source[index], fallbackIso, index);
+    if (!normalized) {
       continue;
     }
 
-    const at = toIsoOrNow(raw.at, fallbackIso);
-    const sourceType = safeString(raw.source, 40).toLowerCase() === "system" ? "system" : "manual";
-    const mode = safeString(raw.mode, 40) || "full";
-    const actionKey = safeString(raw.actionKey, 80) || "row-refresh";
-    const status = safeString(raw.status, 20).toLowerCase() === "error" ? "error" : "success";
-    const error = safeString(raw.error, 4000);
-    const changes = normalizeRowLogChanges(raw.changes);
-    const logId =
-      safeString(raw.id, 120) ||
-      `log-${Math.floor(new Date(at).getTime())}-${index}-${Math.random().toString(16).slice(2, 8)}`;
-
-    output.push({
-      logId,
-      at,
-      sourceType,
-      mode,
-      actionKey,
-      status,
-      error,
-      changes,
-    });
+    output.push(normalized);
 
     if (output.length >= ROW_LOG_LIMIT) {
       break;
@@ -291,6 +299,19 @@ function normalizeRowLogs(logsRaw, fallbackIso) {
   }
 
   return output;
+}
+
+function normalizeLatestRowLog(logsRaw, fallbackIso) {
+  if (!Array.isArray(logsRaw) || logsRaw.length <= 0) {
+    return [];
+  }
+  for (let index = logsRaw.length - 1; index >= 0; index -= 1) {
+    const normalized = normalizeSingleRowLog(logsRaw[index], fallbackIso, index);
+    if (normalized) {
+      return [normalized];
+    }
+  }
+  return [];
 }
 
 function normalizeProblemSnapshotEntry(raw, fallbackIso) {
@@ -403,7 +424,9 @@ async function normalizeRowForStorage(rowRaw, sortIndex, actor, savedAtIso) {
   };
 
   const rowHash = await sha256Hex(toJson(sortObjectKeysDeep(rowForHash), "{}"));
-  const logs = normalizeRowLogs(row.updateLogs, savedAtIso);
+  // Для API-сохранения достаточно последнего лога: это резко снижает нагрузку на D1/CPU
+  // при больших объемах строк и длинной истории в кеше клиента.
+  const logs = normalizeLatestRowLog(row.updateLogs, savedAtIso);
 
   return {
     stateKey: actor.stateKey,

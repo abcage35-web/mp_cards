@@ -3,6 +3,8 @@ const CLOUD_STATE_DEFAULT_ENDPOINT = "/api/state";
 const CLOUD_STATE_EXPORT_ENDPOINT = "/api/state-export";
 const CLOUD_STATE_FETCH_TIMEOUT_MS = 30000;
 const CLOUD_STATE_SYNC_DEBOUNCE_MS = 250;
+const CLOUD_STATE_SYNC_RETRY_BASE_MS = 1200;
+const CLOUD_STATE_SYNC_RETRY_MAX_MS = 12000;
 
 const cloudStateSync = {
   timer: 0,
@@ -11,6 +13,7 @@ const cloudStateSync = {
   latestPayload: null,
   lastErrorAt: 0,
   lastAuthErrorAt: 0,
+  retryDelayMs: CLOUD_STATE_SYNC_RETRY_BASE_MS,
 };
 
 function getCloudStateKey() {
@@ -150,6 +153,30 @@ async function flushCloudStateSync() {
   cloudStateSync.inFlight = false;
   if (!ok) {
     cloudStateSync.lastErrorAt = Date.now();
+    cloudStateSync.retryDelayMs = Math.min(
+      CLOUD_STATE_SYNC_RETRY_MAX_MS,
+      Math.max(CLOUD_STATE_SYNC_RETRY_BASE_MS, Math.round(cloudStateSync.retryDelayMs * 1.6)),
+    );
+    clearCloudStateTimer();
+    cloudStateSync.timer = setTimeout(() => {
+      clearCloudStateTimer();
+      flushCloudStateSync();
+    }, cloudStateSync.retryDelayMs);
+    try {
+      window.dispatchEvent(new CustomEvent("wb-cloud-state-sync-failed"));
+    } catch {
+      // noop
+    }
+  } else {
+    cloudStateSync.retryDelayMs = CLOUD_STATE_SYNC_RETRY_BASE_MS;
+    if (typeof clearShadowPendingPayload === "function") {
+      clearShadowPendingPayload();
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("wb-cloud-state-sync-ok"));
+    } catch {
+      // noop
+    }
   }
 
   if (cloudStateSync.pending) {
@@ -170,6 +197,10 @@ function queueCloudStateSync(payload) {
   }
 
   cloudStateSync.latestPayload = payload;
+  if (typeof persistShadowPendingPayload === "function") {
+    persistShadowPendingPayload(payload);
+  }
+  cloudStateSync.retryDelayMs = CLOUD_STATE_SYNC_RETRY_BASE_MS;
 
   clearCloudStateTimer();
   cloudStateSync.timer = setTimeout(() => {
