@@ -126,6 +126,22 @@ export async function onRequestPut(context) {
       );
     }
 
+    const isMassShrink =
+      currentRowsCount >= 50 &&
+      nextRowsCount < currentRowsCount &&
+      nextRowsCount <= Math.floor(currentRowsCount * 0.5);
+    const confirmMassDelete = body?.confirmMassDelete === true;
+    if (isAdmin && isMassShrink && !confirmMassDelete) {
+      return json(
+        {
+          ok: false,
+          error:
+            "Mass delete protection: rows reduction exceeds 50%. Confirm explicitly with confirmMassDelete=true.",
+        },
+        { status: 409 },
+      );
+    }
+
     const saved = await saveDashboardState(env.DB, {
       stateKey: key,
       payload,

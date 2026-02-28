@@ -853,6 +853,23 @@ ON CONFLICT(state_key, snapshot_id) DO UPDATE SET
   cabinets_json = excluded.cabinets_json,
   updated_at = excluded.updated_at`;
 
+const UPSERT_ARTICLE_REGISTRY_SQL = `INSERT INTO dashboard_article_registry (
+  state_key,
+  nm_id,
+  first_seen_at,
+  last_seen_at,
+  last_seen_by_user_id,
+  last_seen_by_login,
+  last_seen_by_role,
+  last_seen_by_ip
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+ON CONFLICT(state_key, nm_id) DO UPDATE SET
+  last_seen_at = excluded.last_seen_at,
+  last_seen_by_user_id = excluded.last_seen_by_user_id,
+  last_seen_by_login = excluded.last_seen_by_login,
+  last_seen_by_role = excluded.last_seen_by_role,
+  last_seen_by_ip = excluded.last_seen_by_ip`;
+
 export async function ensureStateTables(db) {
   if (!db) {
     return;
@@ -932,6 +949,21 @@ export async function ensureStateTables(db) {
 
     CREATE INDEX IF NOT EXISTS idx_dashboard_rows_current_cabinet
       ON dashboard_rows_current(state_key, cabinet);
+
+    CREATE TABLE IF NOT EXISTS dashboard_article_registry (
+      state_key TEXT NOT NULL,
+      nm_id TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      last_seen_by_user_id INTEGER,
+      last_seen_by_login TEXT,
+      last_seen_by_role TEXT,
+      last_seen_by_ip TEXT,
+      PRIMARY KEY(state_key, nm_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_article_registry_seen
+      ON dashboard_article_registry(state_key, last_seen_at);
 
     CREATE TABLE IF NOT EXISTS dashboard_row_versions (
       version_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1459,6 +1491,21 @@ export async function saveDashboardState(db, input = {}) {
       await db.prepare(UPSERT_ROW_SQL)
         .bind(...mapNormalizedRowToCurrentBind(row, existing?.created_at || null))
         .run();
+
+      if (row.nmId) {
+        await db.prepare(UPSERT_ARTICLE_REGISTRY_SQL)
+          .bind(
+            stateKey,
+            row.nmId,
+            nowIso,
+            nowIso,
+            actor.userId,
+            actor.login,
+            actor.role,
+            actor.ip,
+          )
+          .run();
+      }
 
       if (isChanged) {
         rowsChanged += 1;
@@ -2071,6 +2118,130 @@ export async function rollbackRowToVersion(db, input = {}) {
     nmId: normalized.nmId,
     rollbackVersionId: versionId,
     savedAt: nowIso,
+  };
+}
+
+export async function recoverStateRowsFromVersions(db, input = {}) {
+  await ensureStateTables(db);
+
+  const stateKey = safeString(input.stateKey, 120) || DEFAULT_STATE_KEY;
+  const actor = {
+    userId: Number.isFinite(Number(input.actorUserId)) ? Number(input.actorUserId) : null,
+    login: safeString(input.actorLogin, 80),
+    role: safeString(input.actorRole, 40),
+    ip: safeString(input.actorIp, 64),
+    stateKey,
+  };
+  const nowIso = new Date().toISOString();
+
+  const currentRowsResult = await db
+    .prepare(
+      `SELECT row_id, nm_id, created_at
+       FROM dashboard_rows_current
+       WHERE state_key = ?1`,
+    )
+    .bind(stateKey)
+    .all();
+  const currentRows = Array.isArray(currentRowsResult?.results) ? currentRowsResult.results : [];
+  const createdAtByRowId = new Map();
+  for (const row of currentRows) {
+    const rowId = safeString(row.row_id, 120);
+    if (!rowId) {
+      continue;
+    }
+    createdAtByRowId.set(rowId, safeNullableString(row.created_at, 100));
+  }
+
+  const latestVersionsResult = await db
+    .prepare(
+      `SELECT v.*
+       FROM dashboard_row_versions v
+       JOIN (
+         SELECT nm_id, MAX(version_id) AS latest_version_id
+         FROM dashboard_row_versions
+         WHERE state_key = ?1
+           AND nm_id <> ''
+           AND operation IN ('upsert', 'rollback')
+         GROUP BY nm_id
+       ) latest ON latest.latest_version_id = v.version_id
+       WHERE v.state_key = ?1
+       ORDER BY v.sort_index ASC, v.version_id ASC`,
+    )
+    .bind(stateKey)
+    .all();
+  const latestVersions = Array.isArray(latestVersionsResult?.results) ? latestVersionsResult.results : [];
+
+  if (latestVersions.length <= 0) {
+    return {
+      ok: true,
+      stateKey,
+      restoredRows: 0,
+      rowsTotal: currentRows.length,
+      sourceRows: 0,
+    };
+  }
+
+  let txStarted = false;
+  try {
+    await db.exec("BEGIN");
+    txStarted = true;
+  } catch {
+    txStarted = false;
+  }
+
+  let restoredRows = 0;
+  try {
+    for (let index = 0; index < latestVersions.length; index += 1) {
+      const versionRow = latestVersions[index];
+      const payloadRow = buildPayloadRowFromVersion(versionRow);
+      const normalized = await normalizeRowForStorage(payloadRow, index, actor, nowIso);
+      const existingCreatedAt = createdAtByRowId.get(normalized.rowId) || null;
+
+      await db.prepare(UPSERT_ROW_SQL)
+        .bind(...mapNormalizedRowToCurrentBind(normalized, existingCreatedAt))
+        .run();
+
+      if (!createdAtByRowId.has(normalized.rowId)) {
+        restoredRows += 1;
+      }
+      createdAtByRowId.set(normalized.rowId, existingCreatedAt || nowIso);
+
+      if (normalized.nmId) {
+        await db.prepare(UPSERT_ARTICLE_REGISTRY_SQL)
+          .bind(
+            stateKey,
+            normalized.nmId,
+            nowIso,
+            nowIso,
+            actor.userId,
+            actor.login,
+            actor.role,
+            actor.ip,
+          )
+          .run();
+      }
+    }
+
+    if (txStarted) {
+      await db.exec("COMMIT");
+    }
+  } catch (error) {
+    if (txStarted) {
+      try {
+        await db.exec("ROLLBACK");
+      } catch {
+        // noop
+      }
+    }
+    throw error;
+  }
+
+  return {
+    ok: true,
+    stateKey,
+    restoredRows,
+    rowsTotal: createdAtByRowId.size,
+    sourceRows: latestVersions.length,
   };
 }
 

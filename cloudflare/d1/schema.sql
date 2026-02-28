@@ -113,6 +113,21 @@ CREATE INDEX IF NOT EXISTS idx_dashboard_rows_current_updated
 CREATE INDEX IF NOT EXISTS idx_dashboard_rows_current_cabinet
   ON dashboard_rows_current(state_key, cabinet);
 
+CREATE TABLE IF NOT EXISTS dashboard_article_registry (
+  state_key TEXT NOT NULL,
+  nm_id TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  last_seen_by_user_id INTEGER,
+  last_seen_by_login TEXT,
+  last_seen_by_role TEXT,
+  last_seen_by_ip TEXT,
+  PRIMARY KEY(state_key, nm_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dashboard_article_registry_seen
+  ON dashboard_article_registry(state_key, last_seen_at);
+
 CREATE TABLE IF NOT EXISTS dashboard_row_versions (
   version_id INTEGER PRIMARY KEY AUTOINCREMENT,
   state_key TEXT NOT NULL,
