@@ -6,10 +6,12 @@ const ROW_LOG_LIMIT = 100;
 const ROW_VERSION_LIMIT = 500;
 const DASHBOARD_SAVE_EVENT_LIMIT = 2000;
 const CSV_SEPARATOR = ",";
+const XLSX_CELL_MAX_LENGTH = 32767;
 const WRITE_UPSERT_ROW_VERSIONS = false;
 const WRITE_LEGACY_STATE_ON_SAVE = false;
 const TOUCH_ARTICLE_REGISTRY_ON_UPDATE = false;
 const WRITE_SAVE_EVENTS = false;
+const UTF8_ENCODER = new TextEncoder();
 
 let tablesEnsured = false;
 let tablesEnsurePromise = null;
@@ -2667,6 +2669,282 @@ function deriveProblemFlagYesNo(boolValueRaw) {
   return "Н/Д";
 }
 
+function getDashboardExportColumns() {
+  return [
+    ["stateKey", "state_key"],
+    ["rowId", "row_id"],
+    ["nmId", "nm_id"],
+    ["cardCode", "vendor_code"],
+    ["cabinet", "cabinet"],
+    ["supplierId", "supplier_id"],
+    ["name", "product_name"],
+    ["category", "category"],
+    ["brand", "brand"],
+    ["stockValue", "stock_qty"],
+    ["inStock", "in_stock"],
+    ["currentPrice", "current_price_rub"],
+    ["basePrice", "base_price_rub"],
+    ["rating", "rating"],
+    ["reviewCount", "review_count"],
+    ["hasVideo", "video"],
+    ["hasRecommendations", "recommendations"],
+    ["hasRich", "rich"],
+    ["hasAutoplay", "autoplay"],
+    ["hasTags", "tags"],
+    ["coverDuplicate", "cover_duplicate"],
+    ["recommendationCount", "recommendation_count"],
+    ["listingSlidesCount", "listing_slides_count"],
+    ["richSlidesCount", "rich_slides_count"],
+    ["colorCount", "color_count"],
+    ["recommendationRefs", "recommendation_nm_ids"],
+    ["colorNmIds", "color_nm_ids"],
+    ["marketError", "market_error"],
+    ["rowError", "row_error"],
+    ["problemLoadError", "problem_load_error"],
+    ["problemRecommendations", "problem_recommendations"],
+    ["problemRich", "problem_rich"],
+    ["problemVideo", "problem_video"],
+    ["problemAutoplay", "problem_autoplay"],
+    ["problemTags", "problem_tags"],
+    ["problemCoverDuplicate", "problem_cover_duplicate"],
+    ["updatedAt", "row_updated_at"],
+    ["lastSavedAt", "saved_at"],
+    ["savedByLogin", "saved_by_login"],
+    ["savedByRole", "saved_by_role"],
+    ["savedByIp", "saved_by_ip"],
+  ];
+}
+
+function formatDashboardExportCellValue(rowRaw, keyRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const key = String(keyRaw || "");
+  const value = row[key];
+  if (key === "currentPrice" || key === "basePrice") {
+    return Number.isFinite(value) ? formatNumberWithSpace(value) : "";
+  }
+  if (
+    key === "stockValue" ||
+    key === "reviewCount" ||
+    key === "recommendationCount" ||
+    key === "listingSlidesCount" ||
+    key === "richSlidesCount" ||
+    key === "colorCount"
+  ) {
+    return Number.isFinite(value) ? String(Math.round(value)) : "";
+  }
+  if (key === "rating") {
+    return Number.isFinite(value) ? String(Math.round(value * 10) / 10).replace(".", ",") : "";
+  }
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function xmlEscape(valueRaw) {
+  return String(valueRaw || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function utf8Bytes(valueRaw) {
+  return UTF8_ENCODER.encode(String(valueRaw ?? ""));
+}
+
+function writeUint16LE(target, offset, valueRaw) {
+  const value = Number(valueRaw) >>> 0;
+  target[offset] = value & 0xff;
+  target[offset + 1] = (value >>> 8) & 0xff;
+}
+
+function writeUint32LE(target, offset, valueRaw) {
+  const value = Number(valueRaw) >>> 0;
+  target[offset] = value & 0xff;
+  target[offset + 1] = (value >>> 8) & 0xff;
+  target[offset + 2] = (value >>> 16) & 0xff;
+  target[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function concatUint8Arrays(chunksRaw) {
+  const chunks = Array.isArray(chunksRaw) ? chunksRaw.filter((item) => item instanceof Uint8Array) : [];
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+let crc32TableCache = null;
+
+function getCrc32Table() {
+  if (crc32TableCache) {
+    return crc32TableCache;
+  }
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c >>> 0;
+  }
+  crc32TableCache = table;
+  return table;
+}
+
+function crc32(bytesRaw) {
+  const bytes = bytesRaw instanceof Uint8Array ? bytesRaw : new Uint8Array();
+  const table = getCrc32Table();
+  let crc = 0xffffffff;
+  for (let index = 0; index < bytes.length; index += 1) {
+    const next = bytes[index];
+    crc = (crc >>> 8) ^ table[(crc ^ next) & 0xff];
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function getDosDateTime(dateRaw) {
+  const date = dateRaw instanceof Date ? dateRaw : new Date();
+  const year = Math.max(1980, date.getFullYear());
+  const month = Math.max(1, date.getMonth() + 1);
+  const day = Math.max(1, date.getDate());
+  const hours = Math.max(0, date.getHours());
+  const minutes = Math.max(0, date.getMinutes());
+  const seconds = Math.max(0, date.getSeconds());
+  const dosTime = ((hours & 0x1f) << 11) | ((minutes & 0x3f) << 5) | (Math.floor(seconds / 2) & 0x1f);
+  const dosDate = (((year - 1980) & 0x7f) << 9) | ((month & 0x0f) << 5) | (day & 0x1f);
+  return { dosTime, dosDate };
+}
+
+function buildZipStore(entriesRaw) {
+  const entries = Array.isArray(entriesRaw) ? entriesRaw : [];
+  const localChunks = [];
+  const centralChunks = [];
+  let localOffset = 0;
+  const { dosTime, dosDate } = getDosDateTime(new Date());
+
+  for (const entry of entries) {
+    const name = safeString(entry?.name, 260);
+    if (!name) {
+      continue;
+    }
+    const nameBytes = utf8Bytes(name);
+    const dataBytes = entry?.data instanceof Uint8Array ? entry.data : utf8Bytes(entry?.data ?? "");
+    const fileCrc = crc32(dataBytes);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    writeUint32LE(localHeader, 0, 0x04034b50);
+    writeUint16LE(localHeader, 4, 20);
+    writeUint16LE(localHeader, 6, 0);
+    writeUint16LE(localHeader, 8, 0);
+    writeUint16LE(localHeader, 10, dosTime);
+    writeUint16LE(localHeader, 12, dosDate);
+    writeUint32LE(localHeader, 14, fileCrc);
+    writeUint32LE(localHeader, 18, dataBytes.length);
+    writeUint32LE(localHeader, 22, dataBytes.length);
+    writeUint16LE(localHeader, 26, nameBytes.length);
+    writeUint16LE(localHeader, 28, 0);
+    localHeader.set(nameBytes, 30);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    writeUint32LE(centralHeader, 0, 0x02014b50);
+    writeUint16LE(centralHeader, 4, 20);
+    writeUint16LE(centralHeader, 6, 20);
+    writeUint16LE(centralHeader, 8, 0);
+    writeUint16LE(centralHeader, 10, 0);
+    writeUint16LE(centralHeader, 12, dosTime);
+    writeUint16LE(centralHeader, 14, dosDate);
+    writeUint32LE(centralHeader, 16, fileCrc);
+    writeUint32LE(centralHeader, 20, dataBytes.length);
+    writeUint32LE(centralHeader, 24, dataBytes.length);
+    writeUint16LE(centralHeader, 28, nameBytes.length);
+    writeUint16LE(centralHeader, 30, 0);
+    writeUint16LE(centralHeader, 32, 0);
+    writeUint16LE(centralHeader, 34, 0);
+    writeUint16LE(centralHeader, 36, 0);
+    writeUint32LE(centralHeader, 38, 0);
+    writeUint32LE(centralHeader, 42, localOffset);
+    centralHeader.set(nameBytes, 46);
+
+    localChunks.push(localHeader, dataBytes);
+    centralChunks.push(centralHeader);
+    localOffset += localHeader.length + dataBytes.length;
+  }
+
+  const entriesCount = Math.min(0xffff, centralChunks.length);
+  const centralSize = centralChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const eocd = new Uint8Array(22);
+  writeUint32LE(eocd, 0, 0x06054b50);
+  writeUint16LE(eocd, 4, 0);
+  writeUint16LE(eocd, 6, 0);
+  writeUint16LE(eocd, 8, entriesCount);
+  writeUint16LE(eocd, 10, entriesCount);
+  writeUint32LE(eocd, 12, centralSize);
+  writeUint32LE(eocd, 16, localOffset);
+  writeUint16LE(eocd, 20, 0);
+
+  return concatUint8Arrays([...localChunks, ...centralChunks, eocd]);
+}
+
+function columnIndexToLetter(indexRaw) {
+  let index = Math.max(0, Number(indexRaw) || 0);
+  let letters = "";
+  do {
+    const remainder = index % 26;
+    letters = String.fromCharCode(65 + remainder) + letters;
+    index = Math.floor(index / 26) - 1;
+  } while (index >= 0);
+  return letters;
+}
+
+function buildInlineStringCellXml(cellRefRaw, textRaw) {
+  const cellRef = safeString(cellRefRaw, 20);
+  const rawText = String(textRaw ?? "").slice(0, XLSX_CELL_MAX_LENGTH);
+  const escapedText = xmlEscape(rawText);
+  const preserveSpace = /^\s|\s$/.test(rawText) || rawText.includes("\n");
+  const preserveAttr = preserveSpace ? ' xml:space="preserve"' : "";
+  return `<c r="${cellRef}" t="inlineStr"><is><t${preserveAttr}>${escapedText}</t></is></c>`;
+}
+
+function buildDashboardSheetXml(rowsRaw, columnsRaw) {
+  const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+  const columns = Array.isArray(columnsRaw) ? columnsRaw : [];
+  const rowXmlList = [];
+
+  const headerCells = columns
+    .map(([, title], columnIndex) => buildInlineStringCellXml(`${columnIndexToLetter(columnIndex)}1`, title))
+    .join("");
+  rowXmlList.push(`<row r="1">${headerCells}</row>`);
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const excelRow = rowIndex + 2;
+    const cells = columns
+      .map(([key], columnIndex) =>
+        buildInlineStringCellXml(
+          `${columnIndexToLetter(columnIndex)}${excelRow}`,
+          formatDashboardExportCellValue(row, key),
+        ),
+      )
+      .join("");
+    rowXmlList.push(`<row r="${excelRow}">${cells}</row>`);
+  }
+
+  const lastCol = columnIndexToLetter(Math.max(0, columns.length - 1));
+  const lastRow = Math.max(1, rows.length + 1);
+  const dimensionRef = columns.length > 0 ? `A1:${lastCol}${lastRow}` : "A1";
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="${dimensionRef}" />
+  <sheetViews><sheetView workbookViewId="0" /></sheetViews>
+  <sheetData>${rowXmlList.join("")}</sheetData>
+</worksheet>`;
+}
+
 export async function getDashboardExportRows(db, stateKey) {
   await ensureStateTables(db);
 
@@ -2734,72 +3012,55 @@ export async function getDashboardExportRows(db, stateKey) {
 
 export function buildDashboardExportCsv(rowsRaw) {
   const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
-  const columns = [
-    ["stateKey", "state_key"],
-    ["rowId", "row_id"],
-    ["nmId", "nm_id"],
-    ["cardCode", "vendor_code"],
-    ["cabinet", "cabinet"],
-    ["supplierId", "supplier_id"],
-    ["name", "product_name"],
-    ["category", "category"],
-    ["brand", "brand"],
-    ["stockValue", "stock_qty"],
-    ["inStock", "in_stock"],
-    ["currentPrice", "current_price_rub"],
-    ["basePrice", "base_price_rub"],
-    ["rating", "rating"],
-    ["reviewCount", "review_count"],
-    ["hasVideo", "video"],
-    ["hasRecommendations", "recommendations"],
-    ["hasRich", "rich"],
-    ["hasAutoplay", "autoplay"],
-    ["hasTags", "tags"],
-    ["coverDuplicate", "cover_duplicate"],
-    ["recommendationCount", "recommendation_count"],
-    ["listingSlidesCount", "listing_slides_count"],
-    ["richSlidesCount", "rich_slides_count"],
-    ["colorCount", "color_count"],
-    ["recommendationRefs", "recommendation_nm_ids"],
-    ["colorNmIds", "color_nm_ids"],
-    ["marketError", "market_error"],
-    ["rowError", "row_error"],
-    ["problemLoadError", "problem_load_error"],
-    ["problemRecommendations", "problem_recommendations"],
-    ["problemRich", "problem_rich"],
-    ["problemVideo", "problem_video"],
-    ["problemAutoplay", "problem_autoplay"],
-    ["problemTags", "problem_tags"],
-    ["problemCoverDuplicate", "problem_cover_duplicate"],
-    ["updatedAt", "row_updated_at"],
-    ["lastSavedAt", "saved_at"],
-    ["savedByLogin", "saved_by_login"],
-    ["savedByRole", "saved_by_role"],
-    ["savedByIp", "saved_by_ip"],
-  ];
+  const columns = getDashboardExportColumns();
 
   const lines = [];
   lines.push(columns.map(([, title]) => csvEscape(title)).join(CSV_SEPARATOR));
 
   for (const row of rows) {
     const values = columns.map(([key]) => {
-      const value = row[key];
-      if (key === "currentPrice" || key === "basePrice") {
-        return csvEscape(Number.isFinite(value) ? formatNumberWithSpace(value) : "");
-      }
-      if (key === "stockValue" || key === "reviewCount" || key === "recommendationCount" || key === "listingSlidesCount" || key === "richSlidesCount" || key === "colorCount") {
-        return csvEscape(Number.isFinite(value) ? String(Math.round(value)) : "");
-      }
-      if (key === "rating") {
-        return csvEscape(Number.isFinite(value) ? String(Math.round(value * 10) / 10).replace(".", ",") : "");
-      }
-      return csvEscape(value ?? "");
+      return csvEscape(formatDashboardExportCellValue(row, key));
     });
 
     lines.push(values.join(CSV_SEPARATOR));
   }
 
   return `\uFEFF${lines.join("\n")}`;
+}
+
+export function buildDashboardExportXlsx(rowsRaw) {
+  const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+  const columns = getDashboardExportColumns();
+  const sheetXml = buildDashboardSheetXml(rows, columns);
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
+  <Default Extension="xml" ContentType="application/xml" />
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" />
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" />
+</Types>`;
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml" />
+</Relationships>`;
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="dashboard" sheetId="1" r:id="rId1" />
+  </sheets>
+</workbook>`;
+  const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />
+</Relationships>`;
+
+  return buildZipStore([
+    { name: "[Content_Types].xml", data: utf8Bytes(contentTypesXml) },
+    { name: "_rels/.rels", data: utf8Bytes(rootRelsXml) },
+    { name: "xl/workbook.xml", data: utf8Bytes(workbookXml) },
+    { name: "xl/_rels/workbook.xml.rels", data: utf8Bytes(workbookRelsXml) },
+    { name: "xl/worksheets/sheet1.xml", data: utf8Bytes(sheetXml) },
+  ]);
 }
 
 function buildPayloadRowFromVersion(versionRow) {

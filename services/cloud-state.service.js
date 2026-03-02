@@ -516,7 +516,7 @@ async function downloadCloudStateExport() {
     const blob = await response.blob();
     const contentDisposition = String(response.headers.get("content-disposition") || "");
     const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
-    const filename = filenameMatch?.[1] ? filenameMatch[1] : `wb-dashboard-export-${Date.now()}.csv`;
+    const filename = filenameMatch?.[1] ? filenameMatch[1] : `wb-dashboard-export-${Date.now()}.xlsx`;
 
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");

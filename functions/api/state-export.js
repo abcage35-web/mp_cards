@@ -1,7 +1,7 @@
 import { getSessionFromRequest, json } from "./_lib/auth.js";
 import {
   DEFAULT_STATE_KEY,
-  buildDashboardExportCsv,
+  buildDashboardExportXlsx,
   ensureStateTables,
   errorJson,
   getDashboardExportRows,
@@ -15,13 +15,13 @@ function getStateKey(request) {
   return key || DEFAULT_STATE_KEY;
 }
 
-function buildFilename(prefix = "wb-dashboard-export") {
+function buildFilename(prefix = "wb-dashboard-export", extension = "xlsx") {
   const date = new Date();
   const pad = (value) => String(value).padStart(2, "0");
   const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(
     date.getHours(),
   )}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
-  return `${prefix}_${stamp}.csv`;
+  return `${prefix}_${stamp}.${extension}`;
 }
 
 export async function onRequestOptions() {
@@ -50,14 +50,14 @@ export async function onRequestGet(context) {
       actorIp: getClientIp(request),
     });
     const rows = await getDashboardExportRows(env.DB, key);
-    const csv = buildDashboardExportCsv(rows);
+    const xlsx = buildDashboardExportXlsx(rows);
 
     const headers = new Headers();
-    headers.set("content-type", "text/csv; charset=utf-8");
+    headers.set("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     headers.set("content-disposition", `attachment; filename="${buildFilename()}"`);
     headers.set("cache-control", "no-store");
 
-    return new Response(csv, {
+    return new Response(xlsx, {
       status: 200,
       headers,
     });

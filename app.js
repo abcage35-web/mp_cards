@@ -439,7 +439,7 @@ function hydrateStaticIcons() {
     state.controlsCollapsed ? "chevronDown" : "chevronUp",
     state.controlsCollapsed ? "Развернуть" : "Свернуть",
   );
-  setStaticButtonIcon(el.downloadExportBtn, "download", "Скачать .csv");
+  setStaticButtonIcon(el.downloadExportBtn, "download", "Скачать .xlsx");
   syncAuthPasswordToggleIcon();
 }
 

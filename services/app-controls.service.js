@@ -1066,12 +1066,12 @@ async function handleDownloadExport() {
     return;
   }
 
-  const initialLabel = "Скачать .csv";
+  const initialLabel = "Скачать .xlsx";
   el.downloadExportBtn.disabled = true;
   if (typeof setStaticButtonIcon === "function") {
-    setStaticButtonIcon(el.downloadExportBtn, "download", "Формирую CSV...");
+    setStaticButtonIcon(el.downloadExportBtn, "download", "Формирую XLSX...");
   } else {
-    el.downloadExportBtn.textContent = "Формирую CSV...";
+    el.downloadExportBtn.textContent = "Формирую XLSX...";
   }
 
   try {
