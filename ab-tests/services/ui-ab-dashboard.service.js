@@ -1053,10 +1053,10 @@ function renderAbFilterToolbar(model, filteredTests) {
 
 function renderAbTestCard(test) {
   const reportHtml = test.reportLines.length
-    ? `<ul class="ab-report-list">${test.reportLines
+    ? `<ul class="ab-tooltip-report-list">${test.reportLines
         .map((line) => `<li>${abEscapeHtml(line.replace(/^[-•]\s*/, ""))}</li>`)
         .join("")}</ul>`
-    : "<p class=\"subtle\">Без текстового отчета.</p>";
+    : '<div class="ab-tooltip-report-empty">Без текстового отчета.</div>';
 
   const checksHtml = [
     { label: "Тест CTR", raw: test.summaryChecks.testCtr },
@@ -1160,17 +1160,24 @@ function renderAbTestCard(test) {
     <div class="ab-test-layout">
       <section class="ab-test-left">
         <div class="ab-metrics-card">
-          <h5>Сводка метрик</h5>
+          <div class="ab-card-head">
+            <h5>Сводка метрик</h5>
+            <div class="ab-tooltip-anchor">
+              <button type="button" class="ab-icon-btn" aria-label="Показать отчет по расчетам">
+                ${abRenderIcon("info", "ab-card-help-icon") || "i"}
+              </button>
+              <div class="ab-hover-tooltip" role="tooltip">
+                <div class="ab-hover-tooltip-title">Отчет по расчетам</div>
+                ${reportHtml}
+              </div>
+            </div>
+          </div>
           <table class="ab-mini-table">
             <thead>
               <tr><th>Показатель</th><th>Значение</th><th>Итог</th></tr>
             </thead>
             <tbody>${metricsHtml}</tbody>
           </table>
-        </div>
-        <div class="ab-report-card">
-          <h5>Отчет по расчетам</h5>
-          ${reportHtml}
         </div>
       </section>
 
