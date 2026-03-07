@@ -289,6 +289,14 @@ body {
   align-items: center;
 }
 
+.ab-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .ab-toolbar-search {
   display: flex;
   align-items: center;

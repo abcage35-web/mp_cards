@@ -1,5 +1,6 @@
 const AB_DASHBOARD_SHEET_ID = "1ot5SxsmAl717cuvQbbXr1dVx1FQ99HTTzN1sG5z_RIc";
 const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
+const AB_FILTER_DATE_FROM_DEFAULT = "2025-01-01";
 const AB_DASHBOARD_SOURCE_SHEETS = Object.freeze({
   catalog: "(*) Подложка",
   technical: "(*) Техническая выгрузка",
@@ -17,6 +18,28 @@ const AB_STATUS_MAP = Object.freeze({
   "?": "unknown",
 });
 
+function abGetTodayDateInputValue() {
+  const date = new Date();
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function abCreateDefaultFilters() {
+  return {
+    search: "",
+    cabinet: "all",
+    verdict: "all",
+    dateFrom: AB_FILTER_DATE_FROM_DEFAULT,
+    dateTo: abGetTodayDateInputValue(),
+    view: "tests",
+  };
+}
+
 const abDashboardStore = {
   loading: false,
   loaded: false,
@@ -24,14 +47,7 @@ const abDashboardStore = {
   fetchedAt: null,
   data: null,
   promise: null,
-  filters: {
-    search: "",
-    cabinet: "all",
-    verdict: "all",
-    dateFrom: "",
-    dateTo: "",
-    view: "tests",
-  },
+  filters: abCreateDefaultFilters(),
   listenersBound: false,
 };
 
@@ -984,10 +1000,13 @@ function renderAbFilterToolbar(model, filteredTests) {
       <label class="ab-toolbar-field is-date">
         <input type="date" value="${abEscapeAttr(abDashboardStore.filters.dateTo)}" data-ab-filter="dateTo" />
       </label>
-      <div class="ab-view-switch" role="tablist" aria-label="Режим просмотра AB">
-        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "tests" ? " is-active" : ""}" data-ab-view="tests">По тестам</button>
-        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "products" ? " is-active" : ""}" data-ab-view="products">По товарам</button>
-        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "both" ? " is-active" : ""}" data-ab-view="both">Оба вида</button>
+      <div class="ab-toolbar-actions">
+        <div class="ab-view-switch" role="tablist" aria-label="Режим просмотра AB">
+          <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "tests" ? " is-active" : ""}" data-ab-view="tests">По тестам</button>
+          <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "products" ? " is-active" : ""}" data-ab-view="products">По товарам</button>
+          <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "both" ? " is-active" : ""}" data-ab-view="both">Оба вида</button>
+        </div>
+        <button type="button" class="btn" data-ab-action="reset-filters">Сбросить</button>
       </div>
     </div>
     <div class="ab-toolbar-stats">
@@ -1372,6 +1391,16 @@ function bindAbDashboardEvents() {
   });
 
   contentEl.addEventListener("click", (event) => {
+    const actionTarget = event.target instanceof Element ? event.target.closest("[data-ab-action]") : null;
+    if (actionTarget) {
+      const action = String(actionTarget.getAttribute("data-ab-action") || "");
+      if (action === "reset-filters") {
+        abDashboardStore.filters = abCreateDefaultFilters();
+        renderAbDashboardContent();
+        return;
+      }
+    }
+
     const target = event.target instanceof Element ? event.target.closest("[data-ab-view]") : null;
     if (!target) {
       return;
