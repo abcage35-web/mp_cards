@@ -1037,6 +1037,46 @@ body {
   white-space: nowrap;
 }
 
+.ab-ctr-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ab-ctr-boost-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 56, 71, 0.2);
+  background: rgba(237, 246, 250, 0.92);
+  color: #415966;
+  font: 700 10px/1 "IBM Plex Sans", sans-serif;
+  white-space: nowrap;
+}
+
+.ab-ctr-boost-pill.is-good {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #0f5b44;
+}
+
+.ab-ctr-boost-pill.is-bad {
+  border-color: rgba(249, 115, 96, 0.38);
+  background: rgba(249, 115, 96, 0.15);
+  color: #8b2f21;
+}
+
+.ab-ctr-boost-pill.is-neutral {
+  border-color: rgba(148, 163, 184, 0.36);
+  background: rgba(148, 163, 184, 0.14);
+  color: #51697a;
+}
+
 .ab-cover-frame {
   position: relative;
   display: inline-flex;

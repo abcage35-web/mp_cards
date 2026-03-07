@@ -604,6 +604,7 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
   });
 
   if (prepared.length) {
+    const baseCtr = Number.isFinite(prepared[0]?.ctrValue) && prepared[0].ctrValue !== 0 ? prepared[0].ctrValue : null;
     const bestCtr = prepared.reduce((max, item) => {
       return Number.isFinite(item.ctrValue) && item.ctrValue > max ? item.ctrValue : max;
     }, Number.NEGATIVE_INFINITY);
@@ -611,6 +612,20 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
     return prepared.map((item) => ({
       ...item,
       isBest: Number.isFinite(bestCtr) && Number.isFinite(item.ctrValue) ? Math.abs(item.ctrValue - bestCtr) <= tolerance : false,
+      ctrBoostValue:
+        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue) ? item.ctrValue / baseCtr - 1 : null,
+      ctrBoostText:
+        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue)
+          ? abFormatSignedPercentFraction(item.ctrValue / baseCtr - 1, 0)
+          : "",
+      ctrBoostKind:
+        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue)
+          ? item.ctrValue / baseCtr - 1 > 0
+            ? "good"
+            : item.ctrValue / baseCtr - 1 < 0
+              ? "bad"
+              : "neutral"
+          : "",
     }));
   }
 
@@ -629,6 +644,9 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
       installedAtTime: "",
       hours: "—",
       isBest: false,
+      ctrBoostValue: null,
+      ctrBoostText: "",
+      ctrBoostKind: "",
     },
   ];
 }
@@ -1205,7 +1223,15 @@ function renderAbTestCard(test) {
 
   const viewsCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.views)}</td>`).join("");
   const clicksCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.clicks)}</td>`).join("");
-  const ctrCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.ctr)}</td>`).join("");
+  const ctrCells = test.variants
+    .map((variant) => {
+      const boostHtml =
+        variant.ctrBoostText && variant.ctrBoostKind
+          ? `<span class="ab-ctr-boost-pill is-${abEscapeAttr(variant.ctrBoostKind)}">${abEscapeHtml(variant.ctrBoostText)}</span>`
+          : "";
+      return `<td><div class="ab-ctr-cell"><span>${abEscapeHtml(variant.ctr)}</span>${boostHtml}</div></td>`;
+    })
+    .join("");
   const installCells = test.variants
     .map(
       (variant) => `<td><div class="ab-variant-install-time"><span>${abEscapeHtml(variant.installedAtDate)}</span><span>${abEscapeHtml(
