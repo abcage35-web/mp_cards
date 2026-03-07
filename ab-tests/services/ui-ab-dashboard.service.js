@@ -707,17 +707,25 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
     },
   ];
 
-  const priceRows = [
-    { label: "Кол-во откл. цены", value: abFormatInt(abToNumber(abCellRaw(sourceRow, "Y"))) },
-    { label: "Средняя цена до теста", value: abFormatInt(metricsBlock.priceBefore) },
-    { label: "Средняя цена во время теста", value: abFormatInt(metricsBlock.priceDuring) },
-    { label: "Средняя цена после", value: abFormatInt(metricsBlock.priceAfter) },
-  ];
-
-  const priceDeltaRows = [
-    { label: "Изменение цены за день до теста от среднего, %", value: abFormatFractionToPercent(metricsBlock.priceDeltaBefore, 0) },
-    { label: "Изменение цены во время теста от среднего, %", value: abFormatFractionToPercent(metricsBlock.priceDeltaDuring, 0) },
-    { label: "Изменение цены через день после теста от среднего, %", value: abFormatFractionToPercent(metricsBlock.priceDeltaAfter, 0) },
+  const priceStages = [
+    {
+      key: "before",
+      label: "До",
+      averagePrice: abFormatInt(metricsBlock.priceBefore),
+      delta: abFormatFractionToPercent(metricsBlock.priceDeltaBefore, 0),
+    },
+    {
+      key: "during",
+      label: "Во время",
+      averagePrice: abFormatInt(metricsBlock.priceDuring),
+      delta: abFormatFractionToPercent(metricsBlock.priceDeltaDuring, 0),
+    },
+    {
+      key: "after",
+      label: "После",
+      averagePrice: abFormatInt(metricsBlock.priceAfter),
+      delta: abFormatFractionToPercent(metricsBlock.priceDeltaAfter, 0),
+    },
   ];
 
   const ocrBefore =
@@ -767,8 +775,8 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
       resultOvr: metricsBlock.overallDecisionRaw,
     },
     variants,
-    priceRows,
-    priceDeltaRows,
+    priceDeviationCount: abFormatInt(abToNumber(abCellRaw(sourceRow, "Y"))),
+    priceStages,
     funnelRows,
     reportLines,
     reportText: reportLines.join("\n"),
@@ -1036,12 +1044,20 @@ function renderAbTestCard(test) {
   const installCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.installedAt)}</td>`).join("");
   const hoursCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.hours)}</td>`).join("");
 
-  const priceRowsHtml = test.priceRows
-    .map((row) => `<tr><td>${abEscapeHtml(row.label)}</td><td>${abEscapeHtml(row.value)}</td></tr>`)
-    .join("");
-
-  const priceDeltaRowsHtml = test.priceDeltaRows
-    .map((row) => `<tr><td>${abEscapeHtml(row.label)}</td><td>${abEscapeHtml(row.value)}</td></tr>`)
+  const priceStagesHtml = (test.priceStages || [])
+    .map(
+      (stage) => `<section class="ab-price-stage-col" data-stage="${abEscapeAttr(stage.key)}">
+      <div class="ab-price-stage-label">${abEscapeHtml(stage.label)}</div>
+      <div class="ab-price-stage-item">
+        <span>Средняя цена</span>
+        <strong>${abEscapeHtml(stage.averagePrice)}</strong>
+      </div>
+      <div class="ab-price-stage-item">
+        <span>Изм. от среднего</span>
+        <strong>${abEscapeHtml(stage.delta)}</strong>
+      </div>
+    </section>`,
+    )
     .join("");
 
   const funnelRowsHtml = test.funnelRows
@@ -1132,14 +1148,14 @@ function renderAbTestCard(test) {
       </section>
 
       <section class="ab-test-right">
-        <article class="ab-side-card">
-          <h5>Цена</h5>
-          <table class="ab-mini-table is-tight">
-            <tbody>${priceRowsHtml || '<tr><td colspan="2">—</td></tr>'}</tbody>
-          </table>
-          <table class="ab-mini-table is-tight">
-            <tbody>${priceDeltaRowsHtml || '<tr><td colspan="2">—</td></tr>'}</tbody>
-          </table>
+        <article class="ab-side-card ab-price-stage-card">
+          <div class="ab-price-stage-head">
+            <h5>Цена</h5>
+            <span class="ab-test-chip">Откл. цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></span>
+          </div>
+          <div class="ab-price-stage-grid">
+            ${priceStagesHtml || '<div class="ab-price-stage-empty">Нет данных по этапам цены.</div>'}
+          </div>
         </article>
 
         <article class="ab-side-card">
