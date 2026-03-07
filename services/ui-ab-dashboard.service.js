@@ -1,11 +1,21 @@
 const AB_DASHBOARD_SHEET_ID = "1ot5SxsmAl717cuvQbbXr1dVx1FQ99HTTzN1sG5z_RIc";
-const AB_DASHBOARD_FETCH_TIMEOUT_MS = 28000;
-const AB_DASHBOARD_TESTS_LIMIT = 140;
-const AB_DASHBOARD_COVERS_LIMIT = 100;
+const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 const AB_DASHBOARD_SHEETS = Object.freeze({
-  substrate: "(*) Подложка",
-  technical: "(*) Техническая выгрузка",
+  summary: "[WB] Сводка : тесты CTR",
   results: "(*) Результаты по обложкам XWAY",
+});
+const AB_VARIANT_COLS = Object.freeze(["Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH"]);
+const AB_STATUS_MAP = Object.freeze({
+  WIN: "good",
+  GOOD: "good",
+  LOOSE: "bad",
+  LOSE: "bad",
+  BAD: "bad",
+  AUTO: "auto",
+  "АВТО": "auto",
+  NORMAL: "neutral",
+  "НОРМ": "neutral",
+  "?": "unknown",
 });
 
 const abDashboardStore = {
@@ -15,6 +25,13 @@ const abDashboardStore = {
   fetchedAt: null,
   data: null,
   promise: null,
+  filters: {
+    search: "",
+    cabinet: "all",
+    verdict: "all",
+    view: "tests",
+  },
+  listenersBound: false,
 };
 
 function getAbDashboardContentEl() {
@@ -36,18 +53,6 @@ function abEscapeHtml(value) {
 
 function abEscapeAttr(value) {
   return abEscapeHtml(value).replaceAll("\n", " ");
-}
-
-function abNormalizeHeader(labelRaw, index, used) {
-  const base = String(labelRaw || `col_${index + 1}`).trim() || `col_${index + 1}`;
-  let key = base;
-  let suffix = 2;
-  while (used.has(key.toLowerCase())) {
-    key = `${base}__${suffix}`;
-    suffix += 1;
-  }
-  used.add(key.toLowerCase());
-  return key;
 }
 
 function abParseDateLiteral(valueRaw) {
@@ -73,132 +78,30 @@ function abParseDateLiteral(valueRaw) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function abParseCellValue(cell) {
-  if (!cell || typeof cell !== "object") {
+function abParseSummaryDateTime(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value) {
     return "";
   }
-
-  const raw = Object.prototype.hasOwnProperty.call(cell, "v") ? cell.v : "";
-  if (raw === null || raw === undefined) {
-    return "";
+  if (/^\d{4}-\d{2}-\d{2}\s*\n\s*\d{2}:\d{2}:\d{2}$/.test(value)) {
+    return value.replace(/\s*\n\s*/, " ");
   }
-
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return "";
-    }
-    const parsedDate = abParseDateLiteral(trimmed);
-    return parsedDate || trimmed;
+  const parts = value.split(/\s*\n\s*/);
+  if (parts.length >= 2 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0])) {
+    return `${parts[0]} ${parts[1]}`;
   }
-
-  if (typeof raw === "number" || typeof raw === "boolean") {
-    return raw;
+  const asIso = abParseDateLiteral(value);
+  if (!asIso) {
+    return value;
   }
-
-  if (raw instanceof Date) {
-    return Number.isNaN(raw.getTime()) ? "" : raw.toISOString();
-  }
-
-  return String(raw);
-}
-
-function abParseGvizResponse(textRaw) {
-  const text = String(textRaw || "");
-  const marker = "google.visualization.Query.setResponse(";
-  const start = text.indexOf(marker);
-  if (start < 0) {
-    throw new Error("Формат ответа Google Sheets не распознан.");
-  }
-
-  const jsonStart = start + marker.length;
-  const end = text.lastIndexOf(");");
-  if (end <= jsonStart) {
-    throw new Error("JSON-пакет Google Sheets не найден.");
-  }
-
-  const jsonText = text.slice(jsonStart, end).trim();
-  const parsed = JSON.parse(jsonText);
-  const table = parsed?.table;
-  if (!table || typeof table !== "object") {
-    throw new Error("В ответе Google Sheets отсутствует table.");
-  }
-
-  return table;
-}
-
-function abNormalizeSheetTable(tableRaw) {
-  const table = tableRaw && typeof tableRaw === "object" ? tableRaw : {};
-  const cols = Array.isArray(table.cols) ? table.cols : [];
-  const rows = Array.isArray(table.rows) ? table.rows : [];
-
-  const used = new Set();
-  const headers = cols.map((col, index) => abNormalizeHeader(col?.label || col?.id, index, used));
-
-  const dataRows = rows.map((row, rowIndex) => {
-    const values = Array.isArray(row?.c) ? row.c : [];
-    const mapped = { __rowIndex: rowIndex + 1 };
-    headers.forEach((header, colIndex) => {
-      mapped[header] = abParseCellValue(values[colIndex]);
-    });
-    return mapped;
-  });
-
-  return {
-    headers,
-    rows: dataRows,
-  };
-}
-
-async function abFetchWithTimeout(url, timeoutMs) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || AB_DASHBOARD_FETCH_TIMEOUT_MS));
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`Google Sheets вернул ${response.status}.`);
-    }
-    return await response.text();
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error("Превышено время ожидания ответа Google Sheets.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function fetchAbSheet(sheetName) {
-  const url = new URL(`https://docs.google.com/spreadsheets/d/${AB_DASHBOARD_SHEET_ID}/gviz/tq`);
-  url.searchParams.set("sheet", sheetName);
-  url.searchParams.set("tqx", "out:json");
-  const responseText = await abFetchWithTimeout(url.toString(), AB_DASHBOARD_FETCH_TIMEOUT_MS);
-  const table = abParseGvizResponse(responseText);
-  return abNormalizeSheetTable(table);
-}
-
-function abValue(row, keys) {
-  const source = row && typeof row === "object" ? row : {};
-  const list = Array.isArray(keys) ? keys : [keys];
-  for (const key of list) {
-    const value = source[key];
-    if (value === null || value === undefined) {
-      continue;
-    }
-    const text = typeof value === "string" ? value.trim() : value;
-    if (text === "") {
-      continue;
-    }
-    return text;
-  }
-  return "";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(asIso));
 }
 
 function abToNumber(valueRaw) {
@@ -231,62 +134,6 @@ function abToInt(valueRaw) {
   return Math.round(num);
 }
 
-function abNormalizeSku(valueRaw) {
-  const digits = String(valueRaw || "").match(/\d{6,}/);
-  return digits ? digits[0] : "";
-}
-
-function abNormalizeDecision(valueRaw) {
-  const value = String(valueRaw || "").trim().toUpperCase();
-  if (!value) {
-    return "UNKNOWN";
-  }
-  if (value.includes("GOOD") || value.includes("WIN") || value.includes("ПОБЕД")) {
-    return "GOOD";
-  }
-  if (value.includes("BAD") || value.includes("LOSE") || value.includes("FAIL") || value.includes("ПЛОХ")) {
-    return "BAD";
-  }
-  if (value.includes("NORMAL") || value.includes("NORM") || value.includes("СРЕД")) {
-    return "NORMAL";
-  }
-  return "UNKNOWN";
-}
-
-function abDecisionLabel(decision) {
-  switch (decision) {
-    case "GOOD":
-      return "GOOD";
-    case "BAD":
-      return "BAD";
-    case "NORMAL":
-      return "NORMAL";
-    default:
-      return "—";
-  }
-}
-
-function abDecisionTone(decision) {
-  switch (decision) {
-    case "GOOD":
-      return "is-good";
-    case "BAD":
-      return "is-bad";
-    case "NORMAL":
-      return "is-normal";
-    default:
-      return "is-unknown";
-  }
-}
-
-function abToCtrPercent(valueRaw) {
-  const value = abToNumber(valueRaw);
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  return value <= 1 ? value * 100 : value;
-}
-
 function abFormatInt(valueRaw) {
   const value = Number(valueRaw);
   if (!Number.isFinite(value)) {
@@ -303,30 +150,667 @@ function abFormatPercent(valueRaw, digits = 2) {
   return `${value.toFixed(digits).replace(".", ",")}%`;
 }
 
-function abFormatCtrDelta(valueRaw) {
+function abFormatFractionToPercent(valueRaw, digits = 2) {
   const value = Number(valueRaw);
   if (!Number.isFinite(value)) {
     return "—";
   }
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(2).replace(".", ",")} п.п.`;
+  return abFormatPercent(value * 100, digits);
 }
 
-function abFormatDate(valueRaw, includeTime = false) {
-  const value = String(valueRaw || "").trim();
-  if (!value) {
+function abFormatSignedPercentFraction(valueRaw, digits = 0) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) {
     return "—";
   }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const percent = value * 100;
+  const sign = percent > 0 ? "+" : "";
+  return `${sign}${percent.toFixed(digits).replace(".", ",")}%`;
+}
+
+function abFormatHours(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) {
     return "—";
   }
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
-  }).format(date);
+  return `${value.toFixed(1).replace(".", ",")} ч`;
+}
+
+function abNormalizeStatus(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) {
+    return "unknown";
+  }
+  const key = raw.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(AB_STATUS_MAP, key)) {
+    return AB_STATUS_MAP[key];
+  }
+  if (key.includes("WIN") || key.includes("GOOD") || key.includes("ХОРОШ")) {
+    return "good";
+  }
+  if (key.includes("LOOSE") || key.includes("LOSE") || key.includes("BAD") || key.includes("ПЛОХ")) {
+    return "bad";
+  }
+  if (key.includes("АВТО") || key.includes("AUTO")) {
+    return "auto";
+  }
+  if (key.includes("NORM") || key.includes("NORMAL") || key.includes("СРЕД")) {
+    return "neutral";
+  }
+  return "unknown";
+}
+
+function abStatusLabel(statusKind) {
+  switch (statusKind) {
+    case "good":
+      return "Хорошо";
+    case "bad":
+      return "Плохо";
+    case "auto":
+      return "Авто";
+    case "neutral":
+      return "Норм";
+    default:
+      return "—";
+  }
+}
+
+function abStatusPill(rawValue, compact = false) {
+  const raw = String(rawValue || "").trim();
+  const kind = abNormalizeStatus(raw);
+  const label = abStatusLabel(kind);
+  const cls = `ab-status-pill is-${abEscapeAttr(kind)}${compact ? " is-compact" : ""}`;
+  if (!raw && label === "—") {
+    return `<span class="${cls}">—</span>`;
+  }
+  return `<span class="${cls}" title="${abEscapeAttr(raw || label)}">${abEscapeHtml(label)}</span>`;
+}
+
+function abRenderIcon(name, className = "") {
+  if (typeof renderIcon === "function") {
+    return renderIcon(name, className).trim();
+  }
+  return "";
+}
+
+function abParseGvizResponse(textRaw) {
+  const text = String(textRaw || "");
+  const marker = "google.visualization.Query.setResponse(";
+  const start = text.indexOf(marker);
+  if (start < 0) {
+    throw new Error("Формат ответа Google Sheets не распознан.");
+  }
+
+  const jsonStart = start + marker.length;
+  const end = text.lastIndexOf(");");
+  if (end <= jsonStart) {
+    throw new Error("JSON-пакет Google Sheets не найден.");
+  }
+
+  const jsonText = text.slice(jsonStart, end).trim();
+  const parsed = JSON.parse(jsonText);
+  const table = parsed?.table;
+  if (!table || typeof table !== "object") {
+    throw new Error("В ответе Google Sheets отсутствует table.");
+  }
+
+  return table;
+}
+
+async function abFetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || AB_DASHBOARD_FETCH_TIMEOUT_MS));
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Google Sheets вернул ${response.status}.`);
+    }
+    return await response.text();
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Превышено время ожидания ответа Google Sheets.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchAbSheetRaw(sheetName) {
+  const url = new URL(`https://docs.google.com/spreadsheets/d/${AB_DASHBOARD_SHEET_ID}/gviz/tq`);
+  url.searchParams.set("sheet", sheetName);
+  url.searchParams.set("tqx", "out:json");
+  const responseText = await abFetchWithTimeout(url.toString(), AB_DASHBOARD_FETCH_TIMEOUT_MS);
+  const table = abParseGvizResponse(responseText);
+
+  const cols = Array.isArray(table.cols) ? table.cols : [];
+  const colIds = cols.map((col, index) => String(col?.id || `COL_${index + 1}`));
+  const rowsRaw = Array.isArray(table.rows) ? table.rows : [];
+
+  const rows = rowsRaw.map((rowRaw, rowIndex) => {
+    const list = Array.isArray(rowRaw?.c) ? rowRaw.c : [];
+    const mapped = { __rowIndex: rowIndex + 1 };
+    for (let i = 0; i < colIds.length; i += 1) {
+      const cell = list[i];
+      if (!cell || (!Object.prototype.hasOwnProperty.call(cell, "v") && !Object.prototype.hasOwnProperty.call(cell, "f"))) {
+        mapped[colIds[i]] = { v: "", f: "" };
+        continue;
+      }
+      mapped[colIds[i]] = {
+        v: Object.prototype.hasOwnProperty.call(cell, "v") ? cell.v : "",
+        f: Object.prototype.hasOwnProperty.call(cell, "f") ? cell.f : "",
+      };
+    }
+    return mapped;
+  });
+
+  return {
+    cols,
+    colIds,
+    rows,
+  };
+}
+
+function abCell(row, id) {
+  if (!row || typeof row !== "object") {
+    return { v: "", f: "" };
+  }
+  const cell = row[id];
+  if (!cell || typeof cell !== "object") {
+    return { v: "", f: "" };
+  }
+  return cell;
+}
+
+function abCellRaw(row, id) {
+  return abCell(row, id).v;
+}
+
+function abCellText(row, id) {
+  const cell = abCell(row, id);
+  const formatted = String(cell.f || "").trim();
+  if (formatted) {
+    return formatted;
+  }
+
+  const value = cell.v;
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+  if (typeof value === "boolean") {
+    return value ? "TRUE" : "FALSE";
+  }
+  return String(value).trim();
+}
+
+function abCellDisplay(row, id, options = {}) {
+  const cell = abCell(row, id);
+  const formatted = String(cell.f || "").trim();
+  if (formatted) {
+    return formatted;
+  }
+
+  const value = cell.v;
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  const valueType = options.type || "text";
+  if (valueType === "percent-fraction") {
+    return abFormatFractionToPercent(value, options.digits ?? 2);
+  }
+  if (valueType === "percent-signed-fraction") {
+    return abFormatSignedPercentFraction(value, options.digits ?? 0);
+  }
+  if (valueType === "hours") {
+    return abFormatHours(value);
+  }
+  if (valueType === "int") {
+    return abFormatInt(value);
+  }
+
+  if (typeof value === "number") {
+    return abFormatInt(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "—";
+    }
+    const parsedDate = abParseDateLiteral(trimmed);
+    if (parsedDate) {
+      return new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date(parsedDate));
+    }
+    return trimmed;
+  }
+
+  return String(value);
+}
+
+function abNormalizeTestId(valueRaw) {
+  const digits = String(valueRaw ?? "").match(/\d{3,}/);
+  return digits ? digits[0] : "";
+}
+
+function abParseResultIndex(resultsSheet) {
+  const rows = Array.isArray(resultsSheet?.rows) ? resultsSheet.rows : [];
+  const map = new Map();
+
+  for (const row of rows) {
+    const testId = abNormalizeTestId(abCellRaw(row, "A"));
+    if (!testId) {
+      continue;
+    }
+
+    const coverUrl = String(abCellText(row, "C") || "").trim();
+    if (!coverUrl) {
+      continue;
+    }
+
+    const decisionRaw = abCellText(row, "E");
+    const ctrNum = abToNumber(abCellRaw(row, "F"));
+    const views = Math.max(0, Number(abToInt(abCellRaw(row, "G")) || 0));
+    const clicks = Math.max(0, Number(abToInt(abCellRaw(row, "H")) || 0));
+
+    const installedRaw = abCellRaw(row, "D");
+    const installedAt = abParseDateLiteral(installedRaw);
+    const installedLabel = String(abCell(row, "D").f || "").trim();
+
+    const shouldInclude = Boolean(installedAt || views > 0 || clicks > 0);
+    if (!shouldInclude) {
+      continue;
+    }
+
+    if (!map.has(testId)) {
+      map.set(testId, []);
+    }
+
+    map.get(testId).push({
+      coverUrl,
+      decisionRaw,
+      decisionKind: abNormalizeStatus(decisionRaw),
+      ctr: Number.isFinite(ctrNum) ? ctrNum : null,
+      views,
+      clicks,
+      installedAt,
+      installedLabel,
+      rowIndex: Number(row.__rowIndex || 0),
+    });
+  }
+
+  for (const [testId, list] of map.entries()) {
+    list.sort((a, b) => {
+      const aMs = a.installedAt ? new Date(a.installedAt).getTime() : 0;
+      const bMs = b.installedAt ? new Date(b.installedAt).getTime() : 0;
+      if (aMs !== bMs) {
+        return aMs - bMs;
+      }
+      return Number(a.rowIndex || 0) - Number(b.rowIndex || 0);
+    });
+    map.set(testId, list);
+  }
+
+  return map;
+}
+
+function abExtractOverview(summarySheet) {
+  const rows = Array.isArray(summarySheet?.rows) ? summarySheet.rows : [];
+  const overviewRows = [];
+  let headerRow = null;
+
+  for (const row of rows) {
+    const colC = abCellText(row, "C");
+    if (colC === "Ссылка на XWay") {
+      headerRow = row;
+      break;
+    }
+
+    const testId = abNormalizeTestId(abCellRaw(row, "B"));
+    if (testId) {
+      continue;
+    }
+
+    const summaryLabel = abCellText(row, "L");
+    const metricTotal = abCellText(row, "M");
+    if (!summaryLabel && !metricTotal) {
+      continue;
+    }
+
+    overviewRows.push({
+      date: abCellText(row, "C") || "—",
+      label: summaryLabel || "—",
+      colM: metricTotal || "—",
+      colN: abCellText(row, "N") || "—",
+      colO: abCellText(row, "O") || "—",
+      colP: abCellText(row, "P") || "—",
+      colQ: abCellText(row, "Q") || "—",
+      colS: abCellText(row, "S") || "—",
+    });
+  }
+
+  const header = {
+    colM: abCellText(headerRow, "M") || "Тест изм. цены",
+    colN: abCellText(headerRow, "N") || "ИТОГ ОК",
+    colO: abCellText(headerRow, "O") || "Тест CTR*CR1",
+    colP: abCellText(headerRow, "P") || "ИТОГ ОВР",
+    colQ: abCellText(headerRow, "Q") || "Ручная",
+    colS: abCellText(headerRow, "S") || "Итог",
+  };
+
+  return { overviewRows, header };
+}
+
+function abFindHeaderRowIndex(summaryRows) {
+  for (let i = 0; i < summaryRows.length; i += 1) {
+    if (abCellText(summaryRows[i], "C") === "Ссылка на XWay") {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function abBuildTestCards(summarySheet, resultsByTest) {
+  const summaryRows = Array.isArray(summarySheet?.rows) ? summarySheet.rows : [];
+  const startIndex = Math.max(0, abFindHeaderRowIndex(summaryRows) + 1);
+  const rows = summaryRows.slice(startIndex).filter((row) => abNormalizeTestId(abCellRaw(row, "B")));
+
+  const grouped = [];
+  let current = null;
+  for (const row of rows) {
+    const testId = abNormalizeTestId(abCellRaw(row, "B"));
+    if (!testId) {
+      continue;
+    }
+    if (!current || current.testId !== testId) {
+      current = { testId, rows: [] };
+      grouped.push(current);
+    }
+    current.rows.push(row);
+  }
+
+  const cards = [];
+
+  for (const group of grouped) {
+    const testId = group.testId;
+    const rows6 = group.rows.slice(0, 6);
+    if (rows6.length < 2) {
+      continue;
+    }
+
+    const base = rows6[0];
+    const viewRow = rows6.find((row) => String(abCellText(row, "X")).toUpperCase() === "VIEW") || rows6[1] || base;
+    const clickRow = rows6.find((row) => String(abCellText(row, "X")).toUpperCase() === "CLICK") || rows6[2] || base;
+    const ctrRow = rows6.find((row) => String(abCellText(row, "X")).toUpperCase() === "CTR") || rows6[3] || base;
+    const installRow = rows6.find((row) => String(abCellText(row, "X")).toLowerCase().includes("установка")) || rows6[4] || base;
+    const hoursRow = rows6.find((row) => String(abCellText(row, "X")).toLowerCase().includes("часы")) || rows6[5] || base;
+
+    const metrics = rows6
+      .map((row) => {
+        const label = abCellText(row, "U");
+        const statusRaw = abCellText(row, "T");
+        const valueCell = abCell(row, "V");
+        const valueText = String(valueCell.f || "").trim() || (() => {
+          const valueRaw = valueCell.v;
+          if (typeof valueRaw !== "number") {
+            return abCellDisplay(row, "V");
+          }
+          if (/CTR/i.test(label)) {
+            return abFormatFractionToPercent(valueRaw, 2);
+          }
+          return abFormatInt(valueRaw);
+        })();
+        return {
+          checkName: abCellText(row, "S"),
+          label,
+          valueText,
+          statusRaw,
+          statusKind: abNormalizeStatus(statusRaw),
+        };
+      })
+      .filter((item) => item.label);
+
+    const finalMetric = metrics.find((item) => String(item.checkName).toUpperCase() === "ИТОГ") || metrics[metrics.length - 1] || null;
+
+    const resultVariants = Array.isArray(resultsByTest.get(testId)) ? resultsByTest.get(testId) : [];
+
+    const summaryVariantCount = AB_VARIANT_COLS.reduce((max, col) => {
+      const hasAny = [viewRow, clickRow, ctrRow, hoursRow].some((row) => {
+        const value = abCellRaw(row, col);
+        return value !== null && value !== undefined && String(value).trim() !== "";
+      });
+      return hasAny ? max + 1 : max;
+    }, 0);
+
+    const variantCount = Math.max(summaryVariantCount, resultVariants.length, 1);
+
+    const variants = [];
+    for (let i = 0; i < variantCount; i += 1) {
+      const col = AB_VARIANT_COLS[i];
+      const result = resultVariants[i] || null;
+      const installedText = result?.installedLabel || (installRow && col ? abCellDisplay(installRow, col) : "—");
+      variants.push({
+        index: i + 1,
+        imageUrl: result?.coverUrl || "",
+        views: col ? abCellDisplay(viewRow, col, { type: "int" }) : "—",
+        clicks: col ? abCellDisplay(clickRow, col, { type: "int" }) : "—",
+        ctr: col ? abCellDisplay(ctrRow, col, { type: "percent-fraction", digits: 2 }) : "—",
+        installedAt: installedText || "—",
+        hours: col ? abCellDisplay(hoursRow, col, { type: "hours" }) : "—",
+      });
+    }
+
+    const priceRows = rows6
+      .slice(0, 4)
+      .map((row) => {
+        const label = abCellText(row, "AJ");
+        const value = abCellDisplay(row, "AK", { type: "int" });
+        if (!label) {
+          return null;
+        }
+        return { label, value };
+      })
+      .filter(Boolean);
+
+    const priceDeltaRows = rows6
+      .slice(0, 4)
+      .map((row) => {
+        const label = abCellText(row, "AL");
+        if (!label) {
+          return null;
+        }
+        const cell = abCell(row, "AM");
+        const value = String(cell.f || "").trim() || abCellDisplay(row, "AM", { type: "percent-signed-fraction", digits: 0 });
+        return { label, value };
+      })
+      .filter(Boolean);
+
+    const funnelRows = [];
+    const usedFunnel = new Set();
+    for (const row of rows6) {
+      const metricLabel = abCellText(row, "AO") || abCellText(row, "AS");
+      if (!metricLabel || usedFunnel.has(metricLabel)) {
+        continue;
+      }
+      const before = abCellDisplay(row, "AP", { type: "percent-fraction", digits: 2 });
+      const after = abCellDisplay(row, "AQ", { type: "percent-fraction", digits: 2 });
+      if (before === "—" && after === "—") {
+        continue;
+      }
+      usedFunnel.add(metricLabel);
+      funnelRows.push({ label: metricLabel, before, after });
+    }
+
+    const reportText = String(abCellText(base, "L") || "").trim();
+    const reportLines = reportText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const startedAt = abParseSummaryDateTime(abCellRaw(base, "J"));
+    const endedAt = abParseSummaryDateTime(abCellRaw(base, "K"));
+
+    cards.push({
+      testId,
+      xwayUrl: String(abCellText(base, "C") || "").trim(),
+      wbUrl: String(abCellText(base, "G") || "").trim(),
+      article: String(abCellText(base, "F") || "").trim(),
+      title: String(abCellText(base, "D") || "").trim(),
+      type: String(abCellText(base, "E") || "").trim(),
+      cabinet: String(abCellText(base, "H") || "").trim(),
+      startedAt,
+      endedAt,
+      metrics,
+      finalStatusRaw: finalMetric?.statusRaw || "",
+      finalStatusKind: finalMetric?.statusKind || "unknown",
+      summaryChecks: {
+        testPrice: abCellText(base, "M"),
+        resultOk: abCellText(base, "N"),
+        testCtrCr1: abCellText(base, "O"),
+        resultOvr: abCellText(base, "P"),
+        manual: abCellText(base, "Q"),
+      },
+      variants,
+      priceRows,
+      priceDeltaRows,
+      funnelRows,
+      reportLines,
+      reportText,
+    });
+  }
+
+  cards.sort((a, b) => {
+    const aMs = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const bMs = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    if (aMs !== bMs) {
+      return bMs - aMs;
+    }
+    return Number(b.testId || 0) - Number(a.testId || 0);
+  });
+
+  return cards;
+}
+
+function abBuildProducts(tests) {
+  const map = new Map();
+  for (const test of tests) {
+    const key = String(test.article || test.testId || "").trim();
+    if (!key) {
+      continue;
+    }
+    if (!map.has(key)) {
+      map.set(key, {
+        article: key,
+        title: test.title,
+        type: test.type,
+        cabinetSet: new Set(),
+        tests: [],
+        good: 0,
+        bad: 0,
+        auto: 0,
+        unknown: 0,
+        latestAt: test.startedAt || test.endedAt || "",
+      });
+    }
+    const item = map.get(key);
+    item.tests.push(test);
+    if (test.cabinet) {
+      item.cabinetSet.add(test.cabinet);
+    }
+    if (test.finalStatusKind === "good") {
+      item.good += 1;
+    } else if (test.finalStatusKind === "bad") {
+      item.bad += 1;
+    } else if (test.finalStatusKind === "auto") {
+      item.auto += 1;
+    } else {
+      item.unknown += 1;
+    }
+
+    const currentMs = item.latestAt ? new Date(item.latestAt).getTime() : 0;
+    const nextMs = test.startedAt ? new Date(test.startedAt).getTime() : 0;
+    if (nextMs > currentMs) {
+      item.latestAt = test.startedAt;
+    }
+  }
+
+  return Array.from(map.values())
+    .map((item) => ({
+      article: item.article,
+      title: item.title,
+      type: item.type,
+      cabinets: Array.from(item.cabinetSet),
+      tests: item.tests,
+      testsCount: item.tests.length,
+      good: item.good,
+      bad: item.bad,
+      auto: item.auto,
+      unknown: item.unknown,
+      latestAt: item.latestAt,
+    }))
+    .sort((a, b) => {
+      if (b.testsCount !== a.testsCount) {
+        return b.testsCount - a.testsCount;
+      }
+      const aMs = a.latestAt ? new Date(a.latestAt).getTime() : 0;
+      const bMs = b.latestAt ? new Date(b.latestAt).getTime() : 0;
+      return bMs - aMs;
+    });
+}
+
+function buildAbDashboardModel(source) {
+  const summary = source?.summary;
+  const results = source?.results;
+
+  const overview = abExtractOverview(summary);
+  const resultsByTest = abParseResultIndex(results);
+  const tests = abBuildTestCards(summary, resultsByTest);
+  const products = abBuildProducts(tests);
+
+  const cabinets = Array.from(new Set(tests.map((item) => item.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+
+  const statusTotals = tests.reduce(
+    (acc, test) => {
+      const key = test.finalStatusKind;
+      if (Object.prototype.hasOwnProperty.call(acc, key)) {
+        acc[key] += 1;
+      } else {
+        acc.unknown += 1;
+      }
+      return acc;
+    },
+    { good: 0, bad: 0, auto: 0, neutral: 0, unknown: 0 },
+  );
+
+  return {
+    tests,
+    products,
+    overview,
+    cabinets,
+    statusTotals,
+    rowCounts: {
+      summary: Array.isArray(summary?.rows) ? summary.rows.length : 0,
+      results: Array.isArray(results?.rows) ? results.rows.length : 0,
+    },
+  };
 }
 
 function abSafeLink(urlRaw, label) {
@@ -334,404 +818,367 @@ function abSafeLink(urlRaw, label) {
   if (!url) {
     return '<span class="ab-link-empty">—</span>';
   }
-  const iconHtml = typeof renderIcon === "function" ? renderIcon("externalLink", "ab-link-icon") : "↗";
-  return `<a class="ab-link" href="${abEscapeAttr(url)}" target="_blank" rel="noopener noreferrer">${iconHtml}<span>${abEscapeHtml(label || "Открыть")}</span></a>`;
+  const icon = abRenderIcon("externalLink", "ab-link-icon") || "↗";
+  return `<a class="ab-link" href="${abEscapeAttr(url)}" target="_blank" rel="noopener noreferrer">${icon}<span>${abEscapeHtml(
+    label || "Открыть",
+  )}</span></a>`;
 }
 
-function buildAbDashboardModel(source) {
-  const substrateRows = Array.isArray(source?.substrate?.rows) ? source.substrate.rows : [];
-  const techRows = Array.isArray(source?.technical?.rows) ? source.technical.rows : [];
-  const resultsRows = Array.isArray(source?.results?.rows) ? source.results.rows : [];
-
-  const substrateBySku = new Map();
-  for (const row of substrateRows) {
-    const sku = abNormalizeSku(abValue(row, ["Артикул", "sku"]));
-    if (!sku) {
-      continue;
-    }
-    substrateBySku.set(sku, {
-      sku,
-      crmId: String(abValue(row, ["CRM_ID"])) || "",
-      offerId: String(abValue(row, ["Offer_ID"])) || "",
-      productName: String(abValue(row, ["Название товара CRM"])) || "",
-      wbLink: String(abValue(row, ["Ссылка на МП"])) || "",
-      marketplace: String(abValue(row, ["МП"])) || "",
-    });
+function renderAbOverview(model) {
+  const rows = model?.overview?.overviewRows || [];
+  const header = model?.overview?.header || {};
+  if (!rows.length) {
+    return "";
   }
 
-  const resultsByTest = new Map();
-  const decisionTotals = {
-    GOOD: 0,
-    NORMAL: 0,
-    BAD: 0,
-    UNKNOWN: 0,
-  };
+  const tbody = rows
+    .map(
+      (row) => `<tr>
+      <td>${abEscapeHtml(row.date)}</td>
+      <td>${abEscapeHtml(row.label)}</td>
+      <td>${abEscapeHtml(row.colM)}</td>
+      <td>${abEscapeHtml(row.colN)}</td>
+      <td>${abEscapeHtml(row.colO)}</td>
+      <td>${abEscapeHtml(row.colP)}</td>
+      <td>${abEscapeHtml(row.colQ)}</td>
+      <td>${abEscapeHtml(row.colS)}</td>
+    </tr>`,
+    )
+    .join("");
 
-  for (const row of resultsRows) {
-    const testId = String(abValue(row, ["test_id"])) || "";
-    if (!testId) {
-      continue;
-    }
-
-    const decision = abNormalizeDecision(abValue(row, ["Решение по обложке"]));
-    if (decisionTotals[decision] === undefined) {
-      decisionTotals.UNKNOWN += 1;
-    } else {
-      decisionTotals[decision] += 1;
-    }
-
-    const ctr = abToCtrPercent(abValue(row, ["ctr"]));
-    const views = Math.max(0, Number(abToInt(abValue(row, ["views"])) || 0));
-    const clicks = Math.max(0, Number(abToInt(abValue(row, ["clicks"])) || 0));
-    const installedAt = abParseDateLiteral(abValue(row, ["Дата установки обложки"]));
-    const coverUrl = String(abValue(row, ["Ссылка на обложку"])) || "";
-    const xwayUrl = String(abValue(row, ["Ссылка на XWay"])) || "";
-
-    if (!resultsByTest.has(testId)) {
-      resultsByTest.set(testId, {
-        testId,
-        variants: [],
-        views: 0,
-        clicks: 0,
-        bestCtr: null,
-        bestCoverUrl: "",
-        latestInstallAt: "",
-        xwayUrl,
-        decisions: { GOOD: 0, NORMAL: 0, BAD: 0, UNKNOWN: 0 },
-      });
-    }
-
-    const group = resultsByTest.get(testId);
-    group.variants.push({ ctr, views, clicks, decision, installedAt, coverUrl, xwayUrl });
-    group.views += views;
-    group.clicks += clicks;
-    if (decision in group.decisions) {
-      group.decisions[decision] += 1;
-    } else {
-      group.decisions.UNKNOWN += 1;
-    }
-    if (!group.xwayUrl && xwayUrl) {
-      group.xwayUrl = xwayUrl;
-    }
-
-    if (Number.isFinite(ctr) && (group.bestCtr === null || ctr > group.bestCtr)) {
-      group.bestCtr = ctr;
-      group.bestCoverUrl = coverUrl;
-    }
-
-    if (installedAt) {
-      const currentMs = group.latestInstallAt ? new Date(group.latestInstallAt).getTime() : 0;
-      const nextMs = new Date(installedAt).getTime();
-      if (nextMs > currentMs) {
-        group.latestInstallAt = installedAt;
-      }
-    }
-  }
-
-  const testsByKey = new Map();
-  for (const [testId, resultGroup] of resultsByTest.entries()) {
-    testsByKey.set(testId, {
-      key: testId,
-      testId,
-      sku: "",
-      productName: "",
-      campaignId: "",
-      campaignType: "",
-      testName: "",
-      technicalDecision: "",
-      xwayUrl: resultGroup.xwayUrl || "",
-      wbUrl: "",
-      startedAt: "",
-      decidedAt: resultGroup.latestInstallAt || "",
-      coversPlanned: null,
-      ctrBefore: null,
-      ctrAfter: null,
-      ctrDelta: null,
-      variants: resultGroup.variants.length,
-      views: resultGroup.views,
-      clicks: resultGroup.clicks,
-      weightedCtr: resultGroup.views > 0 ? (resultGroup.clicks / resultGroup.views) * 100 : null,
-      coverDecision: Object.entries(resultGroup.decisions)
-        .sort((a, b) => b[1] - a[1])
-        .map((entry) => entry[0])[0],
-      bestCoverUrl: resultGroup.bestCoverUrl || "",
-    });
-  }
-
-  for (const row of techRows) {
-    const testId = String(abValue(row, ["test_id"])) || "";
-    const sku = abNormalizeSku(abValue(row, ["sku"]));
-    const fallbackKey = `sku:${sku || row.__rowIndex}`;
-    const key = testId || fallbackKey;
-
-    if (!testsByKey.has(key)) {
-      testsByKey.set(key, {
-        key,
-        testId,
-        sku,
-        productName: "",
-        campaignId: "",
-        campaignType: "",
-        testName: "",
-        technicalDecision: "",
-        xwayUrl: "",
-        wbUrl: "",
-        startedAt: "",
-        decidedAt: "",
-        coversPlanned: null,
-        ctrBefore: null,
-        ctrAfter: null,
-        ctrDelta: null,
-        variants: 0,
-        views: 0,
-        clicks: 0,
-        weightedCtr: null,
-        coverDecision: "UNKNOWN",
-        bestCoverUrl: "",
-      });
-    }
-
-    const test = testsByKey.get(key);
-    test.testId = test.testId || testId;
-    test.sku = test.sku || sku;
-    test.productName = test.productName || String(abValue(row, ["Название товара в CRM"])) || "";
-    test.campaignId = test.campaignId || String(abValue(row, ["campaign_id"])) || "";
-    test.campaignType = test.campaignType || String(abValue(row, ["Тип кампании"])) || "";
-    test.testName = test.testName || String(abValue(row, ["Название теста"])) || "";
-    test.technicalDecision = test.technicalDecision || String(abValue(row, ["Решение"])) || "";
-    test.xwayUrl = test.xwayUrl || String(abValue(row, ["Ссылка на XWay"])) || "";
-    test.wbUrl = test.wbUrl || String(abValue(row, ["Ссылка на Товар"])) || "";
-
-    const startedAt = abParseDateLiteral(abValue(row, ["Дата начала теста"]));
-    if (startedAt && (!test.startedAt || new Date(startedAt).getTime() > new Date(test.startedAt).getTime())) {
-      test.startedAt = startedAt;
-    }
-
-    const decidedAt = abParseDateLiteral(abValue(row, ["Дата установления победителя"]));
-    if (decidedAt && (!test.decidedAt || new Date(decidedAt).getTime() > new Date(test.decidedAt).getTime())) {
-      test.decidedAt = decidedAt;
-    }
-
-    const planned = abToInt(abValue(row, ["Количество обложек"]));
-    if (Number.isFinite(planned) && (test.coversPlanned === null || planned > test.coversPlanned)) {
-      test.coversPlanned = planned;
-    }
-
-    const ctrBefore = abToCtrPercent(abValue(row, ["CTR до"]));
-    if (Number.isFinite(ctrBefore)) {
-      test.ctrBefore = ctrBefore;
-    }
-
-    const ctrAfter = abToCtrPercent(abValue(row, ["CTR после"]));
-    if (Number.isFinite(ctrAfter)) {
-      test.ctrAfter = ctrAfter;
-    }
-  }
-
-  const tests = Array.from(testsByKey.values()).map((test) => {
-    const substrate = substrateBySku.get(test.sku);
-    const productName = test.productName || substrate?.productName || "—";
-    const wbUrl = test.wbUrl || substrate?.wbLink || "";
-    const variants = test.variants > 0 ? test.variants : Number(test.coversPlanned || 0);
-    const ctrDelta =
-      Number.isFinite(test.ctrBefore) && Number.isFinite(test.ctrAfter) ? Number(test.ctrAfter - test.ctrBefore) : null;
-    const weightedCtr = Number.isFinite(test.weightedCtr)
-      ? test.weightedCtr
-      : test.views > 0
-        ? (test.clicks / test.views) * 100
-        : null;
-
-    return {
-      ...test,
-      variants,
-      productName,
-      wbUrl,
-      weightedCtr,
-      ctrDelta,
-      offerId: substrate?.offerId || "",
-      crmId: substrate?.crmId || "",
-    };
-  });
-
-  tests.sort((a, b) => {
-    const aDate = a.startedAt || a.decidedAt;
-    const bDate = b.startedAt || b.decidedAt;
-    const aMs = aDate ? new Date(aDate).getTime() : 0;
-    const bMs = bDate ? new Date(bDate).getTime() : 0;
-    return bMs - aMs;
-  });
-
-  const testRowsForTable = tests.slice(0, AB_DASHBOARD_TESTS_LIMIT);
-  const testById = new Map(
-    tests
-      .filter((item) => String(item.testId || "").trim())
-      .map((item) => [String(item.testId).trim(), item]),
-  );
-
-  const coverRows = resultsRows
-    .map((row) => {
-      const testId = String(abValue(row, ["test_id"])) || "";
-      const installedAt = abParseDateLiteral(abValue(row, ["Дата установки обложки"]));
-      const decision = abNormalizeDecision(abValue(row, ["Решение по обложке"]));
-      const ctr = abToCtrPercent(abValue(row, ["ctr"]));
-      const views = Math.max(0, Number(abToInt(abValue(row, ["views"])) || 0));
-      const clicks = Math.max(0, Number(abToInt(abValue(row, ["clicks"])) || 0));
-      const coverUrl = String(abValue(row, ["Ссылка на обложку"])) || "";
-      const xwayUrl = String(abValue(row, ["Ссылка на XWay"])) || "";
-      const relatedTest = testById.get(String(testId).trim());
-      return {
-        testId,
-        sku: relatedTest?.sku || "",
-        productName: relatedTest?.productName || "—",
-        installedAt,
-        decision,
-        ctr,
-        views,
-        clicks,
-        coverUrl,
-        xwayUrl,
-      };
-    })
-    .sort((a, b) => {
-      const aMs = a.installedAt ? new Date(a.installedAt).getTime() : 0;
-      const bMs = b.installedAt ? new Date(b.installedAt).getTime() : 0;
-      return bMs - aMs;
-    })
-    .slice(0, AB_DASHBOARD_COVERS_LIMIT);
-
-  const ctrBeforeList = tests.map((item) => item.ctrBefore).filter((value) => Number.isFinite(value));
-  const ctrAfterList = tests.map((item) => item.ctrAfter).filter((value) => Number.isFinite(value));
-  const totalViews = tests.reduce((sum, item) => sum + Number(item.views || 0), 0);
-  const totalClicks = tests.reduce((sum, item) => sum + Number(item.clicks || 0), 0);
-  const totalVariants = tests.reduce((sum, item) => sum + Number(item.variants || 0), 0);
-
-  const uniqueSkuCount = new Set(tests.map((item) => item.sku).filter(Boolean)).size;
-  const avgCtrBefore =
-    ctrBeforeList.length > 0
-      ? ctrBeforeList.reduce((sum, value) => sum + value, 0) / ctrBeforeList.length
-      : null;
-  const avgCtrAfter =
-    ctrAfterList.length > 0
-      ? ctrAfterList.reduce((sum, value) => sum + value, 0) / ctrAfterList.length
-      : null;
-  const weightedCtr = totalViews > 0 ? (totalClicks / totalViews) * 100 : null;
-  const avgCtrDelta =
-    Number.isFinite(avgCtrBefore) && Number.isFinite(avgCtrAfter) ? Number(avgCtrAfter - avgCtrBefore) : null;
-
-  const topByDelta = tests
-    .filter((item) => Number.isFinite(item.ctrDelta))
-    .sort((a, b) => Number(b.ctrDelta) - Number(a.ctrDelta));
-
-  return {
-    rowCounts: {
-      substrate: substrateRows.length,
-      technical: techRows.length,
-      results: resultsRows.length,
-    },
-    totals: {
-      tests: tests.length,
-      skus: uniqueSkuCount,
-      variants: totalVariants,
-      views: totalViews,
-      clicks: totalClicks,
-      weightedCtr,
-      avgCtrBefore,
-      avgCtrAfter,
-      avgCtrDelta,
-    },
-    decisionTotals,
-    tables: {
-      tests: testRowsForTable,
-      covers: coverRows,
-      topGrowth: topByDelta.slice(0, 10),
-      topDrop: topByDelta.slice(-10).reverse(),
-    },
-  };
-}
-
-function renderAbKpiCard(title, value, hint = "") {
-  return `<article class="ab-kpi-card">
-    <p class="ab-kpi-title">${abEscapeHtml(title)}</p>
-    <p class="ab-kpi-value">${abEscapeHtml(value)}</p>
-    ${hint ? `<p class="ab-kpi-hint">${abEscapeHtml(hint)}</p>` : ""}
+  return `<article class="ab-overview-card">
+    <div class="ab-overview-head">
+      <h3>Сводка (как в листе)</h3>
+      <span class="subtle">Формулы и значения берутся из вкладки «[WB] Сводка : тесты CTR»</span>
+    </div>
+    <div class="ab-overview-table-wrap">
+      <table class="ab-overview-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Кабинет</th>
+            <th>${abEscapeHtml(header.colM || "Тест изм. цены")}</th>
+            <th>${abEscapeHtml(header.colN || "ИТОГ ОК")}</th>
+            <th>${abEscapeHtml(header.colO || "Тест CTR*CR1")}</th>
+            <th>${abEscapeHtml(header.colP || "ИТОГ ОВР")}</th>
+            <th>${abEscapeHtml(header.colQ || "Ручная")}</th>
+            <th>${abEscapeHtml(header.colS || "Итог")}</th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>
   </article>`;
 }
 
-function renderAbDecisionChip(label, count, toneClass) {
-  return `<span class="ab-decision-chip ${abEscapeAttr(toneClass)}"><span class="ab-decision-name">${abEscapeHtml(label)}</span><strong>${abEscapeHtml(
-    abFormatInt(count),
-  )}</strong></span>`;
+function renderAbFilterToolbar(model, filteredTests) {
+  const cabinets = Array.isArray(model?.cabinets) ? model.cabinets : [];
+  const cabinetOptions = [`<option value="all">Все кабинеты</option>`]
+    .concat(
+      cabinets.map(
+        (cabinet) =>
+          `<option value="${abEscapeAttr(cabinet)}"${abDashboardStore.filters.cabinet === cabinet ? " selected" : ""}>${abEscapeHtml(
+            cabinet,
+          )}</option>`,
+      ),
+    )
+    .join("");
+
+  const totalTests = Array.isArray(model?.tests) ? model.tests.length : 0;
+  const visibleTests = Array.isArray(filteredTests) ? filteredTests.length : 0;
+
+  return `<section class="ab-toolbar-card">
+    <div class="ab-toolbar-main">
+      <label class="ab-toolbar-search">
+        ${abRenderIcon("search", "ab-toolbar-search-icon") || ""}
+        <input
+          type="search"
+          value="${abEscapeAttr(abDashboardStore.filters.search)}"
+          placeholder="Поиск: test id, артикул, название"
+          data-ab-filter="search"
+        />
+      </label>
+      <label class="ab-toolbar-field">
+        <select data-ab-filter="cabinet">${cabinetOptions}</select>
+      </label>
+      <label class="ab-toolbar-field">
+        <select data-ab-filter="verdict">
+          <option value="all"${abDashboardStore.filters.verdict === "all" ? " selected" : ""}>Все исходы</option>
+          <option value="good"${abDashboardStore.filters.verdict === "good" ? " selected" : ""}>Хорошо</option>
+          <option value="bad"${abDashboardStore.filters.verdict === "bad" ? " selected" : ""}>Плохо</option>
+          <option value="auto"${abDashboardStore.filters.verdict === "auto" ? " selected" : ""}>Авто</option>
+          <option value="unknown"${abDashboardStore.filters.verdict === "unknown" ? " selected" : ""}>Нет данных</option>
+        </select>
+      </label>
+      <div class="ab-view-switch" role="tablist" aria-label="Режим просмотра AB">
+        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "tests" ? " is-active" : ""}" data-ab-view="tests">По тестам</button>
+        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "products" ? " is-active" : ""}" data-ab-view="products">По товарам</button>
+        <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "both" ? " is-active" : ""}" data-ab-view="both">Оба вида</button>
+      </div>
+    </div>
+    <div class="ab-toolbar-stats">
+      <span class="ab-stat-chip">Тестов: <strong>${abEscapeHtml(abFormatInt(visibleTests))}</strong> / ${abEscapeHtml(abFormatInt(totalTests))}</span>
+      <span class="ab-stat-chip">Хорошо: <strong>${abEscapeHtml(abFormatInt(model?.statusTotals?.good || 0))}</strong></span>
+      <span class="ab-stat-chip">Плохо: <strong>${abEscapeHtml(abFormatInt(model?.statusTotals?.bad || 0))}</strong></span>
+    </div>
+  </section>`;
 }
 
-function renderAbTestsTableRows(rows) {
-  if (!Array.isArray(rows) || rows.length <= 0) {
-    return '<tr><td colspan="12" class="ab-table-empty-row">Нет строк для отображения.</td></tr>';
+function renderAbTestCard(test) {
+  const reportHtml = test.reportLines.length
+    ? `<ul class="ab-report-list">${test.reportLines
+        .map((line) => `<li>${abEscapeHtml(line.replace(/^[-•]\s*/, ""))}</li>`)
+        .join("")}</ul>`
+    : "<p class=\"subtle\">Без текстового отчета.</p>";
+
+  const checksHtml = [
+    { label: "Тест изм. цены", raw: test.summaryChecks.testPrice },
+    { label: "ИТОГ ОК", raw: test.summaryChecks.resultOk },
+    { label: "Тест CTR*CR1", raw: test.summaryChecks.testCtrCr1 },
+    { label: "ИТОГ ОВР", raw: test.summaryChecks.resultOvr },
+    { label: "Ручная", raw: test.summaryChecks.manual },
+  ]
+    .map(
+      (item) => `<div class="ab-check-pill"><span>${abEscapeHtml(item.label)}</span>${abStatusPill(item.raw, true)}</div>`,
+    )
+    .join("");
+
+  const metricsHtml = test.metrics
+    .map(
+      (item) => `<tr>
+      <td>${abEscapeHtml(item.label)}</td>
+      <td class="ab-metric-value">${abEscapeHtml(item.valueText)}</td>
+      <td>${abStatusPill(item.statusRaw, true)}</td>
+    </tr>`,
+    )
+    .join("");
+
+  const variantsHeaderCells = test.variants.map((variant) => `<th>Вариант ${variant.index}</th>`).join("");
+  const imageCells = test.variants
+    .map((variant) => {
+      if (!variant.imageUrl) {
+        return '<td><div class="ab-image-placeholder">нет обложки</div></td>';
+      }
+      return `<td><a class="ab-cover-link" href="${abEscapeAttr(variant.imageUrl)}" target="_blank" rel="noopener noreferrer"><img src="${abEscapeAttr(
+        variant.imageUrl,
+      )}" alt="Обложка ${variant.index}" loading="lazy" decoding="async" /></a></td>`;
+    })
+    .join("");
+
+  const viewsCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.views)}</td>`).join("");
+  const clicksCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.clicks)}</td>`).join("");
+  const ctrCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.ctr)}</td>`).join("");
+  const installCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.installedAt)}</td>`).join("");
+  const hoursCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.hours)}</td>`).join("");
+
+  const priceRowsHtml = test.priceRows
+    .map((row) => `<tr><td>${abEscapeHtml(row.label)}</td><td>${abEscapeHtml(row.value)}</td></tr>`)
+    .join("");
+
+  const priceDeltaRowsHtml = test.priceDeltaRows
+    .map((row) => `<tr><td>${abEscapeHtml(row.label)}</td><td>${abEscapeHtml(row.value)}</td></tr>`)
+    .join("");
+
+  const funnelRowsHtml = test.funnelRows
+    .map(
+      (row) => `<tr>
+      <td>${abEscapeHtml(row.label)}</td>
+      <td>${abEscapeHtml(row.before)}</td>
+      <td>${abEscapeHtml(row.after)}</td>
+    </tr>`,
+    )
+    .join("");
+
+  return `<article class="ab-test-card" data-test-id="${abEscapeAttr(test.testId)}">
+    <header class="ab-test-head">
+      <div class="ab-test-head-main">
+        <h4>Тест ${abEscapeHtml(test.testId)}</h4>
+        <p class="ab-test-title" title="${abEscapeAttr(test.title)}">${abEscapeHtml(test.title || "—")}</p>
+        <div class="ab-test-meta-row">
+          <span class="ab-test-chip">Артикул: <strong>${abEscapeHtml(test.article || "—")}</strong></span>
+          <span class="ab-test-chip">Тип РК: <strong>${abEscapeHtml(test.type || "—")}</strong></span>
+          <span class="ab-test-chip">Кабинет: <strong>${abEscapeHtml(test.cabinet || "—")}</strong></span>
+          <span class="ab-test-chip">Старт: <strong>${abEscapeHtml(test.startedAt || "—")}</strong></span>
+          <span class="ab-test-chip">Финиш: <strong>${abEscapeHtml(test.endedAt || "—")}</strong></span>
+        </div>
+      </div>
+      <div class="ab-test-head-actions">
+        ${abSafeLink(test.xwayUrl, "XWay")}
+        ${abSafeLink(test.wbUrl, "WB")}
+        ${abStatusPill(test.finalStatusRaw)}
+      </div>
+    </header>
+
+    <div class="ab-test-layout">
+      <section class="ab-test-left">
+        <div class="ab-checks-grid">${checksHtml}</div>
+        <div class="ab-metrics-card">
+          <h5>Сводка метрик</h5>
+          <table class="ab-mini-table">
+            <thead>
+              <tr><th>Показатель</th><th>Значение</th><th>Итог</th></tr>
+            </thead>
+            <tbody>${metricsHtml}</tbody>
+          </table>
+        </div>
+        <div class="ab-report-card">
+          <h5>Отчет из сводки</h5>
+          ${reportHtml}
+        </div>
+      </section>
+
+      <section class="ab-test-center">
+        <div class="ab-matrix-wrap">
+          <table class="ab-variant-matrix">
+            <thead>
+              <tr>
+                <th>Метрика</th>
+                ${variantsHeaderCells}
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="is-image">
+                <th>IMAGE</th>
+                ${imageCells}
+              </tr>
+              <tr>
+                <th>VIEW</th>
+                ${viewsCells}
+              </tr>
+              <tr>
+                <th>CLICK</th>
+                ${clicksCells}
+              </tr>
+              <tr>
+                <th>CTR</th>
+                ${ctrCells}
+              </tr>
+              <tr>
+                <th>Установка (Дата / Время)</th>
+                ${installCells}
+              </tr>
+              <tr>
+                <th>Часы работы обложки</th>
+                ${hoursCells}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="ab-test-right">
+        <article class="ab-side-card">
+          <h5>Цена</h5>
+          <table class="ab-mini-table is-tight">
+            <tbody>${priceRowsHtml || '<tr><td colspan="2">—</td></tr>'}</tbody>
+          </table>
+          <table class="ab-mini-table is-tight">
+            <tbody>${priceDeltaRowsHtml || '<tr><td colspan="2">—</td></tr>'}</tbody>
+          </table>
+        </article>
+
+        <article class="ab-side-card">
+          <h5>Воронка ДО / ПОСЛЕ</h5>
+          <table class="ab-mini-table is-tight">
+            <thead>
+              <tr><th>Метрика</th><th>До</th><th>После</th></tr>
+            </thead>
+            <tbody>${funnelRowsHtml || '<tr><td colspan="3">—</td></tr>'}</tbody>
+          </table>
+        </article>
+      </section>
+    </div>
+  </article>`;
+}
+
+function renderAbTestsSection(tests) {
+  if (!tests.length) {
+    return `<article class="ab-table-card"><p class="ab-table-empty-row">Нет тестов под выбранные фильтры.</p></article>`;
+  }
+  return `<section class="ab-tests-list">${tests.map((test) => renderAbTestCard(test)).join("")}</section>`;
+}
+
+function renderAbProductsSection(products) {
+  if (!products.length) {
+    return "";
   }
 
-  return rows
-    .map((row) => {
-      const decision = abDecisionLabel(row.coverDecision);
-      const decisionTone = abDecisionTone(row.coverDecision);
-      const deltaClass = Number(row.ctrDelta) > 0 ? "is-up" : Number(row.ctrDelta) < 0 ? "is-down" : "";
+  const rows = products
+    .map((item) => {
+      const testsList = item.tests
+        .slice(0, 12)
+        .map(
+          (test) =>
+            `<a class="ab-product-test-link" href="${abEscapeAttr(test.xwayUrl || "#")}" target="_blank" rel="noopener noreferrer" title="${abEscapeAttr(
+              test.title,
+            )}">#${abEscapeHtml(test.testId)}</a>`,
+        )
+        .join(" ");
+
       return `<tr>
-        <td class="ab-col-id">${abEscapeHtml(row.testId || "—")}</td>
-        <td class="ab-col-id">${abEscapeHtml(row.sku || "—")}</td>
-        <td class="ab-col-name" title="${abEscapeAttr(row.productName || "")}">${abEscapeHtml(row.productName || "—")}</td>
-        <td>${abEscapeHtml(row.campaignType || "—")}</td>
-        <td>${abEscapeHtml(abFormatInt(row.variants))}</td>
-        <td>${abEscapeHtml(abFormatPercent(row.ctrBefore))}</td>
-        <td>${abEscapeHtml(abFormatPercent(row.ctrAfter))}</td>
-        <td class="${deltaClass}">${abEscapeHtml(abFormatCtrDelta(row.ctrDelta))}</td>
-        <td>${abEscapeHtml(abFormatInt(row.views))}</td>
-        <td>${abEscapeHtml(abFormatInt(row.clicks))}</td>
-        <td><span class="ab-decision-pill ${abEscapeAttr(decisionTone)}">${abEscapeHtml(decision)}</span></td>
-        <td class="ab-links-cell">${abSafeLink(row.wbUrl, "WB")} ${abSafeLink(row.xwayUrl, "XWay")}</td>
-      </tr>`;
+      <td class="ab-col-id">${abEscapeHtml(item.article)}</td>
+      <td class="ab-col-name" title="${abEscapeAttr(item.title)}">${abEscapeHtml(item.title || "—")}</td>
+      <td>${abEscapeHtml(item.cabinets.join(", ") || "—")}</td>
+      <td>${abEscapeHtml(abFormatInt(item.testsCount))}</td>
+      <td><span class="ab-inline-status good">${abEscapeHtml(abFormatInt(item.good))}</span></td>
+      <td><span class="ab-inline-status bad">${abEscapeHtml(abFormatInt(item.bad))}</span></td>
+      <td><span class="ab-inline-status auto">${abEscapeHtml(abFormatInt(item.auto))}</span></td>
+      <td>${abEscapeHtml(item.latestAt || "—")}</td>
+      <td class="ab-product-tests-cell">${testsList || "—"}</td>
+    </tr>`;
     })
     .join("");
+
+  return `<article class="ab-table-card">
+    <div class="ab-table-head">
+      <h3>Товары и все проведенные AB‑тесты</h3>
+      <span class="subtle">Группировка по артикулу</span>
+    </div>
+    <div class="ab-table-wrap">
+      <table class="ab-table ab-products-table">
+        <thead>
+          <tr>
+            <th>Артикул</th>
+            <th>Название</th>
+            <th>Кабинеты</th>
+            <th>Тестов</th>
+            <th>Хорошо</th>
+            <th>Плохо</th>
+            <th>Авто</th>
+            <th>Последний старт</th>
+            <th>Тесты</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </article>`;
 }
 
-function renderAbCoverRows(rows) {
-  if (!Array.isArray(rows) || rows.length <= 0) {
-    return '<tr><td colspan="8" class="ab-table-empty-row">Нет строк для отображения.</td></tr>';
-  }
+function abFilterTests(model) {
+  const tests = Array.isArray(model?.tests) ? model.tests : [];
+  const filters = abDashboardStore.filters;
+  const search = String(filters.search || "").trim().toLowerCase();
+  const cabinet = String(filters.cabinet || "all");
+  const verdict = String(filters.verdict || "all");
 
-  return rows
-    .map((row) => {
-      const decision = abDecisionLabel(row.decision);
-      const decisionTone = abDecisionTone(row.decision);
-      return `<tr>
-        <td class="ab-col-id">${abEscapeHtml(row.testId || "—")}</td>
-        <td class="ab-col-id">${abEscapeHtml(row.sku || "—")}</td>
-        <td class="ab-col-name" title="${abEscapeAttr(row.productName || "")}">${abEscapeHtml(row.productName || "—")}</td>
-        <td>${abEscapeHtml(abFormatDate(row.installedAt, true))}</td>
-        <td>${abEscapeHtml(abFormatPercent(row.ctr))}</td>
-        <td>${abEscapeHtml(abFormatInt(row.views))}</td>
-        <td>${abEscapeHtml(abFormatInt(row.clicks))}</td>
-        <td class="ab-links-cell">${abSafeLink(row.coverUrl, "Обложка")} <span class="ab-decision-pill ${abEscapeAttr(decisionTone)}">${abEscapeHtml(
-          decision,
-        )}</span></td>
-      </tr>`;
-    })
-    .join("");
+  return tests.filter((test) => {
+    if (cabinet !== "all" && test.cabinet !== cabinet) {
+      return false;
+    }
+    if (verdict !== "all" && test.finalStatusKind !== verdict) {
+      return false;
+    }
+    if (!search) {
+      return true;
+    }
+    const haystack = [test.testId, test.article, test.title, test.cabinet, test.type].join(" ").toLowerCase();
+    return haystack.includes(search);
+  });
 }
 
-function renderAbDeltaList(rows, tone = "up") {
-  if (!Array.isArray(rows) || rows.length <= 0) {
-    return '<li class="ab-delta-empty">Нет данных</li>';
-  }
-
-  return rows
-    .map((row) => {
-      const deltaClass = tone === "down" ? "is-down" : "is-up";
-      return `<li>
-        <span class="ab-delta-name" title="${abEscapeAttr(row.productName || "")}">${abEscapeHtml(row.sku || "—")} · ${abEscapeHtml(
-        row.productName || "—",
-      )}</span>
-        <span class="ab-delta-value ${deltaClass}">${abEscapeHtml(abFormatCtrDelta(row.ctrDelta))}</span>
-      </li>`;
-    })
-    .join("");
+function abBuildProductsFromFilteredTests(filteredTests) {
+  return abBuildProducts(filteredTests);
 }
 
 function renderAbDashboardContent() {
@@ -744,7 +1191,7 @@ function renderAbDashboardContent() {
   if (abDashboardStore.loading) {
     contentEl.innerHTML = `<div class="ab-tests-state-card">
       <span class="ab-tests-state-spinner" aria-hidden="true"></span>
-      <span>Загружаю данные AB‑тестов из Google Sheets…</span>
+      <span>Загружаю данные из «[WB] Сводка : тесты CTR»…</span>
     </div>`;
     return;
   }
@@ -759,106 +1206,90 @@ function renderAbDashboardContent() {
 
   const model = abDashboardStore.data;
   if (!model) {
-    contentEl.innerHTML = `<div class="ab-tests-state-card">
-      <span>Нет данных для AB‑дашборда.</span>
-    </div>`;
+    contentEl.innerHTML = `<div class="ab-tests-state-card"><span>Нет данных для AB‑дашборда.</span></div>`;
     return;
   }
 
   if (metaEl) {
     const fetchedLabel = abDashboardStore.fetchedAt ? formatDateTime(abDashboardStore.fetchedAt) : "-";
-    metaEl.textContent = `Источники: (*) Подложка, (*) Техническая выгрузка, (*) Результаты по обложкам XWAY. Обновлено: ${fetchedLabel}`;
+    metaEl.textContent = `Источник формул: [WB] Сводка : тесты CTR. Медиа: (*) Результаты по обложкам XWAY. Обновлено: ${fetchedLabel}`;
   }
 
-  const kpiCards = [
-    renderAbKpiCard("Тестов", abFormatInt(model.totals.tests), "Уникальные test_id"),
-    renderAbKpiCard("Артикулов", abFormatInt(model.totals.skus), "sku в тестах"),
-    renderAbKpiCard("Вариантов обложек", abFormatInt(model.totals.variants), "По листу результатов"),
-    renderAbKpiCard("Просмотров", abFormatInt(model.totals.views), "Сумма views"),
-    renderAbKpiCard("Кликов", abFormatInt(model.totals.clicks), "Сумма clicks"),
-    renderAbKpiCard("CTR (взвеш.)", abFormatPercent(model.totals.weightedCtr), "clicks / views"),
-    renderAbKpiCard("CTR до", abFormatPercent(model.totals.avgCtrBefore), "Средний по тестам"),
-    renderAbKpiCard("CTR после", abFormatPercent(model.totals.avgCtrAfter), "Средний по тестам"),
-    renderAbKpiCard("Δ CTR", abFormatCtrDelta(model.totals.avgCtrDelta), "После − до"),
-  ].join("");
+  const filteredTests = abFilterTests(model);
+  const filteredProducts = abBuildProductsFromFilteredTests(filteredTests);
 
-  const decisionChips = [
-    renderAbDecisionChip("GOOD", model.decisionTotals.GOOD, "is-good"),
-    renderAbDecisionChip("NORMAL", model.decisionTotals.NORMAL, "is-normal"),
-    renderAbDecisionChip("BAD", model.decisionTotals.BAD, "is-bad"),
-    renderAbDecisionChip("UNKNOWN", model.decisionTotals.UNKNOWN, "is-unknown"),
-  ].join("");
+  const sourceRowsLabel = `Строк в сводке: ${abFormatInt(model.rowCounts.summary)} · строк в результатах обложек: ${abFormatInt(
+    model.rowCounts.results,
+  )}`;
 
-  const sourceRowsLabel = `Подложка: ${abFormatInt(model.rowCounts.substrate)} · Тех. выгрузка: ${abFormatInt(
-    model.rowCounts.technical,
-  )} · Результаты XWAY: ${abFormatInt(model.rowCounts.results)}`;
+  const showTests = abDashboardStore.filters.view === "tests" || abDashboardStore.filters.view === "both";
+  const showProducts = abDashboardStore.filters.view === "products" || abDashboardStore.filters.view === "both";
 
-  contentEl.innerHTML = `<div class="ab-kpi-grid">${kpiCards}</div>
+  contentEl.innerHTML = `
+    ${renderAbFilterToolbar(model, filteredTests)}
     <div class="ab-source-line">${abEscapeHtml(sourceRowsLabel)}</div>
-    <div class="ab-decision-row">${decisionChips}</div>
+    ${renderAbOverview(model)}
+    ${showTests ? renderAbTestsSection(filteredTests) : ""}
+    ${showProducts ? renderAbProductsSection(filteredProducts) : ""}
+  `;
+}
 
-    <div class="ab-delta-grid">
-      <article class="ab-delta-card">
-        <h3>Топ роста CTR</h3>
-        <ul>${renderAbDeltaList(model.tables.topGrowth, "up")}</ul>
-      </article>
-      <article class="ab-delta-card">
-        <h3>Топ падения CTR</h3>
-        <ul>${renderAbDeltaList(model.tables.topDrop, "down")}</ul>
-      </article>
-    </div>
+function bindAbDashboardEvents() {
+  if (abDashboardStore.listenersBound) {
+    return;
+  }
+  const contentEl = getAbDashboardContentEl();
+  if (!contentEl) {
+    return;
+  }
 
-    <article class="ab-table-card">
-      <div class="ab-table-head">
-        <h3>Сводка тестов</h3>
-        <span class="subtle">Показано ${abEscapeHtml(abFormatInt(model.tables.tests.length))} последних тестов</span>
-      </div>
-      <div class="ab-table-wrap">
-        <table class="ab-table">
-          <thead>
-            <tr>
-              <th>Test ID</th>
-              <th>Артикул</th>
-              <th>Товар</th>
-              <th>Тип</th>
-              <th>Обложек</th>
-              <th>CTR до</th>
-              <th>CTR после</th>
-              <th>Δ CTR</th>
-              <th>Views</th>
-              <th>Clicks</th>
-              <th>Решение</th>
-              <th>Ссылки</th>
-            </tr>
-          </thead>
-          <tbody>${renderAbTestsTableRows(model.tables.tests)}</tbody>
-        </table>
-      </div>
-    </article>
+  contentEl.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const filterName = target.getAttribute("data-ab-filter");
+    if (filterName === "search" && target instanceof HTMLInputElement) {
+      abDashboardStore.filters.search = target.value || "";
+      renderAbDashboardContent();
+    }
+  });
 
-    <article class="ab-table-card">
-      <div class="ab-table-head">
-        <h3>Последние результаты обложек</h3>
-        <span class="subtle">Показано ${abEscapeHtml(abFormatInt(model.tables.covers.length))} последних установок</span>
-      </div>
-      <div class="ab-table-wrap">
-        <table class="ab-table">
-          <thead>
-            <tr>
-              <th>Test ID</th>
-              <th>Артикул</th>
-              <th>Товар</th>
-              <th>Дата установки</th>
-              <th>CTR</th>
-              <th>Views</th>
-              <th>Clicks</th>
-              <th>Ссылка</th>
-            </tr>
-          </thead>
-          <tbody>${renderAbCoverRows(model.tables.covers)}</tbody>
-        </table>
-      </div>
-    </article>`;
+  contentEl.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const filterName = target.getAttribute("data-ab-filter");
+    if (!filterName) {
+      return;
+    }
+
+    if (filterName === "cabinet" || filterName === "verdict") {
+      if (target instanceof HTMLSelectElement) {
+        abDashboardStore.filters[filterName] = target.value || "all";
+        renderAbDashboardContent();
+      }
+    }
+  });
+
+  contentEl.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("[data-ab-view]") : null;
+    if (!target) {
+      return;
+    }
+    const nextView = String(target.getAttribute("data-ab-view") || "");
+    if (!nextView || nextView === abDashboardStore.filters.view) {
+      return;
+    }
+    if (!["tests", "products", "both"].includes(nextView)) {
+      return;
+    }
+    abDashboardStore.filters.view = nextView;
+    renderAbDashboardContent();
+  });
+
+  abDashboardStore.listenersBound = true;
 }
 
 async function loadAbDashboardData(options = {}) {
@@ -871,17 +1302,14 @@ async function loadAbDashboardData(options = {}) {
     return abDashboardStore.data;
   }
 
+  bindAbDashboardEvents();
   abDashboardStore.loading = true;
   abDashboardStore.error = "";
   renderAbDashboardContent();
 
-  const request = Promise.all([
-    fetchAbSheet(AB_DASHBOARD_SHEETS.substrate),
-    fetchAbSheet(AB_DASHBOARD_SHEETS.technical),
-    fetchAbSheet(AB_DASHBOARD_SHEETS.results),
-  ])
-    .then(([substrate, technical, results]) => {
-      const model = buildAbDashboardModel({ substrate, technical, results });
+  const request = Promise.all([fetchAbSheetRaw(AB_DASHBOARD_SHEETS.summary), fetchAbSheetRaw(AB_DASHBOARD_SHEETS.results)])
+    .then(([summary, results]) => {
+      const model = buildAbDashboardModel({ summary, results });
       abDashboardStore.loaded = true;
       abDashboardStore.data = model;
       abDashboardStore.fetchedAt = new Date().toISOString();
