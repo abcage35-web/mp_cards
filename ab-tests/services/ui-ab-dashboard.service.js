@@ -30,6 +30,8 @@ const abDashboardStore = {
     search: "",
     cabinet: "all",
     verdict: "all",
+    dateFrom: "",
+    dateTo: "",
     view: "tests",
   },
   listenersBound: false,
@@ -946,6 +948,21 @@ function abSafeLink(urlRaw, label) {
   )}</span></a>`;
 }
 
+function abGetTestFilterDate(test) {
+  const iso = String(test?.startedAtIso || test?.endedAtIso || "").trim();
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function renderAbFilterToolbar(model, filteredTests) {
   const cabinets = Array.isArray(model?.cabinets) ? model.cabinets : [];
   const cabinetOptions = [`<option value="all">Все кабинеты</option>`]
@@ -984,6 +1001,12 @@ function renderAbFilterToolbar(model, filteredTests) {
           <option value="auto"${abDashboardStore.filters.verdict === "auto" ? " selected" : ""}>Авто</option>
           <option value="unknown"${abDashboardStore.filters.verdict === "unknown" ? " selected" : ""}>Нет данных</option>
         </select>
+      </label>
+      <label class="ab-toolbar-field is-date">
+        <input type="date" value="${abEscapeAttr(abDashboardStore.filters.dateFrom)}" data-ab-filter="dateFrom" />
+      </label>
+      <label class="ab-toolbar-field is-date">
+        <input type="date" value="${abEscapeAttr(abDashboardStore.filters.dateTo)}" data-ab-filter="dateTo" />
       </label>
       <div class="ab-view-switch" role="tablist" aria-label="Режим просмотра AB">
         <button type="button" class="ab-view-btn${abDashboardStore.filters.view === "tests" ? " is-active" : ""}" data-ab-view="tests">По тестам</button>
@@ -1236,12 +1259,21 @@ function abFilterTests(model) {
   const search = String(filters.search || "").trim().toLowerCase();
   const cabinet = String(filters.cabinet || "all");
   const verdict = String(filters.verdict || "all");
+  const dateFrom = String(filters.dateFrom || "").trim();
+  const dateTo = String(filters.dateTo || "").trim();
 
   return tests.filter((test) => {
     if (cabinet !== "all" && test.cabinet !== cabinet) {
       return false;
     }
     if (verdict !== "all" && test.finalStatusKind !== verdict) {
+      return false;
+    }
+    const testDate = abGetTestFilterDate(test);
+    if (dateFrom && (!testDate || testDate < dateFrom)) {
+      return false;
+    }
+    if (dateTo && (!testDate || testDate > dateTo)) {
       return false;
     }
     if (!search) {
@@ -1326,6 +1358,11 @@ function bindAbDashboardEvents() {
     if (filterName === "search" && target instanceof HTMLInputElement) {
       abDashboardStore.filters.search = target.value || "";
       renderAbDashboardContent();
+      return;
+    }
+    if ((filterName === "dateFrom" || filterName === "dateTo") && target instanceof HTMLInputElement) {
+      abDashboardStore.filters[filterName] = target.value || "";
+      renderAbDashboardContent();
     }
   });
 
@@ -1344,6 +1381,12 @@ function bindAbDashboardEvents() {
         abDashboardStore.filters[filterName] = target.value || "all";
         renderAbDashboardContent();
       }
+      return;
+    }
+
+    if ((filterName === "dateFrom" || filterName === "dateTo") && target instanceof HTMLInputElement) {
+      abDashboardStore.filters[filterName] = target.value || "";
+      renderAbDashboardContent();
     }
   });
 
