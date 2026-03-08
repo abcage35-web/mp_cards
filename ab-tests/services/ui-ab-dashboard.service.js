@@ -1556,7 +1556,15 @@ function renderAbTestCard(test) {
         <article class="ab-side-card ab-price-stage-card">
           <div class="ab-price-stage-head">
             <h5>Цена</h5>
-            <span class="ab-test-chip">Откл. цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></span>
+            <div class="ab-tooltip-anchor">
+              <button type="button" class="ab-icon-btn" aria-label="Показать сведения по отклонениям цены">
+                ${abRenderIcon("info", "ab-card-help-icon") || "i"}
+              </button>
+              <div class="ab-hover-tooltip" role="tooltip">
+                <div class="ab-hover-tooltip-title">Отклонения цены</div>
+                <div class="ab-hover-tooltip-copy">Количество отклонений цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></div>
+              </div>
+            </div>
           </div>
           <div class="ab-price-stage-grid">
             ${priceStagesHtml || '<div class="ab-price-stage-empty">Нет данных по этапам цены.</div>'}

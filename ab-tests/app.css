@@ -872,6 +872,11 @@ body {
   font: 700 13px/1.2 "IBM Plex Sans", sans-serif;
 }
 
+.ab-hover-tooltip-copy {
+  color: #3b5563;
+  font: 600 12px/1.35 "IBM Plex Sans", sans-serif;
+}
+
 .ab-price-stage-card {
   display: grid;
   gap: 6px;
