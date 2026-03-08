@@ -809,15 +809,13 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
       : null;
 
   const funnelRows = [
-    { label: "CTR", before: abFormatFractionToPercent(metricsBlock.ctrBefore, 2), after: abFormatFractionToPercent(metricsBlock.ctrAfter, 2) },
-    { label: "CR1", before: abFormatFractionToPercent(metricsBlock.cr1Before, 2), after: abFormatFractionToPercent(metricsBlock.cr1After, 2) },
-    { label: "CR2", before: abFormatFractionToPercent(metricsBlock.cr2Before, 2), after: abFormatFractionToPercent(metricsBlock.cr2After, 2) },
-    {
-      label: "CTR*CR1",
-      before: abFormatFractionToPercent(metricsBlock.ctrCr1Before, 2),
-      after: abFormatFractionToPercent(metricsBlock.ctrCr1After, 2),
-    },
-    { label: "OCR*100", before: abFormatPlainNumber(ocrBefore), after: abFormatPlainNumber(ocrAfter) },
+    abBuildFunnelMetricRow("CTR", metricsBlock.ctrBefore, metricsBlock.ctrAfter, (value) => abFormatFractionToPercent(value, 2)),
+    abBuildFunnelMetricRow("CR1", metricsBlock.cr1Before, metricsBlock.cr1After, (value) => abFormatFractionToPercent(value, 2)),
+    abBuildFunnelMetricRow("CR2", metricsBlock.cr2Before, metricsBlock.cr2After, (value) => abFormatFractionToPercent(value, 2)),
+    abBuildFunnelMetricRow("CTR*CR1", metricsBlock.ctrCr1Before, metricsBlock.ctrCr1After, (value) =>
+      abFormatFractionToPercent(value, 2),
+    ),
+    abBuildFunnelMetricRow("OCR*100", ocrBefore, ocrAfter, (value) => abFormatPlainNumber(value)),
   ];
 
   const reportLines = abBuildComputedReportLines(metricsBlock);
@@ -1054,6 +1052,23 @@ function abBuildCabinetFunnelCards(tests, cabinetOrder = []) {
     .filter(Boolean);
 }
 
+function abBuildFunnelMetricRow(label, beforeValue, afterValue, formatter) {
+  const before = typeof formatter === "function" ? formatter(beforeValue) : "—";
+  const after = typeof formatter === "function" ? formatter(afterValue) : "—";
+  const canCalculate = Number.isFinite(beforeValue) && Number.isFinite(afterValue) && Number(beforeValue) !== 0;
+  const deltaValue = canCalculate ? Number(afterValue) / Number(beforeValue) - 1 : null;
+  const deltaText = Number.isFinite(deltaValue) ? abFormatSignedPercentFraction(deltaValue, 0) : "—";
+  const deltaKind = Number.isFinite(deltaValue) ? (deltaValue > 0 ? "good" : deltaValue < 0 ? "bad" : "neutral") : "unknown";
+
+  return {
+    label,
+    before,
+    after,
+    deltaText,
+    deltaKind,
+  };
+}
+
 function renderAbCabinetFunnelDashboard(filteredTests) {
   const tests = Array.isArray(filteredTests) ? filteredTests : [];
   if (!tests.length) {
@@ -1283,6 +1298,11 @@ function renderAbTestCard(test) {
       <td>${abEscapeHtml(row.label)}</td>
       <td>${abEscapeHtml(row.before)}</td>
       <td>${abEscapeHtml(row.after)}</td>
+      <td>${
+        row.deltaText !== "—"
+          ? `<span class="ab-delta-pill is-${abEscapeAttr(row.deltaKind)}">${abEscapeHtml(row.deltaText)}</span>`
+          : '<span class="ab-delta-pill is-unknown">—</span>'
+      }</td>
     </tr>`,
     )
     .join("");
@@ -1389,9 +1409,9 @@ function renderAbTestCard(test) {
           <h5>Воронка ДО / ПОСЛЕ</h5>
           <table class="ab-mini-table is-tight">
             <thead>
-              <tr><th>Метрика</th><th>До</th><th>После</th></tr>
+              <tr><th>Метрика</th><th>До</th><th>После</th><th>Прирост</th></tr>
             </thead>
-            <tbody>${funnelRowsHtml || '<tr><td colspan="3">—</td></tr>'}</tbody>
+            <tbody>${funnelRowsHtml || '<tr><td colspan="4">—</td></tr>'}</tbody>
           </table>
         </article>
       </section>

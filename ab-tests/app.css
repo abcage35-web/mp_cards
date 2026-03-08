@@ -1146,7 +1146,8 @@ body {
   flex-wrap: wrap;
 }
 
-.ab-ctr-boost-pill {
+.ab-ctr-boost-pill,
+.ab-delta-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1160,22 +1161,31 @@ body {
   white-space: nowrap;
 }
 
-.ab-ctr-boost-pill.is-good {
+.ab-ctr-boost-pill.is-good,
+.ab-delta-pill.is-good {
   border-color: rgba(16, 185, 129, 0.35);
   background: rgba(16, 185, 129, 0.12);
   color: #0f5b44;
 }
 
-.ab-ctr-boost-pill.is-bad {
+.ab-ctr-boost-pill.is-bad,
+.ab-delta-pill.is-bad {
   border-color: rgba(249, 115, 96, 0.38);
   background: rgba(249, 115, 96, 0.15);
   color: #8b2f21;
 }
 
-.ab-ctr-boost-pill.is-neutral {
+.ab-ctr-boost-pill.is-neutral,
+.ab-delta-pill.is-neutral {
   border-color: rgba(148, 163, 184, 0.36);
   background: rgba(148, 163, 184, 0.14);
   color: #51697a;
+}
+
+.ab-delta-pill.is-unknown {
+  border-color: rgba(193, 205, 214, 0.52);
+  background: rgba(237, 243, 246, 0.88);
+  color: #718792;
 }
 
 .ab-cover-frame {
