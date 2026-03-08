@@ -1157,7 +1157,7 @@ body {
 
 .ab-cover-link {
   display: inline-flex;
-  width: min(100%, 84px);
+  width: min(100%, 72px);
   border-radius: 9px;
   overflow: hidden;
   border: 1px solid rgba(22, 56, 71, 0.2);
@@ -1196,7 +1196,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 84px;
+  width: 72px;
   max-width: 100%;
   aspect-ratio: 3 / 4;
   margin-inline: auto;
@@ -1395,7 +1395,7 @@ body {
 
   .ab-cover-link,
   .ab-image-placeholder {
-    width: 84px;
+    width: 72px;
   }
 
   .ab-variant-matrix {
