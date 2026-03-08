@@ -1073,11 +1073,12 @@ body {
 }
 
 .ab-image-cell {
-  width: 100%;
-  min-width: 100%;
-  display: grid;
-  place-items: center;
-  justify-items: center;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin-inline: auto;
 }
 
 .ab-variant-install-time {
