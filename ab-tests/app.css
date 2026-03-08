@@ -765,12 +765,11 @@ body {
 
 .ab-test-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(440px, 1.6fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.92fr);
   gap: 10px;
   align-items: stretch;
 }
 
-.ab-test-left,
 .ab-test-right {
   display: grid;
   gap: 8px;

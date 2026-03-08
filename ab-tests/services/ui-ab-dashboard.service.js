@@ -1226,16 +1226,6 @@ function renderAbTestCard(test) {
     )
     .join("");
 
-  const metricsHtml = test.metrics
-    .map(
-      (item) => `<tr>
-      <td>${abEscapeHtml(item.label)}</td>
-      <td class="ab-metric-value">${abEscapeHtml(item.valueText)}</td>
-      <td>${abStatusPill(item.statusRaw, true)}</td>
-    </tr>`,
-    )
-    .join("");
-
   const variantsHeaderCells = test.variants
     .map(
       (variant) => `<th class="${variant.isBest ? "is-best" : ""}">Вариант ${variant.index}${
@@ -1322,35 +1312,21 @@ function renderAbTestCard(test) {
         </div>
       </div>
       <div class="ab-test-head-actions">
+        <div class="ab-tooltip-anchor">
+          <button type="button" class="ab-icon-btn" aria-label="Показать отчет по расчетам">
+            ${abRenderIcon("info", "ab-card-help-icon") || "i"}
+          </button>
+          <div class="ab-hover-tooltip" role="tooltip">
+            <div class="ab-hover-tooltip-title">Отчет по расчетам</div>
+            ${reportHtml}
+          </div>
+        </div>
         ${abSafeLink(test.xwayUrl, "XWay")}
         ${abSafeLink(test.wbUrl, "WB")}
       </div>
     </header>
 
     <div class="ab-test-layout">
-      <section class="ab-test-left">
-        <div class="ab-metrics-card">
-          <div class="ab-card-head">
-            <h5>Сводка метрик</h5>
-            <div class="ab-tooltip-anchor">
-              <button type="button" class="ab-icon-btn" aria-label="Показать отчет по расчетам">
-                ${abRenderIcon("info", "ab-card-help-icon") || "i"}
-              </button>
-              <div class="ab-hover-tooltip" role="tooltip">
-                <div class="ab-hover-tooltip-title">Отчет по расчетам</div>
-                ${reportHtml}
-              </div>
-            </div>
-          </div>
-          <table class="ab-mini-table">
-            <thead>
-              <tr><th>Показатель</th><th>Значение</th><th>Итог</th></tr>
-            </thead>
-            <tbody>${metricsHtml}</tbody>
-          </table>
-        </div>
-      </section>
-
       <section class="ab-test-center">
         <div class="ab-matrix-wrap">
           <table class="ab-variant-matrix">
