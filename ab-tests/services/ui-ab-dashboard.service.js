@@ -1070,13 +1070,19 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
       const stepsHtml = card.stages
         .map((stage, index) => {
           const percent = card.total > 0 ? (stage.count / card.total) * 100 : 0;
+          const visualWidth = Math.max(18, percent);
           return `<div class="ab-funnel-step" data-stage="${abEscapeAttr(stage.key)}">
-            <div class="ab-funnel-step-head">
-              <span class="ab-funnel-step-label">${abEscapeHtml(stage.label)}</span>
-              <span class="ab-funnel-step-value">${abEscapeHtml(abFormatInt(stage.count))} / ${abEscapeHtml(abFormatInt(card.total))}</span>
+            <div class="ab-funnel-step-visual-wrap" aria-hidden="true">
+              <div class="ab-funnel-step-visual is-stage-${index + 1}" style="width:${visualWidth.toFixed(2)}%"></div>
             </div>
-            <div class="ab-funnel-bar" aria-hidden="true">
-              <div class="ab-funnel-bar-fill is-stage-${index + 1}" style="width:${percent.toFixed(2)}%"></div>
+            <div class="ab-funnel-step-main">
+              <div class="ab-funnel-step-head">
+                <span class="ab-funnel-step-label">${abEscapeHtml(stage.label)}</span>
+                <span class="ab-funnel-step-value">${abEscapeHtml(abFormatInt(stage.count))} / ${abEscapeHtml(abFormatInt(card.total))}</span>
+              </div>
+              <div class="ab-funnel-bar" aria-hidden="true">
+                <div class="ab-funnel-bar-fill is-stage-${index + 1}" style="width:${percent.toFixed(2)}%"></div>
+              </div>
             </div>
           </div>`;
         })
