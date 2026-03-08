@@ -18,6 +18,12 @@ const AB_STATUS_MAP = Object.freeze({
   "НОРМ": "neutral",
   "?": "unknown",
 });
+const AB_FUNNEL_STAGE_STYLES = Object.freeze({
+  ctr: { colorFrom: "#3B82F6", colorTo: "#60A5FA" },
+  price: { colorFrom: "#8B5CF6", colorTo: "#A78BFA" },
+  ctrcr1: { colorFrom: "#F59E0B", colorTo: "#FBBF24" },
+  overall: { colorFrom: "#10B981", colorTo: "#34D399" },
+});
 
 function abGetTodayDateInputValue() {
   const date = new Date();
@@ -51,6 +57,9 @@ const abDashboardStore = {
   promise: null,
   filters: abCreateDefaultFilters(),
   listenersBound: false,
+  renderedFunnelCards: [],
+  funnelChartRefs: [],
+  funnelResizeBound: false,
 };
 
 function getAbDashboardContentEl() {
@@ -1052,6 +1061,148 @@ function abBuildCabinetFunnelCards(tests, cabinetOrder = []) {
     .filter(Boolean);
 }
 
+function abGetFunnelStageStyle(stageKey) {
+  return AB_FUNNEL_STAGE_STYLES[stageKey] || { colorFrom: "#6B7280", colorTo: "#9CA3AF" };
+}
+
+function abDisposeCabinetFunnelCharts() {
+  if (!Array.isArray(abDashboardStore.funnelChartRefs)) {
+    abDashboardStore.funnelChartRefs = [];
+    return;
+  }
+  abDashboardStore.funnelChartRefs.forEach((chart) => {
+    if (chart && typeof chart.dispose === "function" && !chart.isDisposed?.()) {
+      chart.dispose();
+    }
+  });
+  abDashboardStore.funnelChartRefs = [];
+}
+
+function abEnsureCabinetFunnelResizeBinding() {
+  if (abDashboardStore.funnelResizeBound) {
+    return;
+  }
+  window.addEventListener("resize", () => {
+    if (!Array.isArray(abDashboardStore.funnelChartRefs)) {
+      return;
+    }
+    abDashboardStore.funnelChartRefs.forEach((chart) => {
+      if (chart && typeof chart.resize === "function") {
+        chart.resize();
+      }
+    });
+  });
+  abDashboardStore.funnelResizeBound = true;
+}
+
+function abCreateCabinetFunnelOption(card) {
+  const echartsApi = window.echarts;
+  const gradientFactory = echartsApi?.graphic?.LinearGradient;
+  const stageData = (Array.isArray(card?.stages) ? card.stages : []).map((stage) => {
+    const style = abGetFunnelStageStyle(stage.key);
+    const color =
+      typeof gradientFactory === "function"
+        ? new gradientFactory(0, 0, 1, 0, [
+            { offset: 0, color: style.colorFrom },
+            { offset: 1, color: style.colorTo },
+          ])
+        : style.colorFrom;
+    return {
+      name: stage.label,
+      value: stage.count,
+      itemStyle: {
+        color,
+        borderColor: "rgba(255,255,255,0.96)",
+        borderWidth: 2,
+        shadowBlur: 14,
+        shadowColor: "rgba(31, 55, 67, 0.12)",
+      },
+    };
+  });
+
+  return {
+    animationDuration: 420,
+    animationEasing: "cubicOut",
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "rgba(16, 28, 38, 0.94)",
+      borderColor: "rgba(255,255,255,0.14)",
+      borderWidth: 1,
+      textStyle: {
+        color: "#f5fbff",
+        fontFamily: "IBM Plex Sans, sans-serif",
+        fontSize: 12,
+      },
+      formatter(params) {
+        const value = Number(params?.value) || 0;
+        const percent = card.total > 0 ? Math.round((value / card.total) * 100) : 0;
+        return `${abEscapeHtml(params?.name || "Этап")}<br/>${abEscapeHtml(abFormatInt(value))} из ${abEscapeHtml(
+          abFormatInt(card.total),
+        )}<br/>${abEscapeHtml(String(percent))}%`;
+      },
+    },
+    series: [
+      {
+        type: "funnel",
+        left: "2%",
+        top: 8,
+        bottom: 8,
+        width: "96%",
+        minSize: "22%",
+        maxSize: "100%",
+        sort: "descending",
+        gap: 10,
+        funnelAlign: "center",
+        label: {
+          show: true,
+          position: "inside",
+          color: "#ffffff",
+          fontFamily: "IBM Plex Sans, sans-serif",
+          fontWeight: 700,
+          fontSize: 13,
+          formatter: "{b}",
+        },
+        labelLine: { show: false },
+        itemStyle: {
+          opacity: 0.98,
+          borderJoin: "round",
+        },
+        emphasis: {
+          label: { fontSize: 14 },
+          itemStyle: {
+            shadowBlur: 20,
+            shadowColor: "rgba(31, 55, 67, 0.18)",
+          },
+        },
+        data: stageData,
+      },
+    ],
+  };
+}
+
+function abRenderCabinetFunnelCharts() {
+  abDisposeCabinetFunnelCharts();
+  if (!window.echarts) {
+    return;
+  }
+
+  const cards = Array.isArray(abDashboardStore.renderedFunnelCards) ? abDashboardStore.renderedFunnelCards : [];
+  if (!cards.length) {
+    return;
+  }
+
+  abEnsureCabinetFunnelResizeBinding();
+  cards.forEach((card) => {
+    const chartEl = document.querySelector(`[data-ab-funnel-chart="${card.chartId}"]`);
+    if (!(chartEl instanceof HTMLElement)) {
+      return;
+    }
+    const chart = window.echarts.init(chartEl, null, { renderer: "svg" });
+    chart.setOption(abCreateCabinetFunnelOption(card));
+    abDashboardStore.funnelChartRefs.push(chart);
+  });
+}
+
 function abBuildFunnelMetricRow(label, beforeValue, afterValue, formatter) {
   const before = typeof formatter === "function" ? formatter(beforeValue) : "—";
   const after = typeof formatter === "function" ? formatter(afterValue) : "—";
@@ -1071,6 +1222,7 @@ function abBuildFunnelMetricRow(label, beforeValue, afterValue, formatter) {
 
 function renderAbCabinetFunnelDashboard(filteredTests) {
   const tests = Array.isArray(filteredTests) ? filteredTests : [];
+  abDashboardStore.renderedFunnelCards = [];
   if (!tests.length) {
     return "";
   }
@@ -1080,25 +1232,27 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
     return "";
   }
 
-  const cardsHtml = funnelCards
+  const preparedCards = funnelCards.map((card, index) => ({
+    ...card,
+    chartId: `ab-funnel-${index}`,
+  }));
+  abDashboardStore.renderedFunnelCards = preparedCards;
+
+  const cardsHtml = preparedCards
     .map((card) => {
       const stepsHtml = card.stages
         .map((stage, index) => {
-          const percent = card.total > 0 ? (stage.count / card.total) * 100 : 0;
-          const visualWidth = Math.max(18, percent);
-          return `<div class="ab-funnel-step" data-stage="${abEscapeAttr(stage.key)}">
-            <div class="ab-funnel-step-visual-wrap" aria-hidden="true">
-              <div class="ab-funnel-step-visual is-stage-${index + 1}" style="width:${visualWidth.toFixed(2)}%"></div>
+          const style = abGetFunnelStageStyle(stage.key);
+          const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
+          return `<div class="ab-funnel-stage-row" data-stage="${abEscapeAttr(stage.key)}">
+            <span class="ab-funnel-stage-dot" style="--stage-from:${abEscapeAttr(style.colorFrom)}; --stage-to:${abEscapeAttr(style.colorTo)};"></span>
+            <div class="ab-funnel-stage-copy">
+              <span class="ab-funnel-stage-name">${abEscapeHtml(stage.label)}</span>
+              <span class="ab-funnel-stage-subtle">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(
+                abFormatInt(card.total),
+              )}</span>
             </div>
-            <div class="ab-funnel-step-main">
-              <div class="ab-funnel-step-head">
-                <span class="ab-funnel-step-label">${abEscapeHtml(stage.label)}</span>
-                <span class="ab-funnel-step-value">${abEscapeHtml(abFormatInt(stage.count))} / ${abEscapeHtml(abFormatInt(card.total))}</span>
-              </div>
-              <div class="ab-funnel-bar" aria-hidden="true">
-                <div class="ab-funnel-bar-fill is-stage-${index + 1}" style="width:${percent.toFixed(2)}%"></div>
-              </div>
-            </div>
+            <span class="ab-funnel-stage-percent">${abEscapeHtml(String(percent))}%</span>
           </div>`;
         })
         .join("");
@@ -1116,7 +1270,12 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
           </div>
           <span class="ab-status-pill is-good">${abEscapeHtml(String(finalPercent))}%</span>
         </div>
-        <div class="ab-funnel-steps">${stepsHtml}</div>
+        <div class="ab-funnel-card-body">
+          <div class="ab-funnel-chart" data-ab-funnel-chart="${abEscapeAttr(card.chartId)}" aria-label="${abEscapeAttr(
+            `Воронка кабинета ${card.cabinet}`,
+          )}"></div>
+          <div class="ab-funnel-stage-list">${stepsHtml}</div>
+        </div>
       </article>`;
     })
     .join("");
@@ -1499,6 +1658,8 @@ function renderAbDashboardContent() {
     return;
   }
 
+  abDisposeCabinetFunnelCharts();
+
   if (abDashboardStore.loading) {
     contentEl.innerHTML = `<div class="ab-tests-state-card">
       <span class="ab-tests-state-spinner" aria-hidden="true"></span>
@@ -1545,6 +1706,7 @@ function renderAbDashboardContent() {
     ${showTests ? renderAbTestsSection(limitedTests) : ""}
     ${showProducts ? renderAbProductsSection(filteredProducts) : ""}
   `;
+  abRenderCabinetFunnelCharts();
 }
 
 function bindAbDashboardEvents() {
