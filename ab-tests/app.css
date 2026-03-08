@@ -1149,6 +1149,23 @@ body {
   display: inline-flex;
   margin-inline: auto;
   justify-self: center;
+  transform-origin: center center;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    z-index 0s linear 0.18s;
+  will-change: transform;
+  z-index: 0;
+}
+
+.ab-cover-frame:hover,
+.ab-cover-frame:focus-within {
+  transform: scale(2.2);
+  z-index: 8;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    z-index 0s linear 0s;
 }
 
 .ab-cover-frame.is-best {
