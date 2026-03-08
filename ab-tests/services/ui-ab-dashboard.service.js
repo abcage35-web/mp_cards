@@ -1334,6 +1334,10 @@ function renderAbTestCard(test) {
       <section class="ab-test-center">
         <div class="ab-matrix-wrap">
           <table class="ab-variant-matrix">
+            <colgroup>
+              <col class="ab-matrix-col-metric" />
+              ${test.variants.map(() => '<col class="ab-matrix-col-variant" />').join("")}
+            </colgroup>
             <thead>
               <tr>
                 <th>Метрика</th>

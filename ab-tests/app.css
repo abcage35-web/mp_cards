@@ -1042,7 +1042,16 @@ body {
   width: 100%;
   height: 100%;
   min-width: 720px;
+  table-layout: fixed;
   border-collapse: collapse;
+}
+
+.ab-variant-matrix col.ab-matrix-col-metric {
+  width: 260px;
+}
+
+.ab-variant-matrix col.ab-matrix-col-variant {
+  width: auto;
 }
 
 .ab-variant-matrix th,
@@ -1091,6 +1100,10 @@ body {
   min-width: 138px;
   color: #304d5d;
   background: rgba(245, 250, 253, 0.9);
+}
+
+.ab-variant-matrix tbody tr.is-image td {
+  text-align: center;
 }
 
 .ab-variant-install-time {
@@ -1149,6 +1162,7 @@ body {
 .ab-cover-frame {
   position: relative;
   display: inline-flex;
+  margin-inline: auto;
 }
 
 .ab-cover-frame.is-best {
