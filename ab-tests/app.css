@@ -1070,6 +1070,13 @@ body {
   text-align: center;
 }
 
+.ab-image-cell {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .ab-variant-install-time {
   display: grid;
   gap: 1px;

@@ -1419,13 +1419,13 @@ function renderAbTestCard(test) {
   const imageCells = test.variants
     .map((variant) => {
       if (!variant.imageUrl) {
-        return '<td><div class="ab-image-placeholder">нет обложки</div></td>';
+        return '<td><div class="ab-image-cell"><div class="ab-image-placeholder">нет обложки</div></div></td>';
       }
-      return `<td><div class="ab-cover-frame${variant.isBest ? " is-best" : ""}">${
+      return `<td><div class="ab-image-cell"><div class="ab-cover-frame${variant.isBest ? " is-best" : ""}">${
         variant.isBest ? '<span class="ab-variant-best-badge">Лучшая</span>' : ""
       }<a class="ab-cover-link${variant.isBest ? " is-best" : ""}" href="${abEscapeAttr(variant.imageUrl)}" target="_blank" rel="noopener noreferrer"><img src="${abEscapeAttr(
         variant.imageUrl,
-      )}" alt="Обложка ${variant.index}" loading="lazy" decoding="async" /></a></div></td>`;
+      )}" alt="Обложка ${variant.index}" loading="lazy" decoding="async" /></a></div></div></td>`;
     })
     .join("");
 
