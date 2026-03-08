@@ -856,6 +856,10 @@ body {
     transform 0.18s ease;
 }
 
+.ab-hover-tooltip.ab-hover-tooltip-price {
+  width: min(520px, calc(100vw - 48px));
+}
+
 .ab-tooltip-anchor:hover .ab-hover-tooltip,
 .ab-tooltip-anchor:focus-within .ab-hover-tooltip {
   opacity: 1;
@@ -895,6 +899,10 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
+}
+
+.ab-price-stage-grid.is-tooltip {
+  margin-top: 8px;
 }
 
 .ab-price-stage-col {

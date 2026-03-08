@@ -1305,6 +1305,13 @@ function renderAbTestCard(test) {
     </section>`,
     )
     .join("");
+  const priceTooltipHtml = `
+    <div class="ab-hover-tooltip-title">Цена</div>
+    <div class="ab-hover-tooltip-copy">Количество отклонений цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></div>
+    <div class="ab-price-stage-grid is-tooltip">
+      ${priceStagesHtml || '<div class="ab-price-stage-empty">Нет данных по этапам цены.</div>'}
+    </div>
+  `;
 
   const funnelRowsHtml = test.funnelRows
     .map(
@@ -1342,6 +1349,14 @@ function renderAbTestCard(test) {
           <div class="ab-hover-tooltip" role="tooltip">
             <div class="ab-hover-tooltip-title">Отчет по расчетам</div>
             ${reportHtml}
+          </div>
+        </div>
+        <div class="ab-tooltip-anchor">
+          <button type="button" class="ab-icon-btn" aria-label="Показать данные по цене">
+            ${abRenderIcon("info", "ab-card-help-icon") || "i"}
+          </button>
+          <div class="ab-hover-tooltip ab-hover-tooltip-price" role="tooltip">
+            ${priceTooltipHtml}
           </div>
         </div>
         ${abSafeLink(test.xwayUrl, "XWay")}
@@ -1394,24 +1409,6 @@ function renderAbTestCard(test) {
       </section>
 
       <section class="ab-test-right">
-        <article class="ab-side-card ab-price-stage-card">
-          <div class="ab-price-stage-head">
-            <h5>Цена</h5>
-            <div class="ab-tooltip-anchor">
-              <button type="button" class="ab-icon-btn" aria-label="Показать сведения по отклонениям цены">
-                ${abRenderIcon("info", "ab-card-help-icon") || "i"}
-              </button>
-              <div class="ab-hover-tooltip" role="tooltip">
-                <div class="ab-hover-tooltip-title">Отклонения цены</div>
-                <div class="ab-hover-tooltip-copy">Количество отклонений цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></div>
-              </div>
-            </div>
-          </div>
-          <div class="ab-price-stage-grid">
-            ${priceStagesHtml || '<div class="ab-price-stage-empty">Нет данных по этапам цены.</div>'}
-          </div>
-        </article>
-
         <article class="ab-side-card">
           <h5>Воронка ДО / ПОСЛЕ</h5>
           <table class="ab-mini-table is-tight">
