@@ -1112,7 +1112,11 @@ function abEnsureCabinetFunnelResizeBinding() {
 function abCreateCabinetFunnelOption(card) {
   const echartsApi = window.echarts;
   const gradientFactory = echartsApi?.graphic?.LinearGradient;
-  const stageData = (Array.isArray(card?.stages) ? card.stages : []).map((stage) => {
+  const stages = Array.isArray(card?.stages) ? card.stages : [];
+  const maxShapeValue = 100;
+  const minShapeValue = 34;
+  const shapeStep = stages.length > 1 ? (maxShapeValue - minShapeValue) / (stages.length - 1) : 0;
+  const stageData = stages.map((stage, index) => {
     const style = abGetFunnelStageStyle(stage.key);
     const color =
       typeof gradientFactory === "function"
@@ -1121,9 +1125,13 @@ function abCreateCabinetFunnelOption(card) {
             { offset: 1, color: style.colorTo },
           ])
         : style.colorFrom;
+    const actualCount = Number(stage.count) || 0;
+    const actualPercent = card.total > 0 ? Math.round((actualCount / card.total) * 100) : 0;
     return {
       name: stage.label,
-      value: stage.count,
+      value: Math.round(maxShapeValue - shapeStep * index),
+      actualCount,
+      actualPercent,
       itemStyle: {
         color,
         borderColor: "rgba(255,255,255,0.96)",
@@ -1148,11 +1156,11 @@ function abCreateCabinetFunnelOption(card) {
         fontSize: 12,
       },
       formatter(params) {
-        const value = Number(params?.value) || 0;
-        const percent = card.total > 0 ? Math.round((value / card.total) * 100) : 0;
-        return `${abEscapeHtml(params?.name || "Этап")}<br/>${abEscapeHtml(abFormatInt(value))} из ${abEscapeHtml(
+        const actualCount = Number(params?.data?.actualCount) || 0;
+        const actualPercent = Number(params?.data?.actualPercent) || 0;
+        return `${abEscapeHtml(params?.name || "Этап")}<br/>${abEscapeHtml(abFormatInt(actualCount))} из ${abEscapeHtml(
           abFormatInt(card.total),
-        )}<br/>${abEscapeHtml(String(percent))}%`;
+        )}<br/>${abEscapeHtml(String(actualPercent))}%`;
       },
     },
     series: [
@@ -1162,7 +1170,7 @@ function abCreateCabinetFunnelOption(card) {
         top: 8,
         bottom: 8,
         width: "96%",
-        minSize: "22%",
+        minSize: "34%",
         maxSize: "100%",
         sort: "descending",
         gap: 10,
@@ -1173,7 +1181,7 @@ function abCreateCabinetFunnelOption(card) {
           color: "#ffffff",
           fontFamily: "IBM Plex Sans, sans-serif",
           fontWeight: 700,
-          fontSize: 13,
+          fontSize: 12,
           formatter: "{b}",
         },
         labelLine: { show: false },
