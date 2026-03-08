@@ -1411,9 +1411,7 @@ function renderAbTestCard(test) {
 
   const variantsHeaderCells = test.variants
     .map(
-      (variant) => `<th class="${variant.isBest ? "is-best" : ""}">Вариант ${variant.index}${
-        variant.isBest ? '<span class="ab-variant-best-header">Лучшая</span>' : ""
-      }</th>`,
+      (variant) => `<th class="${variant.isBest ? "is-best" : ""}">Вариант ${variant.index}</th>`,
     )
     .join("");
   const imageCells = test.variants

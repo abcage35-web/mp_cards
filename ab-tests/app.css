@@ -1043,13 +1043,6 @@ body {
   background: rgba(222, 247, 239, 0.95);
 }
 
-.ab-variant-best-header {
-  display: block;
-  margin-top: 2px;
-  color: #0f7a63;
-  font: 700 8px/1 "IBM Plex Sans", sans-serif;
-}
-
 .ab-variant-matrix tr:last-child td,
 .ab-variant-matrix tr:last-child th {
   border-bottom: 0;
