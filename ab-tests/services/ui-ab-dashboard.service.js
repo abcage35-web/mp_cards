@@ -238,6 +238,18 @@ function abFormatVariantDateTime(valueRaw) {
   };
 }
 
+function abFormatCompactPeriodDateTime(isoRaw) {
+  const iso = String(isoRaw || "").trim();
+  if (!iso) {
+    return "—";
+  }
+  const parts = abFormatVariantDateTime(iso);
+  if (!parts.date) {
+    return "—";
+  }
+  return `${parts.date} (${parts.time || "—"})`;
+}
+
 function abResolveCabinet(testNameRaw) {
   const testName = String(testNameRaw || "").trim();
   if (!testName) {
@@ -1371,6 +1383,7 @@ function renderAbFilterToolbar(model, filteredTests) {
 
 function renderAbTestCard(test) {
   const matrixWidthPx = AB_MATRIX_METRIC_COL_WIDTH + test.variants.length * AB_MATRIX_VARIANT_COL_WIDTH;
+  const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} - ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
   const reportHtml = test.reportLines.length
     ? `<ul class="ab-tooltip-report-list">${test.reportLines
         .map((line) => `<li>${abEscapeHtml(line.replace(/^[-•]\s*/, ""))}</li>`)
@@ -1464,13 +1477,12 @@ function renderAbTestCard(test) {
       <div class="ab-test-head-main">
         <h4>Тест ${abEscapeHtml(test.testId)}</h4>
         <p class="ab-test-title" title="${abEscapeAttr(test.title)}">${abEscapeHtml(test.title || "—")}</p>
+        <p class="ab-test-period">${abEscapeHtml(testPeriodText)}</p>
         <div class="ab-test-summary-row">${checksHtml}</div>
         <div class="ab-test-meta-row">
           <span class="ab-test-chip">Артикул: <strong>${abEscapeHtml(test.article || "—")}</strong></span>
           <span class="ab-test-chip">Тип РК: <strong>${abEscapeHtml(test.type || "—")}</strong></span>
           <span class="ab-test-chip">Кабинет: <strong>${abEscapeHtml(test.cabinet || "—")}</strong></span>
-          <span class="ab-test-chip">Старт: <strong>${abEscapeHtml(test.startedAt || "—")}</strong></span>
-          <span class="ab-test-chip">Финиш: <strong>${abEscapeHtml(test.endedAt || "—")}</strong></span>
         </div>
       </div>
       <div class="ab-test-head-actions">
