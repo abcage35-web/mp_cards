@@ -3,7 +3,7 @@ const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 const AB_FILTER_DATE_FROM_DEFAULT = "2025-01-01";
 const AB_TEST_LIMIT_OPTIONS = Object.freeze([50, 100, 150, 200, 250, 300]);
 const AB_MATRIX_METRIC_COL_WIDTH = 260;
-const AB_MATRIX_VARIANT_COL_WIDTH = 290;
+const AB_MATRIX_VARIANT_COL_WIDTH = 150;
 const AB_DASHBOARD_SOURCE_SHEETS = Object.freeze({
   catalog: "(*) Подложка",
   technical: "(*) Техническая выгрузка",
