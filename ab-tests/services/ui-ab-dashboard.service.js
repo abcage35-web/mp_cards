@@ -1399,10 +1399,10 @@ function renderAbTestCard(test) {
     : '<div class="ab-tooltip-report-empty">Без текстового отчета.</div>';
 
   const checksHtml = [
-    { label: "Тест CTR", raw: test.summaryChecks.testCtr },
-    { label: "Тест изм. цены", raw: test.summaryChecks.testPrice },
-    { label: "Тест CTR*CR1", raw: test.summaryChecks.testCtrCr1 },
-    { label: "Итог", raw: test.summaryChecks.overall },
+    { label: "1. CTR", raw: test.summaryChecks.testCtr },
+    { label: "2. Цена", raw: test.summaryChecks.testPrice },
+    { label: "3. CTR x CR1", raw: test.summaryChecks.testCtrCr1 },
+    { label: "4. Итог", raw: test.summaryChecks.overall },
   ]
     .map(
       (item) => `<div class="ab-check-pill is-inline"><span>${abEscapeHtml(item.label)}</span>${abStatusPill(item.raw, true)}</div>`,
