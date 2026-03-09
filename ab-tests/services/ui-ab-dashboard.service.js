@@ -2,8 +2,8 @@ const AB_DASHBOARD_SHEET_ID = "1ot5SxsmAl717cuvQbbXr1dVx1FQ99HTTzN1sG5z_RIc";
 const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 const AB_FILTER_DATE_FROM_DEFAULT = "2025-01-01";
 const AB_TEST_LIMIT_OPTIONS = Object.freeze([50, 100, 150, 200, 250, 300]);
-const AB_MATRIX_METRIC_COL_WIDTH = 164;
-const AB_MATRIX_VARIANT_COL_WIDTH = 150;
+const AB_MATRIX_METRIC_COL_WIDTH = 138;
+const AB_MATRIX_VARIANT_COL_WIDTH = 118;
 const AB_DASHBOARD_SOURCE_SHEETS = Object.freeze({
   catalog: "(*) Подложка",
   technical: "(*) Техническая выгрузка",
@@ -799,27 +799,6 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
     },
   ];
 
-  const priceStages = [
-    {
-      key: "before",
-      label: "До",
-      averagePrice: abFormatInt(metricsBlock.priceBefore),
-      delta: abFormatFractionToPercent(metricsBlock.priceDeltaBefore, 0),
-    },
-    {
-      key: "during",
-      label: "Во время",
-      averagePrice: abFormatInt(metricsBlock.priceDuring),
-      delta: abFormatFractionToPercent(metricsBlock.priceDeltaDuring, 0),
-    },
-    {
-      key: "after",
-      label: "После",
-      averagePrice: abFormatInt(metricsBlock.priceAfter),
-      delta: abFormatFractionToPercent(metricsBlock.priceDeltaAfter, 0),
-    },
-  ];
-
   const ocrBefore =
     Number.isFinite(metricsBlock.ctrBefore) && Number.isFinite(metricsBlock.cr1Before) && Number.isFinite(metricsBlock.cr2Before)
       ? metricsBlock.ctrBefore * metricsBlock.cr1Before * metricsBlock.cr2Before * 100
@@ -829,14 +808,31 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
       ? metricsBlock.ctrAfter * metricsBlock.cr1After * metricsBlock.cr2After * 100
       : null;
 
-  const funnelRows = [
-    abBuildFunnelMetricRow("CTR", metricsBlock.ctrBefore, metricsBlock.ctrAfter, (value) => abFormatFractionToPercent(value, 2)),
-    abBuildFunnelMetricRow("CR1", metricsBlock.cr1Before, metricsBlock.cr1After, (value) => abFormatFractionToPercent(value, 2)),
-    abBuildFunnelMetricRow("CR2", metricsBlock.cr2Before, metricsBlock.cr2After, (value) => abFormatFractionToPercent(value, 2)),
-    abBuildFunnelMetricRow("CTR*CR1", metricsBlock.ctrCr1Before, metricsBlock.ctrCr1After, (value) =>
+  const comparisonRows = [
+    abBuildTimelineMetricRow("Цена", metricsBlock.priceBefore, metricsBlock.priceDuring, metricsBlock.priceAfter, (value) =>
+      abFormatInt(value),
+    ),
+    abBuildTimelineMetricRow(
+      "Откл. цены",
+      metricsBlock.priceDeltaBefore,
+      metricsBlock.priceDeltaDuring,
+      metricsBlock.priceDeltaAfter,
+      (value) => abFormatFractionToPercent(value, 0),
+      { deltaMode: "none" },
+    ),
+    abBuildTimelineMetricRow("CTR", metricsBlock.ctrBefore, null, metricsBlock.ctrAfter, (value) =>
       abFormatFractionToPercent(value, 2),
     ),
-    abBuildFunnelMetricRow("OCR*100", ocrBefore, ocrAfter, (value) => abFormatPlainNumber(value)),
+    abBuildTimelineMetricRow("CR1", metricsBlock.cr1Before, null, metricsBlock.cr1After, (value) =>
+      abFormatFractionToPercent(value, 2),
+    ),
+    abBuildTimelineMetricRow("CR2", metricsBlock.cr2Before, null, metricsBlock.cr2After, (value) =>
+      abFormatFractionToPercent(value, 2),
+    ),
+    abBuildTimelineMetricRow("CTR*CR1", metricsBlock.ctrCr1Before, null, metricsBlock.ctrCr1After, (value) =>
+      abFormatFractionToPercent(value, 2),
+    ),
+    abBuildTimelineMetricRow("OCR*100", ocrBefore, null, ocrAfter, (value) => abFormatPlainNumber(value)),
   ];
 
   const reportLines = abBuildComputedReportLines(metricsBlock);
@@ -865,8 +861,7 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
     },
     variants,
     priceDeviationCount: abFormatInt(abToNumber(abCellRaw(sourceRow, "Y"))),
-    priceStages,
-    funnelRows,
+    comparisonRows,
     reportLines,
     reportText: reportLines.join("\n"),
   };
@@ -1009,7 +1004,7 @@ function abSafeLink(urlRaw, label) {
     return '<span class="ab-link-empty">—</span>';
   }
   const icon = abRenderIcon("externalLink", "ab-link-icon") || "↗";
-  return `<a class="ab-link" href="${abEscapeAttr(url)}" target="_blank" rel="noopener noreferrer">${icon}<span>${abEscapeHtml(
+  return `<a class="ab-link ab-head-action-btn" href="${abEscapeAttr(url)}" target="_blank" rel="noopener noreferrer">${icon}<span>${abEscapeHtml(
     label || "Открыть",
   )}</span></a>`;
 }
@@ -1086,17 +1081,21 @@ function abStageMatches(test, stageKey) {
   }
 }
 
-function abBuildFunnelMetricRow(label, beforeValue, afterValue, formatter) {
+function abBuildTimelineMetricRow(label, beforeValue, duringValue, afterValue, formatter, options = {}) {
   const before = typeof formatter === "function" ? formatter(beforeValue) : "—";
+  const during = duringValue === undefined || duringValue === null ? "—" : typeof formatter === "function" ? formatter(duringValue) : "—";
   const after = typeof formatter === "function" ? formatter(afterValue) : "—";
-  const canCalculate = Number.isFinite(beforeValue) && Number.isFinite(afterValue) && Number(beforeValue) !== 0;
-  const deltaValue = canCalculate ? Number(afterValue) / Number(beforeValue) - 1 : null;
+  const shouldCalculateDelta = options.deltaMode !== "none";
+  const canCalculateDelta =
+    shouldCalculateDelta && Number.isFinite(beforeValue) && Number.isFinite(afterValue) && Number(beforeValue) !== 0;
+  const deltaValue = canCalculateDelta ? Number(afterValue) / Number(beforeValue) - 1 : null;
   const deltaText = Number.isFinite(deltaValue) ? abFormatSignedPercentFraction(deltaValue, 0) : "—";
   const deltaKind = Number.isFinite(deltaValue) ? (deltaValue > 0 ? "good" : deltaValue < 0 ? "bad" : "neutral") : "unknown";
 
   return {
     label,
     before,
+    during,
     after,
     deltaText,
     deltaKind,
@@ -1129,6 +1128,9 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
           )}">
             <div class="ab-funnel-stage-top">
               <span class="ab-funnel-stage-name">${abEscapeHtml(stage.label)}</span>
+              <span class="ab-funnel-stage-count">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(
+                abFormatInt(card.total),
+              )}</span>
               <span class="ab-funnel-stage-percent">${abEscapeHtml(String(percent))}%</span>
             </div>
             <div class="ab-funnel-stage-bar">
@@ -1136,9 +1138,6 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
                 style.colorTo,
               )}; width:${abEscapeAttr(String(percent))}%;"></span>
             </div>
-            <span class="ab-funnel-stage-subtle">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(
-              abFormatInt(card.total),
-            )}</span>
           </button>`;
         })
         .join("");
@@ -1321,34 +1320,12 @@ function renderAbTestCard(test) {
     .join("");
   const hoursCells = test.variants.map((variant) => `<td>${abEscapeHtml(variant.hours)}</td>`).join("");
 
-  const priceStagesHtml = (test.priceStages || [])
-    .map(
-      (stage) => `<section class="ab-price-stage-col" data-stage="${abEscapeAttr(stage.key)}">
-      <div class="ab-price-stage-label">${abEscapeHtml(stage.label)}</div>
-      <div class="ab-price-stage-item">
-        <span>Средняя цена</span>
-        <strong>${abEscapeHtml(stage.averagePrice)}</strong>
-      </div>
-      <div class="ab-price-stage-item">
-        <span>Изм. от среднего</span>
-        <strong>${abEscapeHtml(stage.delta)}</strong>
-      </div>
-    </section>`,
-    )
-    .join("");
-  const priceTooltipHtml = `
-    <div class="ab-hover-tooltip-title">Цена</div>
-    <div class="ab-hover-tooltip-copy">Количество отклонений цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></div>
-    <div class="ab-price-stage-grid is-tooltip">
-      ${priceStagesHtml || '<div class="ab-price-stage-empty">Нет данных по этапам цены.</div>'}
-    </div>
-  `;
-
-  const funnelRowsHtml = test.funnelRows
+  const comparisonRowsHtml = test.comparisonRows
     .map(
       (row) => `<tr>
       <td>${abEscapeHtml(row.label)}</td>
       <td>${abEscapeHtml(row.before)}</td>
+      <td>${abEscapeHtml(row.during)}</td>
       <td>${abEscapeHtml(row.after)}</td>
       <td>${
         row.deltaText !== "—"
@@ -1376,20 +1353,12 @@ function renderAbTestCard(test) {
       <div class="ab-test-head-side">
         <div class="ab-test-head-actions">
           <div class="ab-tooltip-anchor">
-            <button type="button" class="ab-icon-btn" aria-label="Показать отчет по расчетам">
+            <button type="button" class="ab-icon-btn ab-head-action-btn" aria-label="Показать отчет по расчетам">
               ${abRenderIcon("info", "ab-card-help-icon") || "i"}
             </button>
             <div class="ab-hover-tooltip" role="tooltip">
               <div class="ab-hover-tooltip-title">Отчет по расчетам</div>
               ${reportHtml}
-            </div>
-          </div>
-          <div class="ab-tooltip-anchor">
-            <button type="button" class="ab-icon-btn" aria-label="Показать данные по цене">
-              ${abRenderIcon("info", "ab-card-help-icon") || "i"}
-            </button>
-            <div class="ab-hover-tooltip ab-hover-tooltip-price" role="tooltip">
-              ${priceTooltipHtml}
             </div>
           </div>
           ${abSafeLink(test.xwayUrl, "XWay")}
@@ -1445,12 +1414,15 @@ function renderAbTestCard(test) {
 
       <section class="ab-test-right">
         <article class="ab-side-card">
-          <h5>Воронка ДО / ПОСЛЕ</h5>
+          <div class="ab-card-head">
+            <h5>Метрики ДО / ВО ВРЕМЯ / ПОСЛЕ</h5>
+            <span class="ab-side-card-note">Откл. цены: <strong>${abEscapeHtml(test.priceDeviationCount || "—")}</strong></span>
+          </div>
           <table class="ab-mini-table is-tight">
             <thead>
-              <tr><th>Метрика</th><th>До</th><th>После</th><th>Прирост</th></tr>
+              <tr><th>Метрика</th><th>До</th><th>Во время</th><th>После</th><th>Прирост</th></tr>
             </thead>
-            <tbody>${funnelRowsHtml || '<tr><td colspan="4">—</td></tr>'}</tbody>
+            <tbody>${comparisonRowsHtml || '<tr><td colspan="5">—</td></tr>'}</tbody>
           </table>
         </article>
       </section>
