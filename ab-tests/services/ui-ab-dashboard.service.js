@@ -322,10 +322,10 @@ function abStatusLabel(statusKind) {
   }
 }
 
-function abStatusPill(rawValue, compact = false) {
+function abStatusPill(rawValue, compact = false, labelOverride = "") {
   const raw = String(rawValue || "").trim();
   const kind = abNormalizeStatus(raw);
-  const label = abStatusLabel(kind);
+  const label = String(labelOverride || "").trim() || abStatusLabel(kind);
   const cls = `ab-status-pill is-${abEscapeAttr(kind)}${compact ? " is-compact" : ""}`;
   if (!raw && label === "—") {
     return `<span class="${cls}">—</span>`;
@@ -1272,17 +1272,13 @@ function renderAbTestCard(test) {
     : '<div class="ab-tooltip-report-empty">Без текстового отчета.</div>';
 
   const checksHtml = [
-    { index: "1", label: "CTR", raw: test.summaryChecks.testCtr },
-    { index: "2", label: "Цена", raw: test.summaryChecks.testPrice },
-    { index: "3", label: "CTR x CR1", raw: test.summaryChecks.testCtrCr1 },
-    { index: "4", label: "Итог", raw: test.summaryChecks.overall },
+    { label: "CTR", raw: test.summaryChecks.testCtr },
+    { label: "Цена", raw: test.summaryChecks.testPrice },
+    { label: "CTR x CR1", raw: test.summaryChecks.testCtrCr1 },
+    { label: "Итог", raw: test.summaryChecks.overall },
   ]
     .map((item, index, list) => {
-      const stepHtml = `<div class="ab-eval-step">
-        <span class="ab-eval-step-index">${abEscapeHtml(item.index)}</span>
-        <span class="ab-eval-step-title">${abEscapeHtml(item.label)}</span>
-        ${abStatusPill(item.raw, true)}
-      </div>`;
+      const stepHtml = `<div class="ab-eval-step">${abStatusPill(item.raw, true, item.label)}</div>`;
       if (index === list.length - 1) {
         return stepHtml;
       }
