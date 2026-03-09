@@ -832,7 +832,7 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
     abBuildTimelineMetricRow("CTR*CR1", metricsBlock.ctrCr1Before, null, metricsBlock.ctrCr1After, (value) =>
       abFormatFractionToPercent(value, 2),
     ),
-    abBuildTimelineMetricRow("OCR*100", ocrBefore, null, ocrAfter, (value) => abFormatPlainNumber(value)),
+    abBuildTimelineMetricRow("CRF x 100", ocrBefore, null, ocrAfter, (value) => abFormatPercent(value, 2)),
   ];
 
   const reportLines = abBuildComputedReportLines(metricsBlock);
