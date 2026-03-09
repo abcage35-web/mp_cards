@@ -11,6 +11,40 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./app.css" />
+    <script>
+      (() => {
+        window.addEventListener("pageshow", (event) => {
+          if (event.persisted) {
+            window.location.reload();
+          }
+        });
+
+        if (!("serviceWorker" in navigator)) {
+          return;
+        }
+
+        const rootScope = `${window.location.origin}/`;
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) =>
+            Promise.all(
+              registrations.map(async (registration) => {
+                if (registration.scope !== rootScope) {
+                  return false;
+                }
+                await registration.unregister();
+                return true;
+              }),
+            ),
+          )
+          .then((results) => {
+            if (Array.isArray(results) && results.some(Boolean)) {
+              window.location.reload();
+            }
+          })
+          .catch(() => {});
+      })();
+    </script>
     <script src="./services/wb-market.service.js" defer></script>
     <script src="./services/ui-tooltips.service.js" defer></script>
     <script src="./services/ui-controls-filters.service.js" defer></script>

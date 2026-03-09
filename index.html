@@ -10,6 +10,40 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (() => {
+        window.addEventListener("pageshow", (event) => {
+          if (event.persisted) {
+            window.location.reload();
+          }
+        });
+
+        if (!("serviceWorker" in navigator)) {
+          return;
+        }
+
+        const rootScope = `${window.location.origin}/`;
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) =>
+            Promise.all(
+              registrations.map(async (registration) => {
+                if (registration.scope !== rootScope) {
+                  return false;
+                }
+                await registration.unregister();
+                return true;
+              }),
+            ),
+          )
+          .then((results) => {
+            if (Array.isArray(results) && results.some(Boolean)) {
+              window.location.reload();
+            }
+          })
+          .catch(() => {});
+      })();
+    </script>
     <style>
       :root {
         color-scheme: light;

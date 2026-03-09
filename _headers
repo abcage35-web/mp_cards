@@ -1,0 +1,11 @@
+/index.html
+  Cache-Control: no-store, must-revalidate
+
+/cards/*
+  Cache-Control: no-store, must-revalidate
+
+/ab-tests/*
+  Cache-Control: no-store, must-revalidate
+
+/sw.js
+  Cache-Control: no-store, must-revalidate
