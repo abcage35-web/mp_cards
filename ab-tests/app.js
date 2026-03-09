@@ -41,6 +41,75 @@ function applyStaticIcons() {
   refreshBtn.innerHTML = `${renderIcon("refresh", "ui-icon")}<span class="btn-label">${label}</span>`;
 }
 
+const abCoverHoverPreview = {
+  root: null,
+  image: null,
+  activeLink: null,
+};
+
+function ensureAbCoverHoverPreview() {
+  if (abCoverHoverPreview.root && abCoverHoverPreview.image) {
+    return abCoverHoverPreview;
+  }
+  const root = document.createElement("div");
+  root.className = "ab-cover-hover-preview";
+  root.setAttribute("aria-hidden", "true");
+  const image = document.createElement("img");
+  image.alt = "";
+  root.appendChild(image);
+  document.body.appendChild(root);
+  abCoverHoverPreview.root = root;
+  abCoverHoverPreview.image = image;
+  return abCoverHoverPreview;
+}
+
+function hideAbCoverHoverPreview() {
+  if (!abCoverHoverPreview.root) {
+    return;
+  }
+  abCoverHoverPreview.root.classList.remove("is-visible");
+  abCoverHoverPreview.root.style.removeProperty("--preview-left");
+  abCoverHoverPreview.root.style.removeProperty("--preview-top");
+  abCoverHoverPreview.root.style.removeProperty("--preview-width");
+  abCoverHoverPreview.activeLink = null;
+}
+
+function positionAbCoverHoverPreview(link) {
+  const preview = ensureAbCoverHoverPreview();
+  const rect = link.getBoundingClientRect();
+  const width = Math.min(Math.max(rect.width * 2.4, 180), 260);
+  const estimatedHeight = width * (4 / 3);
+  const margin = 16;
+  const centerX = Math.min(
+    window.innerWidth - margin - width / 2,
+    Math.max(margin + width / 2, rect.left + rect.width / 2),
+  );
+  const centerY = Math.min(
+    window.innerHeight - margin - estimatedHeight / 2,
+    Math.max(margin + estimatedHeight / 2, rect.top + rect.height / 2),
+  );
+  preview.root.style.setProperty("--preview-left", `${centerX}px`);
+  preview.root.style.setProperty("--preview-top", `${centerY}px`);
+  preview.root.style.setProperty("--preview-width", `${width}px`);
+}
+
+function showAbCoverHoverPreview(link) {
+  if (!(link instanceof HTMLAnchorElement)) {
+    return;
+  }
+  const imageNode = link.querySelector("img");
+  const imageSrc = imageNode?.currentSrc || imageNode?.src || link.href || "";
+  if (!imageSrc) {
+    hideAbCoverHoverPreview();
+    return;
+  }
+  const preview = ensureAbCoverHoverPreview();
+  preview.image.src = imageSrc;
+  preview.activeLink = link;
+  positionAbCoverHoverPreview(link);
+  preview.root.classList.add("is-visible");
+}
+
 function bindAbPageEvents() {
   const refreshBtn = document.getElementById("abTestsRefreshBtn");
   if (refreshBtn) {
@@ -50,6 +119,45 @@ function bindAbPageEvents() {
       }
     });
   }
+
+  document.addEventListener("mouseover", (event) => {
+    const link = event.target instanceof Element ? event.target.closest(".ab-cover-link") : null;
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (event.relatedTarget instanceof Node && link.contains(event.relatedTarget)) {
+      return;
+    }
+    showAbCoverHoverPreview(link);
+  });
+
+  document.addEventListener("mouseout", (event) => {
+    const link = event.target instanceof Element ? event.target.closest(".ab-cover-link") : null;
+    if (!(link instanceof HTMLAnchorElement) || link !== abCoverHoverPreview.activeLink) {
+      return;
+    }
+    const nextLink = event.relatedTarget instanceof Element ? event.relatedTarget.closest(".ab-cover-link") : null;
+    if (nextLink === link) {
+      return;
+    }
+    hideAbCoverHoverPreview();
+  });
+
+  window.addEventListener("scroll", () => {
+    if (abCoverHoverPreview.activeLink instanceof HTMLAnchorElement) {
+      positionAbCoverHoverPreview(abCoverHoverPreview.activeLink);
+    }
+  }, { passive: true });
+
+  window.addEventListener("resize", () => {
+    if (abCoverHoverPreview.activeLink instanceof HTMLAnchorElement) {
+      positionAbCoverHoverPreview(abCoverHoverPreview.activeLink);
+    }
+  });
+
+  document.addEventListener("ab:content-render", () => {
+    hideAbCoverHoverPreview();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {

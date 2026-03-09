@@ -1612,6 +1612,7 @@ function renderAbDashboardContent() {
     ${showTests ? renderAbTestsSection(limitedTests) : ""}
     ${showProducts ? renderAbProductsSection(filteredProducts) : ""}
   `;
+  document.dispatchEvent(new CustomEvent("ab:content-render"));
 }
 
 function bindAbDashboardEvents() {
