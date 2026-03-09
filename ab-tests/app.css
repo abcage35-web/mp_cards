@@ -1112,11 +1112,14 @@ body {
 }
 
 .ab-image-cell {
-  display: flex;
   width: 100%;
   min-width: 0;
-  align-items: center;
-  justify-content: center;
+}
+
+.ab-image-center {
+  position: relative;
+  width: 100%;
+  min-height: 1px;
 }
 
 .ab-variant-install-time {
@@ -1185,8 +1188,9 @@ body {
 .ab-cover-frame {
   position: relative;
   display: inline-flex;
-  margin-inline: auto;
+  left: 50%;
   justify-self: center;
+  transform: translateX(-50%);
   transform-origin: center center;
   transition:
     transform 0.18s ease,
@@ -1198,7 +1202,7 @@ body {
 
 .ab-cover-frame:hover,
 .ab-cover-frame:focus-within {
-  transform: scale(2.2);
+  transform: translateX(-50%) scale(2.2);
   z-index: 8;
   transition:
     transform 0.18s ease,
