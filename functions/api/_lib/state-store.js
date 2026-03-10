@@ -2,7 +2,7 @@ import { json } from "./auth.js";
 
 export const DEFAULT_STATE_KEY = "wb-dashboard-v2";
 const SNAPSHOT_LIMIT = 4000;
-const ROW_LOG_LIMIT = 100;
+const PAYLOAD_ROW_LOG_LIMIT = 100;
 const ROW_VERSION_LIMIT = 500;
 const DASHBOARD_SAVE_EVENT_LIMIT = 2000;
 const CSV_SEPARATOR = ",";
@@ -363,10 +363,7 @@ function normalizeRowLogs(logsRaw, fallbackIso) {
     output.push(normalized);
   }
 
-  if (output.length <= ROW_LOG_LIMIT) {
-    return output;
-  }
-  return output.slice(output.length - ROW_LOG_LIMIT);
+  return output;
 }
 
 function normalizeIncomingLogsForPersist(logsRaw, latestStoredLogIdRaw) {
@@ -401,9 +398,10 @@ function normalizeIncomingLogsForPersist(logsRaw, latestStoredLogIdRaw) {
     return [];
   }
 
-  // Если не нашли общую точку, сохраняем только самый свежий лог:
-  // это безопасно по нагрузке и исключает массовые повторные UPSERT.
-  return logs.slice(-1);
+  // Если общая точка не найдена, не режем историю.
+  // Дальше лишние дубликаты отсечем по log_id через UPSERT и дополнительную
+  // проверку существующих логов в БД.
+  return logs;
 }
 
 function normalizeProblemSnapshotEntry(raw, fallbackIso) {
@@ -590,10 +588,24 @@ async function persistIncomingRowLogs(db, params) {
     return { latestStoredLog, logsUpserted: 0, touched: false };
   }
 
+  const existingLogIds = await getExistingRowLogIds(
+    db,
+    stateKey,
+    rowId,
+    incomingLogs.map((log) => log?.logId),
+  );
+  const logsToPersist = incomingLogs.filter((log) => {
+    const logId = safeString(log?.logId, 120);
+    return logId && !existingLogIds.has(logId);
+  });
+  if (logsToPersist.length <= 0) {
+    return { latestStoredLog, logsUpserted: 0, touched: false };
+  }
+
   let logsUpserted = 0;
   let touched = false;
 
-  for (const log of incomingLogs) {
+  for (const log of logsToPersist) {
     const logId = safeString(log?.logId, 120);
     if (!logId) {
       continue;
@@ -820,6 +832,9 @@ function mapRowLogRecord(rowRaw) {
     actionKey: safeString(row.action_key, 80) || "row-refresh",
     status: safeString(row.status, 20).toLowerCase() === "error" ? "error" : "success",
     error: safeString(row.error, 4000),
+    actorLogin: safeString(row.actor_login, 80),
+    actorRole: safeString(row.actor_role, 40),
+    actorIp: safeString(row.actor_ip, 64),
     changes,
   };
 }
@@ -899,6 +914,42 @@ async function getLatestRowLogsForRows(db, stateKey, rowIdsRaw) {
     latestByRowId.set(mapped.rowId, mapped);
   }
   return latestByRowId;
+}
+
+async function getExistingRowLogIds(db, stateKey, rowId, logIdsRaw) {
+  const logIds = Array.isArray(logIdsRaw)
+    ? logIdsRaw.map((value) => safeString(value, 120)).filter(Boolean)
+    : [];
+  if (!stateKey || !rowId || logIds.length <= 0) {
+    return new Set();
+  }
+
+  const uniqueLogIds = Array.from(new Set(logIds));
+  const found = new Set();
+  const chunkSize = 200;
+
+  for (let index = 0; index < uniqueLogIds.length; index += chunkSize) {
+    const chunk = uniqueLogIds.slice(index, index + chunkSize);
+    const placeholders = chunk.map((_, placeholderIndex) => `?${placeholderIndex + 3}`).join(", ");
+    const sql = `SELECT log_id
+      FROM dashboard_row_logs
+      WHERE state_key = ?1
+        AND row_id = ?2
+        AND log_id IN (${placeholders})`;
+    const result = await db
+      .prepare(sql)
+      .bind(stateKey, rowId, ...chunk)
+      .all();
+    const rows = Array.isArray(result?.results) ? result.results : [];
+    for (const row of rows) {
+      const logId = safeString(row?.log_id, 120);
+      if (logId) {
+        found.add(logId);
+      }
+    }
+  }
+
+  return found;
 }
 
 const CURRENT_ROW_COLUMNS = [
@@ -1746,22 +1797,6 @@ async function pruneRowVersions(db, stateKey, rowId) {
     .run();
 }
 
-async function pruneRowLogs(db, stateKey, rowId) {
-  await db
-    .prepare(
-      `DELETE FROM dashboard_row_logs
-       WHERE state_key = ?1
-         AND row_id = ?2
-         AND rowid <= (
-           SELECT COALESCE(MAX(rowid), 0) - ?3
-           FROM dashboard_row_logs
-           WHERE state_key = ?1 AND row_id = ?2
-         )`,
-    )
-    .bind(stateKey, rowId, ROW_LOG_LIMIT)
-    .run();
-}
-
 async function pruneSnapshots(db, stateKey) {
   await db
     .prepare(
@@ -1840,7 +1875,6 @@ export async function saveDashboardState(db, input = {}) {
   const incomingRowIds = new Set(normalizedRows.map((row) => row.rowId));
 
   const changedRowIds = new Set();
-  const rowsWithUpdatedLogs = new Set();
   let rowsChanged = 0;
   let rowsDeleted = 0;
   let logsUpserted = 0;
@@ -1923,9 +1957,6 @@ export async function saveDashboardState(db, input = {}) {
         actor,
         nowIso,
       });
-      if (logPersistResult.touched) {
-        rowsWithUpdatedLogs.add(row.rowId);
-      }
       if (logPersistResult.logsUpserted > 0) {
         logsUpserted += logPersistResult.logsUpserted;
       }
@@ -2009,15 +2040,10 @@ export async function saveDashboardState(db, input = {}) {
 
     await maybeCompactStateStorage(db, stateKey, savedAtIso, nowIso);
 
-    const rowsToPruneLogs = new Set([...rowsWithUpdatedLogs]);
-
     if (WRITE_UPSERT_ROW_VERSIONS) {
       for (const rowId of changedRowIds) {
         await pruneRowVersions(db, stateKey, rowId);
       }
-    }
-    for (const rowId of rowsToPruneLogs) {
-      await pruneRowLogs(db, stateKey, rowId);
     }
 
     await pruneSnapshots(db, stateKey);
@@ -2192,7 +2218,6 @@ export async function saveDashboardStatePatch(db, input = {}) {
   }
 
   const changedRowIds = new Set();
-  const rowsWithUpdatedLogs = new Set();
   let rowsChanged = 0;
   let rowsDeleted = 0;
   let logsUpserted = 0;
@@ -2273,9 +2298,6 @@ export async function saveDashboardStatePatch(db, input = {}) {
         actor,
         nowIso,
       });
-      if (logPersistResult.touched) {
-        rowsWithUpdatedLogs.add(row.rowId);
-      }
       if (logPersistResult.logsUpserted > 0) {
         logsUpserted += logPersistResult.logsUpserted;
       }
@@ -2376,14 +2398,10 @@ export async function saveDashboardStatePatch(db, input = {}) {
         .run();
     }
 
-    const rowsToPruneLogs = new Set([...rowsWithUpdatedLogs]);
     if (WRITE_UPSERT_ROW_VERSIONS) {
       for (const rowId of changedRowIds) {
         await pruneRowVersions(db, stateKey, rowId);
       }
-    }
-    for (const rowId of rowsToPruneLogs) {
-      await pruneRowLogs(db, stateKey, rowId);
     }
 
     await pruneSnapshots(db, stateKey);
@@ -2494,12 +2512,68 @@ async function loadRowLogsByStateKey(db, stateKey) {
     }
     const bucket = logsByRowId.get(rowId);
     bucket.push(logEntry);
-    if (bucket.length > ROW_LOG_LIMIT) {
-      bucket.splice(0, bucket.length - ROW_LOG_LIMIT);
+    if (bucket.length > PAYLOAD_ROW_LOG_LIMIT) {
+      bucket.splice(0, bucket.length - PAYLOAD_ROW_LOG_LIMIT);
     }
   }
 
   return logsByRowId;
+}
+
+export async function loadRowHistoryLogs(db, stateKey, rowIdRaw) {
+  await ensureStateTables(db);
+
+  const stateKeySafe = safeString(stateKey, 120) || DEFAULT_STATE_KEY;
+  const rowId = safeString(rowIdRaw, 120);
+  if (!rowId) {
+    return [];
+  }
+
+  const result = await db
+    .prepare(
+      `SELECT
+         row_id,
+         log_id,
+         at,
+         source,
+         mode,
+         action_key,
+         status,
+         error,
+         changes_json,
+         actor_login,
+         actor_role,
+         actor_ip
+       FROM dashboard_row_logs
+       WHERE state_key = ?1
+         AND row_id = ?2
+       ORDER BY at DESC, log_id DESC`,
+    )
+    .bind(stateKeySafe, rowId)
+    .all();
+
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  return rows
+    .map((row) => {
+      const mapped = mapRowLogRecord(row);
+      if (!mapped) {
+        return null;
+      }
+      return {
+        id: mapped.logId,
+        at: mapped.at,
+        source: mapped.sourceType,
+        mode: mapped.mode,
+        actionKey: mapped.actionKey,
+        status: mapped.status,
+        error: mapped.error,
+        actorLogin: mapped.actorLogin,
+        actorRole: mapped.actorRole,
+        actorIp: mapped.actorIp,
+        changes: Array.isArray(mapped.changes) ? mapped.changes : [],
+      };
+    })
+    .filter(Boolean);
 }
 
 async function loadProblemSnapshots(db, stateKey) {

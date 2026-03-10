@@ -1775,16 +1775,123 @@ function extractRecommendationRefsFromPayload(payload, sourceNmId) {
 }
 
 function openRowHistory(rowId) {
+  openRowHistoryWithFetch(rowId);
+}
+
+const ROW_HISTORY_ENDPOINT = "/api/row-history";
+const rowHistoryLogsCache = new Map();
+const rowHistoryLoadingRows = new Set();
+
+function buildRowHistoryUrl(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  const url = new URL(ROW_HISTORY_ENDPOINT, window.location.origin);
+  if (typeof getCloudStateKey === "function") {
+    url.searchParams.set("key", getCloudStateKey());
+  }
+  url.searchParams.set("rowId", rowId);
+  return url.toString();
+}
+
+function getPreferredRowHistoryLogs(row, logsRaw = undefined) {
+  const rowId = String(row?.id || "").trim();
+  const cachedLogs = rowId && rowHistoryLogsCache.has(rowId) ? rowHistoryLogsCache.get(rowId) : null;
+  if (Array.isArray(logsRaw)) {
+    return normalizeRowUpdateLogs(logsRaw);
+  }
+  if (Array.isArray(cachedLogs)) {
+    return normalizeRowUpdateLogs(cachedLogs);
+  }
+  return normalizeRowUpdateLogs(row?.updateLogs);
+}
+
+function renderRowHistoryLoadingState(row, fallbackLogs = []) {
+  if (!el.rowHistoryContent) {
+    return;
+  }
+  const rowId = String(row?.id || "").trim();
+  const fallbackCount = Array.isArray(fallbackLogs) ? fallbackLogs.length : 0;
+  el.rowHistoryContent.dataset.rowId = rowId;
+  el.rowHistoryContent.innerHTML =
+    '<div class="recommendation-empty">Загружаю полную историю из БД…</div>';
+  if (el.rowHistorySubtle) {
+    el.rowHistorySubtle.textContent =
+      fallbackCount > 0
+        ? `Локально: ${fallbackCount} · загружаю полную историю из БД`
+        : "Загружаю полную историю из БД";
+  }
+  renderRowHistoryFilterButtonState(0, 0, 0);
+}
+
+async function loadRowHistoryLogsFromApi(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId) {
+    return null;
+  }
+
+  if (typeof runAuthRequest === "function") {
+    const response = await runAuthRequest(buildRowHistoryUrl(rowId), {
+      method: "GET",
+      timeoutMs: 30000,
+    });
+    if (!response?.ok || response?.data?.ok !== true || !Array.isArray(response?.data?.logs)) {
+      return null;
+    }
+    return normalizeRowUpdateLogs(response.data.logs);
+  }
+
+  try {
+    const response = await fetch(buildRowHistoryUrl(rowId), {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json().catch(() => null);
+    if (!data || data.ok !== true || !Array.isArray(data.logs)) {
+      return null;
+    }
+    return normalizeRowUpdateLogs(data.logs);
+  } catch {
+    return null;
+  }
+}
+
+async function openRowHistoryWithFetch(rowId) {
   const row = getRowById(rowId);
   if (!row || !el.rowHistoryModal || !el.rowHistoryContent || !el.rowHistoryTitle) {
     return;
   }
 
-  const logs = normalizeRowUpdateLogs(row.updateLogs);
   el.rowHistoryTitle.textContent = `История обновлений · ${row.nmId}`;
   el.rowHistoryContent.dataset.rowId = row.id;
   el.rowHistoryModal.hidden = false;
-  renderRowHistoryContent(row, logs);
+  const fallbackLogs = getPreferredRowHistoryLogs(row);
+  if (rowHistoryLogsCache.has(String(row.id || "").trim())) {
+    renderRowHistoryContent(row, fallbackLogs);
+  } else {
+    renderRowHistoryLoadingState(row, fallbackLogs);
+  }
+
+  const rowIdSafe = String(row.id || "").trim();
+  if (!rowIdSafe || rowHistoryLoadingRows.has(rowIdSafe)) {
+    return;
+  }
+
+  rowHistoryLoadingRows.add(rowIdSafe);
+  try {
+    const fetchedLogs = await loadRowHistoryLogsFromApi(rowIdSafe);
+    if (Array.isArray(fetchedLogs)) {
+      rowHistoryLogsCache.set(rowIdSafe, fetchedLogs);
+    }
+    if (String(el.rowHistoryContent?.dataset?.rowId || "").trim() !== rowIdSafe) {
+      return;
+    }
+    renderRowHistoryContent(row, Array.isArray(fetchedLogs) ? fetchedLogs : fallbackLogs);
+  } finally {
+    rowHistoryLoadingRows.delete(rowIdSafe);
+  }
 }
 
 function getRowHistoryVisibleChanges(entry) {
@@ -1818,7 +1925,7 @@ function renderRowHistoryContent(row, logsRaw) {
   }
 
   const rowId = String(row?.id || "").trim();
-  const logs = (Array.isArray(logsRaw) ? logsRaw : normalizeRowUpdateLogs(row?.updateLogs))
+  const logs = getPreferredRowHistoryLogs(row, logsRaw)
     .slice()
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const preparedLogs = logs.map((entry) => ({
