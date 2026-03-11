@@ -526,7 +526,15 @@ body {
 
 .ab-toolbar-main {
   display: grid;
-  grid-template-columns: minmax(220px, 1.15fr) repeat(5, minmax(132px, 0.42fr)) auto;
+  grid-template-columns:
+    minmax(220px, 1.15fr)
+    minmax(132px, 0.42fr)
+    minmax(132px, 0.42fr)
+    minmax(148px, 0.46fr)
+    minmax(148px, 0.46fr)
+    minmax(180px, 0.58fr)
+    minmax(112px, 0.32fr)
+    auto;
   gap: 8px;
   align-items: center;
 }
@@ -586,6 +594,106 @@ body {
 
 .ab-toolbar-field.is-date {
   display: block;
+}
+
+.ab-toolbar-field.is-date input {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding-right: 34px;
+}
+
+.ab-toolbar-field.is-date input::-webkit-datetime-edit {
+  font-size: 13px;
+}
+
+.ab-toolbar-field.is-date input::-webkit-calendar-picker-indicator {
+  margin-left: 4px;
+  transform: scale(0.88);
+}
+
+.ab-toolbar-months {
+  position: relative;
+}
+
+.ab-toolbar-months-summary {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(22, 56, 71, 0.18);
+  background: #fff;
+  color: #1f3a48;
+  font: 700 14px/1 "IBM Plex Sans", sans-serif;
+  padding: 0 36px 0 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  position: relative;
+}
+
+.ab-toolbar-months-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ab-toolbar-months-summary::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid rgba(31, 58, 72, 0.72);
+  border-bottom: 2px solid rgba(31, 58, 72, 0.72);
+  transform: translateY(-65%) rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.ab-toolbar-months[open] .ab-toolbar-months-summary {
+  border-color: rgba(0, 117, 143, 0.34);
+  box-shadow: 0 0 0 3px rgba(0, 117, 143, 0.1);
+}
+
+.ab-toolbar-months[open] .ab-toolbar-months-summary::after {
+  transform: translateY(-35%) rotate(-135deg);
+}
+
+.ab-toolbar-months-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  min-width: 220px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(190, 204, 212, 0.85);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 30px rgba(18, 52, 66, 0.14);
+  z-index: 30;
+}
+
+.ab-month-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: #1f3a48;
+  font: 600 14px/1.2 "IBM Plex Sans", sans-serif;
+  cursor: pointer;
+}
+
+.ab-month-option:hover {
+  background: rgba(0, 117, 143, 0.08);
+}
+
+.ab-month-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0a5669;
 }
 
 .ab-view-switch {
@@ -1862,6 +1970,12 @@ body {
 
   .ab-toolbar-main {
     grid-template-columns: 1fr;
+  }
+
+  .ab-toolbar-months-panel {
+    position: static;
+    width: 100%;
+    margin-top: 6px;
   }
 
   .ab-funnel-dashboard-head {

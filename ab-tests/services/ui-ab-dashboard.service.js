@@ -1,6 +1,5 @@
 const AB_DASHBOARD_SHEET_ID = "1FS-XeiQA5IIB420mDAUlEGW09HoZWU0Sqtpk6i1jcEQ";
 const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
-const AB_FILTER_DATE_FROM_DEFAULT = "2025-01-01";
 const AB_TEST_LIMIT_OPTIONS = Object.freeze([50, 100, 150, 200, 250, 300]);
 const AB_MATRIX_METRIC_COL_WIDTH = 136;
 const AB_MATRIX_VARIANT_COL_WIDTH = 112;
@@ -32,13 +31,123 @@ function abGetTodayDateInputValue() {
   if (Number.isNaN(date.getTime())) {
     return "";
   }
+  return abFormatDateInputValue(date);
+}
+
+function abFormatDateInputValue(dateRaw) {
+  const date = dateRaw instanceof Date ? new Date(dateRaw.getTime()) : new Date(dateRaw);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
   const year = String(date.getFullYear());
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
+function abGetCurrentMonthKey() {
+  return String(abGetTodayDateInputValue() || "").slice(0, 7);
+}
+
+function abGetMonthBounds(monthKeyRaw) {
+  const monthKey = String(monthKeyRaw || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    return { from: "", to: "" };
+  }
+  const [yearRaw, monthRaw] = monthKey.split("-");
+  const year = Number(yearRaw);
+  const monthIndex = Number(monthRaw) - 1;
+  const startDate = new Date(year, monthIndex, 1);
+  const endDate = new Date(year, monthIndex + 1, 0);
+  return {
+    from: abFormatDateInputValue(startDate),
+    to: abFormatDateInputValue(endDate),
+  };
+}
+
+function abGetCurrentMonthRange() {
+  const monthKey = abGetCurrentMonthKey();
+  const bounds = abGetMonthBounds(monthKey);
+  return {
+    monthKey,
+    from: bounds.from,
+    to: bounds.to,
+  };
+}
+
+function abGetMonthKeyByDateInputValue(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return "";
+  }
+  return value.slice(0, 7);
+}
+
+function abBuildDateRangeFromMonthKeys(monthKeysRaw) {
+  const monthKeys = Array.isArray(monthKeysRaw)
+    ? monthKeysRaw
+        .map((item) => String(item || "").trim())
+        .filter((item) => /^\d{4}-\d{2}$/.test(item))
+        .sort((a, b) => a.localeCompare(b))
+    : [];
+  if (!monthKeys.length) {
+    return { from: "", to: "" };
+  }
+  const firstBounds = abGetMonthBounds(monthKeys[0]);
+  const lastBounds = abGetMonthBounds(monthKeys[monthKeys.length - 1]);
+  return {
+    from: firstBounds.from,
+    to: lastBounds.to,
+  };
+}
+
+function abFormatMonthLabel(monthKeyRaw) {
+  const monthKey = String(monthKeyRaw || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    return "—";
+  }
+  const [yearRaw, monthRaw] = monthKey.split("-");
+  const date = new Date(Number(yearRaw), Number(monthRaw) - 1, 1);
+  const label = new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function abGetMonthSelectionLabel(monthKeysRaw) {
+  const monthKeys = Array.isArray(monthKeysRaw) ? monthKeysRaw.filter(Boolean) : [];
+  if (!monthKeys.length) {
+    return "Месяцы";
+  }
+  if (monthKeys.length === 1) {
+    return abFormatMonthLabel(monthKeys[0]);
+  }
+  if (monthKeys.length === 2) {
+    return `${abFormatMonthLabel(monthKeys[0])} + ${abFormatMonthLabel(monthKeys[1])}`;
+  }
+  return `${monthKeys.length} мес.`;
+}
+
+function abGetAvailableMonthKeys(model) {
+  const tests = Array.isArray(model?.tests) ? model.tests : [];
+  const keys = new Set();
+  for (const test of tests) {
+    const testDate = abGetTestFilterDate(test);
+    const monthKey = abGetMonthKeyByDateInputValue(testDate);
+    if (monthKey) {
+      keys.add(monthKey);
+    }
+  }
+  const currentMonthKey = abGetCurrentMonthKey();
+  if (currentMonthKey) {
+    keys.add(currentMonthKey);
+  }
+  return Array.from(keys).sort((a, b) => b.localeCompare(a));
+}
+
 function abCreateDefaultFilters() {
+  const currentMonth = abGetCurrentMonthRange();
   return {
     search: "",
     cabinet: "all",
@@ -46,8 +155,9 @@ function abCreateDefaultFilters() {
     stage: "all",
     stageSource: "export",
     limit: String(AB_TEST_LIMIT_OPTIONS[0]),
-    dateFrom: AB_FILTER_DATE_FROM_DEFAULT,
-    dateTo: abGetTodayDateInputValue(),
+    dateFrom: currentMonth.from,
+    dateTo: currentMonth.to,
+    monthKeys: currentMonth.monthKey ? [currentMonth.monthKey] : [],
     view: "tests",
   };
 }
@@ -1339,6 +1449,17 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
 
 function renderAbFilterToolbar(model, filteredTests) {
   const cabinets = Array.isArray(model?.cabinets) ? model.cabinets : [];
+  const availableMonthKeys = abGetAvailableMonthKeys(model);
+  const selectedMonthKeys = Array.isArray(abDashboardStore.filters.monthKeys)
+    ? Array.from(
+        new Set(
+          abDashboardStore.filters.monthKeys
+            .map((value) => String(value || "").trim())
+            .filter((value) => /^\d{4}-\d{2}$/.test(value)),
+        ),
+      ).sort((a, b) => b.localeCompare(a))
+    : [];
+  const selectedMonthsLabel = abGetMonthSelectionLabel(selectedMonthKeys);
   const cabinetOptions = [`<option value="all">Все кабинеты</option>`]
     .concat(
       cabinets.map(
@@ -1407,6 +1528,20 @@ function renderAbFilterToolbar(model, filteredTests) {
       <label class="ab-toolbar-field is-date">
         <input type="date" value="${abEscapeAttr(abDashboardStore.filters.dateTo)}" data-ab-filter="dateTo" />
       </label>
+      <details class="ab-toolbar-months">
+        <summary class="ab-toolbar-months-summary">${abEscapeHtml(selectedMonthsLabel)}</summary>
+        <div class="ab-toolbar-months-panel">
+          ${availableMonthKeys
+            .map((monthKey) => {
+              const checked = selectedMonthKeys.includes(monthKey) ? " checked" : "";
+              return `<label class="ab-month-option">
+                <input type="checkbox" data-ab-filter="monthKey" data-ab-month-key="${abEscapeAttr(monthKey)}"${checked} />
+                <span>${abEscapeHtml(abFormatMonthLabel(monthKey))}</span>
+              </label>`;
+            })
+            .join("")}
+        </div>
+      </details>
       <label class="ab-toolbar-field">
         <select data-ab-filter="limit">${limitOptions}</select>
       </label>
@@ -1719,6 +1854,15 @@ function abFilterTests(model) {
   const stageSource = String(filters.stageSource || "export");
   const dateFrom = String(filters.dateFrom || "").trim();
   const dateTo = String(filters.dateTo || "").trim();
+  const monthKeys = Array.isArray(filters.monthKeys)
+    ? Array.from(
+        new Set(
+          filters.monthKeys
+            .map((value) => String(value || "").trim())
+            .filter((value) => /^\d{4}-\d{2}$/.test(value)),
+        ),
+      )
+    : [];
 
   return tests.filter((test) => {
     if (cabinet !== "all" && test.cabinet !== cabinet) {
@@ -1731,11 +1875,18 @@ function abFilterTests(model) {
       return false;
     }
     const testDate = abGetTestFilterDate(test);
-    if (dateFrom && (!testDate || testDate < dateFrom)) {
-      return false;
-    }
-    if (dateTo && (!testDate || testDate > dateTo)) {
-      return false;
+    if (monthKeys.length) {
+      const testMonthKey = abGetMonthKeyByDateInputValue(testDate);
+      if (!testMonthKey || !monthKeys.includes(testMonthKey)) {
+        return false;
+      }
+    } else {
+      if (dateFrom && (!testDate || testDate < dateFrom)) {
+        return false;
+      }
+      if (dateTo && (!testDate || testDate > dateTo)) {
+        return false;
+      }
     }
     if (!search) {
       return true;
@@ -1826,6 +1977,7 @@ function bindAbDashboardEvents() {
       return;
     }
     if ((filterName === "dateFrom" || filterName === "dateTo") && target instanceof HTMLInputElement) {
+      abDashboardStore.filters.monthKeys = [];
       abDashboardStore.filters[filterName] = target.value || "";
       renderAbDashboardContent();
     }
@@ -1841,6 +1993,31 @@ function bindAbDashboardEvents() {
       return;
     }
 
+    if (filterName === "monthKey" && target instanceof HTMLInputElement) {
+      const monthKey = String(target.getAttribute("data-ab-month-key") || "").trim();
+      const nextMonthKeys = new Set(
+        Array.isArray(abDashboardStore.filters.monthKeys)
+          ? abDashboardStore.filters.monthKeys
+              .map((value) => String(value || "").trim())
+              .filter((value) => /^\d{4}-\d{2}$/.test(value))
+          : [],
+      );
+      if (target.checked) {
+        nextMonthKeys.add(monthKey);
+      } else {
+        nextMonthKeys.delete(monthKey);
+      }
+      const selectedMonthKeys = Array.from(nextMonthKeys).sort((a, b) => a.localeCompare(b));
+      abDashboardStore.filters.monthKeys = selectedMonthKeys;
+      const range = abBuildDateRangeFromMonthKeys(selectedMonthKeys);
+      if (range.from || range.to) {
+        abDashboardStore.filters.dateFrom = range.from;
+        abDashboardStore.filters.dateTo = range.to;
+      }
+      renderAbDashboardContent();
+      return;
+    }
+
     if (filterName === "cabinet" || filterName === "verdict" || filterName === "limit") {
       if (target instanceof HTMLSelectElement) {
         abDashboardStore.filters[filterName] =
@@ -1851,6 +2028,7 @@ function bindAbDashboardEvents() {
     }
 
     if ((filterName === "dateFrom" || filterName === "dateTo") && target instanceof HTMLInputElement) {
+      abDashboardStore.filters.monthKeys = [];
       abDashboardStore.filters[filterName] = target.value || "";
       renderAbDashboardContent();
     }
