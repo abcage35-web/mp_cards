@@ -1104,6 +1104,25 @@ function abGetSummaryChecksBySource(test, sourceKey = "export") {
   return test?.summaryChecks || null;
 }
 
+function abGetSummaryStageRaw(checks, stageKey) {
+  const source = checks && typeof checks === "object" ? checks : null;
+  if (!source) {
+    return "";
+  }
+  switch (String(stageKey || "")) {
+    case "ctr":
+      return String(source.testCtr || source.ctr || "").trim();
+    case "price":
+      return String(source.testPrice || source.price || "").trim();
+    case "ctrcr1":
+      return String(source.testCtrCr1 || source.ctrCr1 || "").trim();
+    case "overall":
+      return String(source.overall || "").trim();
+    default:
+      return "";
+  }
+}
+
 function abBuildCabinetFunnelCards(tests, cabinetOrder = [], sourceKey = "export") {
   const list = Array.isArray(tests) ? tests : [];
   const cabinets = Array.isArray(cabinetOrder) && cabinetOrder.length
@@ -1118,10 +1137,10 @@ function abBuildCabinetFunnelCards(tests, cabinetOrder = [], sourceKey = "export
         return null;
       }
 
-      const ctrPassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryChecksBySource(item, sourceKey)?.testCtr)).length;
-      const pricePassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryChecksBySource(item, sourceKey)?.testPrice)).length;
-      const ctrCr1Passed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryChecksBySource(item, sourceKey)?.testCtrCr1)).length;
-      const overallPassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryChecksBySource(item, sourceKey)?.overall)).length;
+      const ctrPassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(item, sourceKey), "ctr"))).length;
+      const pricePassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(item, sourceKey), "price"))).length;
+      const ctrCr1Passed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(item, sourceKey), "ctrcr1"))).length;
+      const overallPassed = cabinetTests.filter((item) => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(item, sourceKey), "overall"))).length;
 
       return {
         cabinet,
@@ -1219,13 +1238,13 @@ function abStageMatches(test, stageKey, sourceKey = "export") {
   const checks = abGetSummaryChecksBySource(test, sourceKey);
   switch (String(stageKey || "all")) {
     case "ctr":
-      return abIsGoodStatus(checks?.testCtr);
+      return abIsGoodStatus(abGetSummaryStageRaw(checks, "ctr"));
     case "price":
-      return abIsGoodStatus(checks?.testPrice);
+      return abIsGoodStatus(abGetSummaryStageRaw(checks, "price"));
     case "ctrcr1":
-      return abIsGoodStatus(checks?.testCtrCr1);
+      return abIsGoodStatus(abGetSummaryStageRaw(checks, "ctrcr1"));
     case "overall":
-      return abIsGoodStatus(checks?.overall);
+      return abIsGoodStatus(abGetSummaryStageRaw(checks, "overall"));
     case "all":
     default:
       return true;
