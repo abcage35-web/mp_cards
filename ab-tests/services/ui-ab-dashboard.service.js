@@ -1413,11 +1413,7 @@ function renderAbTestCard(test) {
       <td>${abEscapeHtml(row.before)}</td>
       <td>${abEscapeHtml(row.during)}</td>
       <td>${abEscapeHtml(row.after)}</td>
-      <td>${
-        row.deltaText !== "—"
-          ? `<span class="ab-delta-pill is-${abEscapeAttr(row.deltaKind)}">${abEscapeHtml(row.deltaText)}</span>`
-          : "—"
-      }</td>
+      <td>${row.deltaText !== "—" ? `<span class="ab-delta-pill is-${abEscapeAttr(row.deltaKind)}">${abEscapeHtml(row.deltaText)}</span>` : "—"}</td>
     </tr>`,
     )
     .join("");

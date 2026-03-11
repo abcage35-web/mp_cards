@@ -293,9 +293,46 @@ function renderAbXwayOverlayLoading(button) {
 function renderAbXwayOverlayError(button, message) {
   const overlay = ensureAbXwayOverlay();
   const testId = String(button.dataset.abTestId || "").trim();
+  const campaignType = String(button.dataset.abCampaignType || "").trim() || "—";
+  const exportRows = getAbExportComparisonRows(testId);
+  const exportChecks = getAbExportSummaryChecks(testId);
   overlay.title.textContent = `XWAY • Тест ${testId}`;
-  overlay.meta.textContent = "Не удалось получить данные XWAY.";
-  overlay.body.innerHTML = `<div class="ab-xway-state-card is-error">${escapeHtml(message || "Ошибка загрузки XWAY-данных.")}</div>`;
+  overlay.meta.textContent = "Не удалось получить данные XWAY. Ниже показан результат по выгрузке.";
+  overlay.body.innerHTML = `
+    <div class="ab-xway-state-card is-error">${escapeHtml(message || "Ошибка загрузки XWAY-данных.")}</div>
+    <div class="ab-xway-summary-compare-grid">
+      <div class="ab-xway-summary-compare-card">
+        <div class="ab-xway-table-head">
+          <h4>Результат по выгрузке</h4>
+        </div>
+        <div class="ab-test-summary-row is-inline-flow">${renderAbSummaryFlow(exportChecks)}</div>
+      </div>
+      <div class="ab-xway-summary-compare-card">
+        <div class="ab-xway-table-head">
+          <h4>Результат по XWAY</h4>
+        </div>
+        <div class="ab-xway-summary-note">Тип РК: ${escapeHtml(campaignType)}. XWAY сейчас недоступен, поэтому сравнение не построено.</div>
+      </div>
+    </div>
+    <div class="ab-xway-metrics-compare-grid">
+      <div class="ab-xway-table-wrap">
+        <div class="ab-xway-table-head">
+          <h4>Из выгрузки</h4>
+        </div>
+        <table class="ab-mini-table is-tight">
+          <thead>
+            <tr><th>Метрика</th><th>До</th><th>После</th><th>Прирост</th></tr>
+          </thead>
+          <tbody>${renderAbOverlayMetricTableRows(exportRows, { useRawText: true, emptyMessage: "Нет метрик в выгрузке." })}</tbody>
+        </table>
+      </div>
+      <div class="ab-xway-table-wrap">
+        <div class="ab-xway-table-head">
+          <h4>Из XWAY</h4>
+        </div>
+        <div class="ab-xway-summary-note">После восстановления ответа XWAY здесь появятся метрики до/после и итоговый расчет.</div>
+      </div>
+    </div>`;
   overlay.root.classList.add("is-visible");
   overlay.root.setAttribute("aria-hidden", "false");
 }
@@ -394,10 +431,9 @@ function renderAbOverlayMetricTableRows(rows, options = {}) {
       const deltaValue = useRawText ? null : Number(row?.delta);
       const deltaText = useRawText ? String(row?.deltaText || "—") : formatAbXwayDelta(deltaValue);
       const deltaKind = useRawText ? String(row?.deltaKind || "unknown") : getAbXwayDeltaKind(deltaValue);
-      const deltaHtml =
-        deltaText !== "—"
-          ? `<span class="ab-delta-pill is-${escapeHtml(deltaKind)}">${escapeHtml(deltaText)}</span>`
-          : "—";
+      const deltaHtml = deltaText !== "—"
+        ? `<span class="ab-delta-pill is-${escapeHtml(deltaKind)}">${escapeHtml(deltaText)}</span>`
+        : "—";
       return `
         <tr>
           <td>${escapeHtml(row?.label || "—")}</td>
