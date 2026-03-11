@@ -1460,7 +1460,26 @@ function renderAbTestCard(test) {
           ${abSafeLink(test.xwayUrl, "XWay")}
           ${abSafeLink(test.wbUrl, "WB")}
         </div>
-        <div class="ab-test-summary-row">${checksHtml}</div>
+        <div class="ab-test-summary-compare">
+          <div class="ab-test-summary-frame">
+            <div class="ab-test-summary-frame-label">Выгрузка</div>
+            <div class="ab-test-summary-row is-inline-flow">${checksHtml}</div>
+          </div>
+          <div
+            class="ab-test-summary-frame is-xway"
+            data-ab-xway-summary-card
+            data-ab-test-id="${abEscapeAttr(test.testId)}"
+            data-ab-campaign-type="${abEscapeAttr(test.type || "")}"
+            data-ab-campaign-external-id="${abEscapeAttr(test.campaignExternalId || "")}"
+            data-ab-started-at="${abEscapeAttr(test.startedAtIso || "")}"
+            data-ab-ended-at="${abEscapeAttr(test.endedAtIso || "")}"
+          >
+            <div class="ab-test-summary-frame-label">XWAY</div>
+            <div class="ab-test-summary-row is-inline-flow" data-ab-xway-summary-flow>
+              <span class="ab-xway-inline-state is-loading">Считаю XWAY…</span>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 

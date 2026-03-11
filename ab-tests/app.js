@@ -56,6 +56,13 @@ const abXwayOverlayState = {
   meta: null,
 };
 
+const abXwaySummaryState = {
+  cache: new Map(),
+  inflight: new Map(),
+  runId: 0,
+  concurrency: 3,
+};
+
 function ensureAbCoverHoverPreview() {
   if (abCoverHoverPreview.root && abCoverHoverPreview.image) {
     return abCoverHoverPreview;
@@ -166,6 +173,7 @@ function bindAbPageEvents() {
 
   document.addEventListener("ab:content-render", () => {
     hideAbCoverHoverPreview();
+    hydrateVisibleAbXwaySummaries();
   });
 
   document.addEventListener("click", async (event) => {
@@ -186,6 +194,160 @@ function bindAbPageEvents() {
       closeAbXwayOverlay();
     }
   });
+}
+
+function getAbXwayRequestMeta(source) {
+  const dataset = source?.dataset || {};
+  return {
+    testId: String(dataset.abTestId || "").trim(),
+    campaignType: String(dataset.abCampaignType || "").trim(),
+    campaignExternalId: String(dataset.abCampaignExternalId || "").trim(),
+    startedAt: String(dataset.abStartedAt || "").trim(),
+    endedAt: String(dataset.abEndedAt || "").trim(),
+  };
+}
+
+function buildAbXwayRequestKey(meta) {
+  return [
+    String(meta?.testId || "").trim(),
+    String(meta?.campaignType || "").trim(),
+    String(meta?.campaignExternalId || "").trim(),
+    String(meta?.startedAt || "").trim(),
+    String(meta?.endedAt || "").trim(),
+  ].join("|");
+}
+
+async function requestAbXwayPayload(meta) {
+  const params = new URLSearchParams({
+    testId: String(meta?.testId || "").trim(),
+    campaignType: String(meta?.campaignType || "").trim(),
+    campaignExternalId: String(meta?.campaignExternalId || "").trim(),
+    startedAt: String(meta?.startedAt || "").trim(),
+    endedAt: String(meta?.endedAt || "").trim(),
+  });
+
+  const response = await fetch(`/api/xway-ab-test?${params.toString()}`, {
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.message || "Не удалось получить данные XWAY.");
+  }
+  return payload;
+}
+
+function renderAbXwaySummaryPending(container, message = "Считаю XWAY…") {
+  const flowNode = container?.querySelector("[data-ab-xway-summary-flow]");
+  if (!flowNode) {
+    return;
+  }
+  flowNode.innerHTML = `<span class="ab-xway-inline-state is-loading">${escapeHtml(message)}</span>`;
+}
+
+function renderAbXwaySummaryError(container, message = "Нет данных XWAY") {
+  const flowNode = container?.querySelector("[data-ab-xway-summary-flow]");
+  if (!flowNode) {
+    return;
+  }
+  flowNode.innerHTML = `<span class="ab-xway-inline-state is-error" title="${escapeHtml(message)}">${escapeHtml(
+    "XWAY недоступен",
+  )}</span>`;
+}
+
+function renderAbXwaySummaryReady(container, checks) {
+  const flowNode = container?.querySelector("[data-ab-xway-summary-flow]");
+  if (!flowNode) {
+    return;
+  }
+  flowNode.innerHTML = renderAbSummaryFlow(checks);
+}
+
+async function resolveAbXwaySummaryForMeta(meta) {
+  const key = buildAbXwayRequestKey(meta);
+  const cached = abXwaySummaryState.cache.get(key);
+  if (cached) {
+    if (cached.status === "ready") {
+      return cached;
+    }
+    if (cached.status === "error" && Date.now() - cached.savedAt < 60_000) {
+      return cached;
+    }
+  }
+
+  if (abXwaySummaryState.inflight.has(key)) {
+    return abXwaySummaryState.inflight.get(key);
+  }
+
+  const task = requestAbXwayPayload(meta)
+    .then((payload) => {
+      const result = {
+        status: "ready",
+        payload,
+        checks: getAbXwaySummaryChecks(meta.testId, payload),
+        savedAt: Date.now(),
+      };
+      abXwaySummaryState.cache.set(key, result);
+      return result;
+    })
+    .catch((error) => {
+      const result = {
+        status: "error",
+        error: error instanceof Error ? error.message : "Не удалось получить данные XWAY.",
+        savedAt: Date.now(),
+      };
+      abXwaySummaryState.cache.set(key, result);
+      return result;
+    })
+    .finally(() => {
+      abXwaySummaryState.inflight.delete(key);
+    });
+
+  abXwaySummaryState.inflight.set(key, task);
+  return task;
+}
+
+async function hydrateVisibleAbXwaySummaries() {
+  const runId = ++abXwaySummaryState.runId;
+  const containers = Array.from(document.querySelectorAll("[data-ab-xway-summary-card]"));
+  if (!containers.length) {
+    return;
+  }
+
+  const queue = containers.slice();
+  queue.forEach((container) => renderAbXwaySummaryPending(container));
+
+  const worker = async () => {
+    while (queue.length) {
+      const container = queue.shift();
+      if (!(container instanceof HTMLElement) || !container.isConnected || runId !== abXwaySummaryState.runId) {
+        continue;
+      }
+
+      const meta = getAbXwayRequestMeta(container);
+      if (!meta.testId) {
+        renderAbXwaySummaryError(container, "Не найден testId.");
+        continue;
+      }
+
+      const result = await resolveAbXwaySummaryForMeta(meta);
+      if (!container.isConnected || runId !== abXwaySummaryState.runId) {
+        continue;
+      }
+
+      if (result?.status === "ready") {
+        renderAbXwaySummaryReady(container, result.checks);
+      } else {
+        renderAbXwaySummaryError(container, result?.error || "Не удалось получить данные XWAY.");
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(abXwaySummaryState.concurrency, containers.length) }, () => worker()),
+  );
 }
 
 function ensureAbXwayOverlay() {
@@ -543,25 +705,8 @@ function renderAbXwayOverlayData(button, payload) {
 async function openAbXwayOverlay(button) {
   renderAbXwayOverlayLoading(button);
 
-  const params = new URLSearchParams({
-    testId: String(button.dataset.abTestId || "").trim(),
-    campaignType: String(button.dataset.abCampaignType || "").trim(),
-    campaignExternalId: String(button.dataset.abCampaignExternalId || "").trim(),
-    startedAt: String(button.dataset.abStartedAt || "").trim(),
-    endedAt: String(button.dataset.abEndedAt || "").trim(),
-  });
-
   try {
-    const response = await fetch(`/api/xway-ab-test?${params.toString()}`, {
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-      },
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.message || "Не удалось получить данные XWAY.");
-    }
+    const payload = await requestAbXwayPayload(getAbXwayRequestMeta(button));
     renderAbXwayOverlayData(button, payload);
   } catch (error) {
     renderAbXwayOverlayError(button, error instanceof Error ? error.message : "Не удалось получить данные XWAY.");
