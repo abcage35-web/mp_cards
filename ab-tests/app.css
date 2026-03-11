@@ -1386,23 +1386,28 @@ body {
 .ab-variant-matrix tbody tr.is-image td {
   position: relative;
   text-align: center;
-  padding: 0;
+  padding: 6px 8px;
   height: 96px;
+  overflow: hidden;
 }
 
 .ab-image-cell {
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .ab-image-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 72px;
-  height: 72px;
-  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
 }
 
 .ab-variant-install-time {
@@ -1472,13 +1477,15 @@ body {
 .ab-cover-frame {
   position: relative;
   display: flex;
-  width: 72px;
+  width: min(72px, 100%);
+  max-width: 100%;
   justify-content: center;
   transform-origin: center center;
   transition:
     filter 0.18s ease;
   z-index: 0;
-  margin: 0;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .ab-cover-frame.is-best {
@@ -1487,11 +1494,13 @@ body {
 
 .ab-cover-link {
   display: inline-flex;
-  width: 72px;
+  width: 100%;
+  max-width: 72px;
   border-radius: 9px;
   overflow: hidden;
   border: 1px solid rgba(22, 56, 71, 0.2);
   background: rgba(245, 248, 251, 0.95);
+  box-sizing: border-box;
 }
 
 .ab-cover-link.is-best {
