@@ -1,4 +1,4 @@
-import { getSessionFromRequest, json } from "./_lib/auth.js";
+import { json } from "./_lib/auth.js";
 import {
   XWAY_REFERERS,
   buildXwayCookieHeader,
@@ -92,10 +92,6 @@ function buildMetricsRows(beforeMetrics, afterMetrics) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const session = await getSessionFromRequest(request, env);
-  if (!session) {
-    return json({ ok: false, error: "auth_required" }, { status: 401 });
-  }
 
   const url = new URL(request.url);
   const testId = String(url.searchParams.get("testId") || "").trim();
