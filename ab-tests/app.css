@@ -1072,6 +1072,33 @@ body {
   gap: 12px;
 }
 
+.ab-xway-summary-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ab-xway-summary-compare-card {
+  border-radius: 14px;
+  border: 1px solid rgba(22, 56, 71, 0.14);
+  background: rgba(248, 252, 253, 0.94);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.ab-xway-summary-compare-card .ab-test-summary-row {
+  width: 100%;
+  margin-left: 0;
+  justify-content: flex-start;
+  row-gap: 10px;
+}
+
+.ab-xway-summary-note {
+  color: #68808d;
+  font: 600 12px/1.35 "IBM Plex Sans", sans-serif;
+}
+
 .ab-xway-summary-card,
 .ab-xway-campaigns-card {
   border-radius: 14px;
@@ -1779,6 +1806,7 @@ body {
   }
 
   .ab-xway-summary-grid,
+  .ab-xway-summary-compare-grid,
   .ab-xway-metrics-compare-grid,
   .ab-xway-campaigns-grid {
     grid-template-columns: 1fr;

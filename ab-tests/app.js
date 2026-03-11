@@ -321,6 +321,64 @@ function getAbExportComparisonRows(testIdRaw) {
   });
 }
 
+function getAbExportSummaryChecks(testIdRaw) {
+  if (typeof getAbDashboardTestById !== "function") {
+    return null;
+  }
+  const test = getAbDashboardTestById(testIdRaw);
+  if (!test?.summaryChecks) {
+    return null;
+  }
+  return {
+    ctr: String(test.summaryChecks.testCtr || "").trim(),
+    price: String(test.summaryChecks.testPrice || "").trim(),
+    ctrCr1: String(test.summaryChecks.testCtrCr1 || "").trim(),
+    overall: String(test.summaryChecks.overall || "").trim(),
+  };
+}
+
+function getAbXwaySummaryChecks(testIdRaw, payload) {
+  const exportChecks = getAbExportSummaryChecks(testIdRaw);
+  const priceRaw = String(exportChecks?.price || "").trim();
+  const rows = Array.isArray(payload?.metrics) ? payload.metrics : [];
+  const ctrRow = rows.find((row) => String(row?.label || "").trim().toUpperCase() === "CTR");
+  const ctrCr1Row = rows.find((row) => String(row?.label || "").trim().toUpperCase() === "CTR*CR1");
+
+  const ctrRaw =
+    typeof abResolveCtrDecisionRaw === "function" ? abResolveCtrDecisionRaw(Number(ctrRow?.delta)) : "";
+  const ctrCr1Raw =
+    typeof abResolveCtrCr1DecisionRaw === "function" ? abResolveCtrCr1DecisionRaw(Number(ctrCr1Row?.delta)) : "";
+  const overallRaw =
+    typeof abResolveOverallDecisionRaw === "function"
+      ? abResolveOverallDecisionRaw([ctrRaw, priceRaw, ctrCr1Raw])
+      : "";
+
+  return {
+    ctr: String(ctrRaw || "").trim(),
+    price: priceRaw,
+    ctrCr1: String(ctrCr1Raw || "").trim(),
+    overall: String(overallRaw || "").trim(),
+  };
+}
+
+function renderAbSummaryFlow(checks) {
+  const items = [
+    { label: "CTR", raw: checks?.ctr },
+    { label: "Цена", raw: checks?.price },
+    { label: "CTR x CR1", raw: checks?.ctrCr1 },
+    { label: "Итог", raw: checks?.overall },
+  ];
+  return items
+    .map((item, index, list) => {
+      const stepHtml = `<div class="ab-eval-step">${typeof abStatusPill === "function" ? abStatusPill(item.raw, true, item.label) : `<span>${escapeHtml(item.label)}</span>`}</div>`;
+      if (index === list.length - 1) {
+        return stepHtml;
+      }
+      return `${stepHtml}<span class="ab-eval-step-separator" aria-hidden="true">→</span>`;
+    })
+    .join("");
+}
+
 function renderAbOverlayMetricTableRows(rows, options = {}) {
   const {
     useRawText = false,
@@ -362,6 +420,8 @@ function renderAbXwayOverlayData(button, payload) {
   const beforeDate = formatAbXwayIsoDate(payload?.range?.before);
   const afterDate = formatAbXwayIsoDate(payload?.range?.after);
   const exportRows = getAbExportComparisonRows(testId);
+  const exportChecks = getAbExportSummaryChecks(testId);
+  const xwayChecks = getAbXwaySummaryChecks(testId, payload);
   overlay.title.textContent = `XWAY • Тест ${testId}`;
   overlay.meta.textContent = `Тип РК: ${campaignType}${campaignExternalId ? ` · ID РК: ${campaignExternalId}` : ""} · До: ${beforeDate} - ${beforeDate} · После: ${afterDate} - ${afterDate}`;
 
@@ -388,6 +448,21 @@ function renderAbXwayOverlayData(button, payload) {
         <div class="ab-xway-summary-line">Клики: <strong>${new Intl.NumberFormat("ru-RU").format(Number(totalsAfter.clicks) || 0)}</strong></div>
         <div class="ab-xway-summary-line">ATB: <strong>${new Intl.NumberFormat("ru-RU").format(Number(totalsAfter.atbs) || 0)}</strong></div>
         <div class="ab-xway-summary-line">Заказы: <strong>${new Intl.NumberFormat("ru-RU").format(Number(totalsAfter.orders) || 0)}</strong></div>
+      </div>
+    </div>
+    <div class="ab-xway-summary-compare-grid">
+      <div class="ab-xway-summary-compare-card">
+        <div class="ab-xway-table-head">
+          <h4>Результат по выгрузке</h4>
+        </div>
+        <div class="ab-test-summary-row is-inline-flow">${renderAbSummaryFlow(exportChecks)}</div>
+      </div>
+      <div class="ab-xway-summary-compare-card">
+        <div class="ab-xway-table-head">
+          <h4>Результат по XWAY</h4>
+        </div>
+        <div class="ab-test-summary-row is-inline-flow">${renderAbSummaryFlow(xwayChecks)}</div>
+        <div class="ab-xway-summary-note">Этап «Цена» для XWAY берется из выгрузки, потому что XWAY не отдает ценовые изменения.</div>
       </div>
     </div>
     <div class="ab-xway-metrics-compare-grid">
