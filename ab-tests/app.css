@@ -276,6 +276,30 @@ body {
   line-height: 1.3;
 }
 
+.ab-funnel-source-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.ab-funnel-source-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ab-funnel-source-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ab-funnel-source-head h4 {
+  margin: 0;
+  color: #203945;
+  font: 700 13px/1.1 "IBM Plex Sans", sans-serif;
+}
+
 .ab-funnel-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -289,6 +313,10 @@ body {
   padding: 6px 8px;
   display: grid;
   gap: 4px;
+}
+
+.ab-funnel-card.is-pending {
+  background: linear-gradient(180deg, rgba(248, 252, 253, 0.98) 0%, rgba(243, 248, 251, 0.96) 100%);
 }
 
 .ab-funnel-card-head {
@@ -308,6 +336,20 @@ body {
   margin-top: 1px;
   color: #58707d;
   font: 600 10px/1.15 "IBM Plex Sans", sans-serif;
+}
+
+.ab-funnel-card-loading {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(22, 56, 71, 0.14);
+  background: rgba(255, 255, 255, 0.7);
+  color: #6b808b;
+  font: 700 12px/1.35 "IBM Plex Sans", sans-serif;
 }
 
 .ab-funnel-stage-list {
@@ -1827,6 +1869,11 @@ body {
     align-items: stretch;
   }
 
+  .ab-funnel-source-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .ab-view-switch {
     width: fit-content;
   }
@@ -1894,5 +1941,12 @@ body {
   .ab-xway-metrics-compare-grid,
   .ab-xway-campaigns-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1280px) {
+  .ab-funnel-source-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
 }

@@ -59,7 +59,8 @@ const abXwayOverlayState = {
 const abXwaySummaryState = {
   cache: new Map(),
   inflight: new Map(),
-  runId: 0,
+  summaryRunId: 0,
+  funnelRunId: 0,
   concurrency: 3,
 };
 
@@ -174,6 +175,7 @@ function bindAbPageEvents() {
   document.addEventListener("ab:content-render", () => {
     hideAbCoverHoverPreview();
     hydrateVisibleAbXwaySummaries();
+    hydrateAbXwayFunnelDashboard();
   });
 
   document.addEventListener("click", async (event) => {
@@ -310,7 +312,7 @@ async function resolveAbXwaySummaryForMeta(meta) {
 }
 
 async function hydrateVisibleAbXwaySummaries() {
-  const runId = ++abXwaySummaryState.runId;
+  const runId = ++abXwaySummaryState.summaryRunId;
   const containers = Array.from(document.querySelectorAll("[data-ab-xway-summary-card]"));
   if (!containers.length) {
     return;
@@ -322,7 +324,7 @@ async function hydrateVisibleAbXwaySummaries() {
   const worker = async () => {
     while (queue.length) {
       const container = queue.shift();
-      if (!(container instanceof HTMLElement) || !container.isConnected || runId !== abXwaySummaryState.runId) {
+      if (!(container instanceof HTMLElement) || !container.isConnected || runId !== abXwaySummaryState.summaryRunId) {
         continue;
       }
 
@@ -333,7 +335,7 @@ async function hydrateVisibleAbXwaySummaries() {
       }
 
       const result = await resolveAbXwaySummaryForMeta(meta);
-      if (!container.isConnected || runId !== abXwaySummaryState.runId) {
+      if (!container.isConnected || runId !== abXwaySummaryState.summaryRunId) {
         continue;
       }
 
@@ -347,6 +349,112 @@ async function hydrateVisibleAbXwaySummaries() {
 
   await Promise.all(
     Array.from({ length: Math.min(abXwaySummaryState.concurrency, containers.length) }, () => worker()),
+  );
+}
+
+function setAbXwayChecksOnTest(testIdRaw, checks) {
+  const test = typeof getAbDashboardTestById === "function" ? getAbDashboardTestById(testIdRaw) : null;
+  if (!test) {
+    return;
+  }
+  test.xwaySummaryChecks = checks || null;
+}
+
+function renderAbXwayFunnelStatus(statusNode, text) {
+  if (!(statusNode instanceof HTMLElement)) {
+    return;
+  }
+  statusNode.textContent = String(text || "");
+}
+
+async function hydrateAbXwayFunnelDashboard() {
+  const grid = document.querySelector("[data-ab-xway-funnel-grid]");
+  const statusNode = document.querySelector("[data-ab-xway-funnel-status]");
+  if (!(grid instanceof HTMLElement) || !(statusNode instanceof HTMLElement)) {
+    return;
+  }
+
+  if (!abDashboardStore?.data || typeof abFilterTests !== "function" || typeof abBuildCabinetFunnelCards !== "function") {
+    renderAbXwayFunnelStatus(statusNode, "Нет данных");
+    return;
+  }
+
+  const filteredTests = abFilterTests(abDashboardStore.data);
+  if (!filteredTests.length) {
+    grid.innerHTML = "";
+    renderAbXwayFunnelStatus(statusNode, "Нет тестов");
+    return;
+  }
+
+  const cabinetOrder = Array.from(new Set(filteredTests.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, "ru"),
+  );
+  const runId = ++abXwaySummaryState.funnelRunId;
+  let done = 0;
+  let ready = 0;
+  let errors = 0;
+
+  renderAbXwayFunnelStatus(statusNode, `Считаю XWAY… 0 / ${filteredTests.length}`);
+
+  const queue = filteredTests
+    .map((test) => ({
+      test,
+      meta: {
+        testId: String(test?.testId || "").trim(),
+        campaignType: String(test?.type || "").trim(),
+        campaignExternalId: String(test?.campaignExternalId || "").trim(),
+        startedAt: String(test?.startedAtIso || "").trim(),
+        endedAt: String(test?.endedAtIso || "").trim(),
+      },
+    }))
+    .filter((item) => item.meta.testId);
+  const total = queue.length;
+
+  const repaint = () => {
+    if (runId !== abXwaySummaryState.funnelRunId || typeof renderAbFunnelCardsHtml !== "function") {
+      return;
+    }
+    const cards = abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway");
+    grid.innerHTML = renderAbFunnelCardsHtml(cards, "xway");
+    if (done < total) {
+      renderAbXwayFunnelStatus(statusNode, `Считаю XWAY… ${done} / ${total}`);
+      return;
+    }
+    if (errors && !ready) {
+      renderAbXwayFunnelStatus(statusNode, "XWAY недоступен");
+      return;
+    }
+    if (errors) {
+      renderAbXwayFunnelStatus(statusNode, `Готово: ${ready} · ошибки: ${errors}`);
+      return;
+    }
+    renderAbXwayFunnelStatus(statusNode, `Готово: ${ready}`);
+  };
+
+  const worker = async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      if (!item || runId !== abXwaySummaryState.funnelRunId) {
+        continue;
+      }
+      const result = await resolveAbXwaySummaryForMeta(item.meta);
+      if (runId !== abXwaySummaryState.funnelRunId) {
+        continue;
+      }
+
+      done += 1;
+      if (result?.status === "ready") {
+        ready += 1;
+        setAbXwayChecksOnTest(item.meta.testId, result.checks);
+      } else {
+        errors += 1;
+      }
+      repaint();
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(abXwaySummaryState.concurrency, queue.length || 1) }, () => worker()),
   );
 }
 
