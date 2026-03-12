@@ -1109,7 +1109,11 @@ async function loadRow(
       return;
     }
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = await normalizeRowUpdateErrorMessage(
+      error instanceof Error ? error.message : String(error),
+      target.nmId,
+      { requestSignal },
+    );
     const aborted = canceledByUser || (requestSignal && requestSignal.aborted) || isUpdateCanceledError(error);
 
     if (aborted) {
@@ -1117,6 +1121,9 @@ async function loadRow(
       target.error = "";
     } else {
       target.error = errorMessage;
+      if (isMissingCardErrorMessage(errorMessage)) {
+        markRowAsMissingCard(target);
+      }
     }
   } finally {
     const target = getRowById(rowId);
@@ -1225,8 +1232,12 @@ async function fetchCardPayload(nmIdRaw, options = {}) {
       }),
     );
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     if (isUpdateCanceledError(error) || (requestSignal && requestSignal.aborted)) {
       throw new Error("Обновление остановлено пользователем");
+    }
+    if (marketSnapshot?.cardExists === false || isMissingCardErrorMessage(errorMessage)) {
+      throw new Error("Карточка не существует на WB");
     }
     if (forceHostProbe) {
       throw error;
@@ -1783,6 +1794,66 @@ function normalizeFetchError(error) {
 function isUpdateCanceledError(error) {
   const message = String(error?.message || error || "");
   return String(error?.name || "").trim() === "AbortError" || /остановлен[ао]\s+пользователем/i.test(message);
+}
+
+function isMissingCardErrorMessage(messageRaw) {
+  const message = String(messageRaw || "").trim().toLowerCase();
+  return (
+    message.includes("карточка не существует на wb") ||
+    message.includes("card-v4: карточка не найдена")
+  );
+}
+
+async function normalizeRowUpdateErrorMessage(messageRaw, nmIdRaw, options = {}) {
+  const originalMessage = String(messageRaw || "").trim();
+  if (!originalMessage) {
+    return "";
+  }
+
+  if (isMissingCardErrorMessage(originalMessage)) {
+    return "Карточка не существует на WB";
+  }
+
+  const normalizedMessage = originalMessage.toLowerCase();
+  const mentionsBasketHost =
+    normalizedMessage.includes("не удалось определить basket-хост") ||
+    normalizedMessage.includes("не удалось определить basket-host") ||
+    normalizedMessage.includes("basket-host");
+
+  if (!mentionsBasketHost) {
+    return originalMessage;
+  }
+
+  const nmId = Number(nmIdRaw);
+  if (!Number.isInteger(nmId) || nmId <= 0) {
+    return originalMessage;
+  }
+
+  try {
+    const snapshot = await fetchCardMarketSnapshot(nmId, {
+      requestSignal: options.requestSignal || null,
+      fastFail: true,
+    });
+    if (snapshot?.cardExists === false) {
+      return "Карточка не существует на WB";
+    }
+  } catch {
+    // noop
+  }
+
+  return originalMessage;
+}
+
+function markRowAsMissingCard(row) {
+  if (!row || typeof row !== "object") {
+    return;
+  }
+  const previousData = row.data && typeof row.data === "object" ? row.data : {};
+  row.data = {
+    ...previousData,
+    cardExists: false,
+    marketError: "Карточка не существует на WB",
+  };
 }
 
 async function fetchWithRetry(url, options = {}, config = {}) {
