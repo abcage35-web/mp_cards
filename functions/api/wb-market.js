@@ -1,4 +1,4 @@
-import { getSessionFromRequest, json } from "./_lib/auth.js";
+import { json } from "./_lib/auth.js";
 
 const CARD_V4_APP_TYPE = "1";
 const CARD_V4_CURR = "rub";
@@ -380,15 +380,6 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestGet(context) {
-  if (!context?.env?.DB) {
-    return json({ ok: false, error: "D1 binding DB is not configured" }, { status: 500 });
-  }
-
-  const session = await getSessionFromRequest(context.request, context.env);
-  if (!session) {
-    return json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
   const url = new URL(context.request.url);
   const nmId = toPositiveInteger(url.searchParams.get("nm"));
   if (!Number.isInteger(nmId) || nmId <= 0) {
@@ -412,8 +403,9 @@ export async function onRequestGet(context) {
   }
 
   const snapshot = extractMarketSnapshotFromCardV4(fetched.payload, nmId);
+  let missingFields = [];
   if (snapshot.cardExists !== false) {
-    const missingFields = getMissingMarketFields(snapshot);
+    missingFields = getMissingMarketFields(snapshot);
     if (missingFields.length > 0) {
       snapshot.marketError = `card-v4: не получены поля: ${missingFields.join(", ")}`;
     }
