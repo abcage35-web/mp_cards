@@ -301,8 +301,15 @@ async function updateShadowRow(shadowRow, options = {}) {
       source: payload.priceSource || "card-v4",
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = await normalizeRowUpdateErrorMessage(
+      error instanceof Error ? error.message : String(error),
+      shadowRow.nmId,
+      { requestSignal: null },
+    );
     shadowRow.error = errorMessage;
+    if (isMissingCardErrorMessage(errorMessage)) {
+      markRowAsMissingCard(shadowRow);
+    }
   } finally {
     const afterSnapshot = captureRowUpdateSnapshot(shadowRow);
     const changes = getRowUpdateChanges(beforeSnapshot, afterSnapshot);

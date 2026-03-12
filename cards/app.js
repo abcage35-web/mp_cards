@@ -1306,6 +1306,9 @@ function showRowError(rowId) {
 
 function isRetriableRowError(messageRaw) {
   const message = String(messageRaw || "").toLowerCase();
+  if (message.includes("карточка не существует на wb")) {
+    return false;
+  }
   return (
     message.includes("429") ||
     message.includes("failed to fetch") ||
