@@ -170,6 +170,7 @@ const abDashboardStore = {
   data: null,
   promise: null,
   filters: abCreateDefaultFilters(),
+  funnelMode: "bars",
   listenersBound: false,
 };
 
@@ -192,6 +193,14 @@ function abEscapeHtml(value) {
 
 function abEscapeAttr(value) {
   return abEscapeHtml(value).replaceAll("\n", " ");
+}
+
+function abSanitizeId(valueRaw) {
+  const value = String(valueRaw || "")
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+  return value || "id";
 }
 
 function abParseDateLiteral(valueRaw) {
@@ -1264,75 +1273,136 @@ function abBuildCabinetFunnelCards(tests, cabinetOrder = [], sourceKey = "export
     .filter(Boolean);
 }
 
+function renderAbFunnelPieStageHtml(card, stage, sourceKey) {
+  const style = abGetFunnelStageStyle(stage.key);
+  const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
+  const isActive =
+    abDashboardStore.filters.cabinet === card.cabinet &&
+    abDashboardStore.filters.stage === stage.key &&
+    String(abDashboardStore.filters.stageSource || "export") === sourceKey;
+  const size = 74;
+  const strokeWidth = 7;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percent / 100) * circumference;
+  const gradientId = abSanitizeId(`donut-${card.cabinet}-${sourceKey}-${stage.key}`);
+
+  return `<button type="button" class="ab-funnel-pie-btn${isActive ? " is-active" : ""}" data-ab-action="cabinet-stage-filter" data-ab-cabinet="${abEscapeAttr(
+    card.cabinet,
+  )}" data-ab-stage="${abEscapeAttr(stage.key)}" data-ab-source="${abEscapeAttr(sourceKey)}" aria-label="${abEscapeAttr(
+    `${card.cabinet}: ${stage.label} — ${stage.count} из ${card.total}`,
+  )}">
+    <div class="ab-funnel-donut">
+      <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">
+        <defs>
+          <linearGradient id="${abEscapeAttr(gradientId)}" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="${abEscapeAttr(style.colorFrom)}"></stop>
+            <stop offset="100%" stop-color="${abEscapeAttr(style.colorTo)}"></stop>
+          </linearGradient>
+        </defs>
+        <circle class="ab-funnel-donut-track" cx="${size / 2}" cy="${size / 2}" r="${radius}"></circle>
+        <circle class="ab-funnel-donut-fill" cx="${size / 2}" cy="${size / 2}" r="${radius}" stroke="url(#${abEscapeAttr(
+          gradientId,
+        )})" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 ${size / 2} ${size / 2})"></circle>
+      </svg>
+      <span class="ab-funnel-donut-value">${abEscapeHtml(String(percent))}%</span>
+    </div>
+    <span class="ab-funnel-donut-label">${abEscapeHtml(stage.label)}</span>
+    <span class="ab-funnel-donut-meta">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(abFormatInt(card.total))}</span>
+  </button>`;
+}
+
+function renderAbFunnelBarStageHtml(card, stage, sourceKey) {
+  const style = abGetFunnelStageStyle(stage.key);
+  const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
+  const isActive =
+    abDashboardStore.filters.cabinet === card.cabinet &&
+    abDashboardStore.filters.stage === stage.key &&
+    String(abDashboardStore.filters.stageSource || "export") === sourceKey;
+  return `<button type="button" class="ab-funnel-stage-row${isActive ? " is-active" : ""}" data-ab-action="cabinet-stage-filter" data-ab-cabinet="${abEscapeAttr(
+    card.cabinet,
+  )}" data-ab-stage="${abEscapeAttr(stage.key)}" data-ab-source="${abEscapeAttr(sourceKey)}" aria-label="${abEscapeAttr(
+    `${card.cabinet}: ${stage.label} — ${stage.count} из ${card.total}`,
+  )}">
+    <div class="ab-funnel-stage-top">
+      <span class="ab-funnel-stage-name">${abEscapeHtml(stage.label)}</span>
+      <span class="ab-funnel-stage-percent">${abEscapeHtml(String(percent))}%</span>
+      <span class="ab-funnel-stage-count">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(abFormatInt(card.total))}</span>
+    </div>
+    <div class="ab-funnel-stage-bar">
+      <span class="ab-funnel-stage-bar-fill" style="--stage-from:${abEscapeAttr(style.colorFrom)}; --stage-to:${abEscapeAttr(style.colorTo)}; width:${abEscapeAttr(
+        String(Math.max(percent, 2)),
+      )}%;"></span>
+    </div>
+  </button>`;
+}
+
+function renderAbFunnelPendingCardHtml(card, mode, pendingMessage, pendingStatus) {
+  const pieItemsHtml =
+    mode === "pies"
+      ? `<div class="ab-funnel-pie-grid is-pending">
+          ${["CTR", "Цена", "CTR x CR1", "Итог"]
+            .map(
+              (label) => `<div class="ab-funnel-pie-btn is-pending">
+                <div class="ab-funnel-donut is-pending"><span class="ab-funnel-donut-value">—</span></div>
+                <span class="ab-funnel-donut-label">${abEscapeHtml(label)}</span>
+                <span class="ab-funnel-donut-meta">—</span>
+              </div>`,
+            )
+            .join("")}
+        </div>`
+      : '<div class="ab-funnel-card-loading">Загружаю XWAY-метрики по кабинетам…</div>';
+  return `<article class="ab-funnel-card is-pending" data-ab-xway-funnel-card data-ab-cabinet="${abEscapeAttr(card?.cabinet || "")}">
+    <div class="ab-funnel-card-head">
+      <div>
+        <h4>${abEscapeHtml(card?.cabinet || "—")}</h4>
+        <div class="ab-funnel-card-subtle">${abEscapeHtml(pendingMessage || "Считаю XWAY…")}</div>
+      </div>
+      <span class="ab-funnel-result-pill is-pending">${abEscapeHtml(pendingStatus)}</span>
+    </div>
+    ${pieItemsHtml}
+  </article>`;
+}
+
+function renderAbFunnelCardHtml(card, sourceKey, mode) {
+  const stages = Array.isArray(card?.stages) ? card.stages : [];
+  const finalCount = stages[stages.length - 1]?.count || 0;
+  const finalPercent = card.total > 0 ? Math.round((finalCount / card.total) * 100) : 0;
+  const resultClass = finalPercent >= 50 ? "is-good" : finalPercent >= 25 ? "is-warm" : "is-neutral";
+  const contentHtml =
+    mode === "pies"
+      ? `<div class="ab-funnel-pie-grid">${stages.map((stage) => renderAbFunnelPieStageHtml(card, stage, sourceKey)).join("")}</div>`
+      : `<div class="ab-funnel-stage-list">${stages.map((stage) => renderAbFunnelBarStageHtml(card, stage, sourceKey)).join("")}</div>`;
+
+  return `<article class="ab-funnel-card">
+    <div class="ab-funnel-card-head">
+      <div>
+        <h4>${abEscapeHtml(card.cabinet)}</h4>
+        <div class="ab-funnel-card-subtle">Успешных итоговых: ${abEscapeHtml(abFormatInt(finalCount))} из ${abEscapeHtml(
+          abFormatInt(card.total),
+        )}</div>
+      </div>
+      <span class="ab-funnel-result-pill ${resultClass}">${abEscapeHtml(String(finalPercent))}%</span>
+    </div>
+    ${contentHtml}
+  </article>`;
+}
+
 function renderAbFunnelCardsHtml(cards, sourceKey = "export", options = {}) {
   const list = Array.isArray(cards) ? cards : [];
   const {
     pendingMessage = "",
     pendingStatus = "…",
     pending = false,
+    mode = abDashboardStore.funnelMode || "bars",
   } = options;
 
   return list
     .map((card) => {
       if (pending) {
-        return `<article class="ab-funnel-card is-pending" data-ab-xway-funnel-card data-ab-cabinet="${abEscapeAttr(
-          card?.cabinet || "",
-        )}">
-          <div class="ab-funnel-card-head">
-            <div>
-              <h4>${abEscapeHtml(card?.cabinet || "—")}</h4>
-              <div class="ab-funnel-card-subtle">${abEscapeHtml(pendingMessage || "Считаю XWAY…")}</div>
-            </div>
-            <span class="ab-status-pill">${abEscapeHtml(pendingStatus)}</span>
-          </div>
-          <div class="ab-funnel-card-loading">Загружаю XWAY-метрики по кабинетам…</div>
-        </article>`;
+        return renderAbFunnelPendingCardHtml(card, mode, pendingMessage, pendingStatus);
       }
-
-      const stepsHtml = (Array.isArray(card?.stages) ? card.stages : [])
-        .map((stage) => {
-          const style = abGetFunnelStageStyle(stage.key);
-          const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
-          const isActive =
-            abDashboardStore.filters.cabinet === card.cabinet &&
-            abDashboardStore.filters.stage === stage.key &&
-            String(abDashboardStore.filters.stageSource || "export") === sourceKey;
-          return `<button type="button" class="ab-funnel-stage-row${isActive ? " is-active" : ""}" data-ab-action="cabinet-stage-filter" data-ab-cabinet="${abEscapeAttr(
-            card.cabinet,
-          )}" data-ab-stage="${abEscapeAttr(stage.key)}" data-ab-source="${abEscapeAttr(sourceKey)}" aria-label="${abEscapeAttr(
-            `${card.cabinet}: ${stage.label} — ${stage.count} из ${card.total}`,
-          )}">
-            <div class="ab-funnel-stage-top">
-              <span class="ab-funnel-stage-name">${abEscapeHtml(stage.label)}</span>
-              <span class="ab-funnel-stage-percent">${abEscapeHtml(String(percent))}%</span>
-              <span class="ab-funnel-stage-count">${abEscapeHtml(abFormatInt(stage.count))} из ${abEscapeHtml(
-                abFormatInt(card.total),
-              )}</span>
-            </div>
-            <div class="ab-funnel-stage-bar">
-              <span class="ab-funnel-stage-bar-fill" style="--stage-from:${abEscapeAttr(style.colorFrom)}; --stage-to:${abEscapeAttr(
-                style.colorTo,
-              )}; width:${abEscapeAttr(String(percent))}%;"></span>
-            </div>
-          </button>`;
-        })
-        .join("");
-
-      const finalCount = card.stages[card.stages.length - 1]?.count || 0;
-      const finalPercent = card.total > 0 ? Math.round((finalCount / card.total) * 100) : 0;
-
-      return `<article class="ab-funnel-card">
-        <div class="ab-funnel-card-head">
-          <div>
-            <h4>${abEscapeHtml(card.cabinet)}</h4>
-            <div class="ab-funnel-card-subtle">Успешных итоговых: ${abEscapeHtml(abFormatInt(finalCount))} из ${abEscapeHtml(
-              abFormatInt(card.total),
-            )}</div>
-          </div>
-          <span class="ab-status-pill is-good">${abEscapeHtml(String(finalPercent))}%</span>
-        </div>
-        <div class="ab-funnel-stage-list">${stepsHtml}</div>
-      </article>`;
+      return renderAbFunnelCardHtml(card, sourceKey, mode);
     })
     .join("");
 }
@@ -1399,15 +1469,17 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
     return "";
   }
 
+  const funnelMode = String(abDashboardStore.funnelMode || "bars") === "pies" ? "pies" : "bars";
+
   const cabinetOrder = Array.from(new Set(tests.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
   const exportFunnelCards = abBuildCabinetFunnelCards(tests, cabinetOrder, "export");
   if (!exportFunnelCards.length) {
     return "";
   }
-  const exportCardsHtml = renderAbFunnelCardsHtml(exportFunnelCards, "export");
+  const exportCardsHtml = renderAbFunnelCardsHtml(exportFunnelCards, "export", { mode: funnelMode });
   const hasXwayChecks = tests.some((item) => item?.xwaySummaryChecks);
   const xwayCardsHtml = hasXwayChecks
-    ? renderAbFunnelCardsHtml(abBuildCabinetFunnelCards(tests, cabinetOrder, "xway"), "xway")
+    ? renderAbFunnelCardsHtml(abBuildCabinetFunnelCards(tests, cabinetOrder, "xway"), "xway", { mode: funnelMode })
     : renderAbFunnelCardsHtml(
         exportFunnelCards,
         "xway",
@@ -1415,6 +1487,7 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
           pending: true,
           pendingMessage: "Считаю XWAY…",
           pendingStatus: "…",
+          mode: funnelMode,
         },
       );
 
@@ -1424,7 +1497,17 @@ function renderAbCabinetFunnelDashboard(filteredTests) {
         <h3>Воронка удачных AB‑тестов по кабинетам</h3>
         <p class="subtle">Текущая выборка по выбранным фильтрам. Отдельно показаны расчеты по выгрузке и по XWAY. Клик по этапу отфильтрует тесты по кабинету, этапу и источнику.</p>
       </div>
-      <span class="ab-stat-chip">Кабинетов: <strong>${abEscapeHtml(abFormatInt(exportFunnelCards.length))}</strong></span>
+      <div class="ab-funnel-dashboard-controls">
+        <div class="ab-funnel-mode-switch" role="tablist" aria-label="Режим графика воронки">
+          <button type="button" class="ab-funnel-mode-btn${funnelMode === "bars" ? " is-active" : ""}" data-ab-action="set-funnel-mode" data-ab-funnel-mode="bars" title="Полосы" aria-label="Полосы">
+            ${abRenderIcon("barChart", "ab-card-help-icon") || "≡"}
+          </button>
+          <button type="button" class="ab-funnel-mode-btn${funnelMode === "pies" ? " is-active" : ""}" data-ab-action="set-funnel-mode" data-ab-funnel-mode="pies" title="Кольца" aria-label="Кольца">
+            ${abRenderIcon("pieChart", "ab-card-help-icon") || "◔"}
+          </button>
+        </div>
+        <span class="ab-stat-chip">Кабинетов: <strong>${abEscapeHtml(abFormatInt(exportFunnelCards.length))}</strong></span>
+      </div>
     </div>
     <div class="ab-funnel-source-grid">
       <section class="ab-funnel-source-section">
@@ -1573,7 +1656,7 @@ function renderAbFilterToolbar(model, filteredTests) {
 
 function renderAbTestCard(test) {
   const matrixWidthPx = AB_MATRIX_METRIC_COL_WIDTH + test.variants.length * AB_MATRIX_VARIANT_COL_WIDTH;
-  const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} - ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
+  const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} — ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
   const reportHtml = test.reportLines.length
     ? `<ul class="ab-tooltip-report-list">${test.reportLines
         .map((line) => `<li>${abEscapeHtml(line.replace(/^[-•]\s*/, ""))}</li>`)
@@ -2080,6 +2163,15 @@ function bindAbDashboardEvents() {
           abDashboardStore.filters.verdict = "all";
           abDashboardStore.filters.view = "tests";
         }
+        renderAbDashboardContent();
+        return;
+      }
+      if (action === "set-funnel-mode") {
+        const nextMode = String(actionTarget.getAttribute("data-ab-funnel-mode") || "").trim();
+        if (!["bars", "pies"].includes(nextMode) || nextMode === abDashboardStore.funnelMode) {
+          return;
+        }
+        abDashboardStore.funnelMode = nextMode;
         renderAbDashboardContent();
         return;
       }

@@ -9,6 +9,8 @@ function renderIcon(name, className = "") {
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><path d="M12 7.5h.01"/></svg>`;
     case "barChart":
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20v-12"/></svg>`;
+    case "pieChart":
+      return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9h9"/><path d="M20.49 15A9 9 0 1 1 9 3.51"/></svg>`;
     case "externalLink":
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 14v5a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1h5"/></svg>`;
     default:
