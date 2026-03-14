@@ -10,7 +10,22 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./app.css?v=20260314-figma-redesign-v1" />
+    <script>
+      (() => {
+        window.__AB_USE_REACT__ = true;
+        const storageKey = "ab-dashboard-theme";
+        let theme = "";
+        try {
+          theme = localStorage.getItem(storageKey) || "";
+        } catch {}
+        if (theme !== "dark" && theme !== "light") {
+          theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
+    <link rel="stylesheet" href="./app.css?v=20260314-dark-theme-v1" />
     <script>
       (() => {
         window.addEventListener("pageshow", (event) => {
@@ -45,8 +60,9 @@
           .catch(() => {});
       })();
     </script>
-    <script src="./services/ui-ab-dashboard.service.js?v=20260314-figma-redesign-v1" defer></script>
-    <script src="./app.js?v=20260314-figma-redesign-v1" defer></script>
+    <script src="./services/ui-ab-dashboard.service.js?v=20260314-react-figma-v1" defer></script>
+    <script src="./app.js?v=20260314-react-figma-v1" defer></script>
+    <script src="./react-app.js?v=20260314-react-figma-v1" type="module"></script>
   </head>
   <body>
     <div class="ambient ambient-a"></div>
@@ -70,6 +86,7 @@
             </p>
           </div>
           <div class="ab-tests-head-actions">
+            <button id="abThemeToggleBtn" class="btn theme-toggle-btn" type="button" aria-label="Переключить тему" title="Переключить тему"></button>
             <button id="abTestsRefreshBtn" class="btn btn-primary btn-has-icon" type="button">Обновить данные</button>
           </div>
         </div>

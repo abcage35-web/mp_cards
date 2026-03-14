@@ -13,9 +13,75 @@ function renderIcon(name, className = "") {
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9h9"/><path d="M20.49 15A9 9 0 1 1 9 3.51"/></svg>`;
     case "externalLink":
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 14v5a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1h5"/></svg>`;
+    case "moon":
+      return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><path d="M21 13.2A8.98 8.98 0 0 1 10.8 3 9 9 0 1 0 21 13.2Z"/></svg>`;
+    case "sun":
+      return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
     default:
       return `<svg${cls} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>`;
   }
+}
+
+const AB_THEME_STORAGE_KEY = "ab-dashboard-theme";
+const abThemeMediaQuery =
+  typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+function getStoredAbTheme() {
+  try {
+    const value = localStorage.getItem(AB_THEME_STORAGE_KEY);
+    return value === "dark" || value === "light" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function getSystemAbTheme() {
+  return abThemeMediaQuery?.matches ? "dark" : "light";
+}
+
+function getActiveAbTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function updateThemeToggleButton() {
+  const themeBtn = document.getElementById("abThemeToggleBtn");
+  if (!themeBtn) {
+    return;
+  }
+  const isDark = getActiveAbTheme() === "dark";
+  const nextThemeLabel = isDark ? "Светлая тема" : "Тёмная тема";
+  themeBtn.classList.toggle("is-dark", isDark);
+  themeBtn.setAttribute("aria-pressed", isDark ? "true" : "false");
+  themeBtn.setAttribute("aria-label", nextThemeLabel);
+  themeBtn.setAttribute("title", nextThemeLabel);
+  themeBtn.innerHTML = renderIcon(isDark ? "sun" : "moon", "ui-icon");
+}
+
+function applyAbTheme(themeRaw) {
+  const theme = themeRaw === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+  updateThemeToggleButton();
+}
+
+function initializeAbTheme() {
+  applyAbTheme(getStoredAbTheme() || getSystemAbTheme());
+  if (abThemeMediaQuery && typeof abThemeMediaQuery.addEventListener === "function") {
+    abThemeMediaQuery.addEventListener("change", (event) => {
+      if (getStoredAbTheme()) {
+        return;
+      }
+      applyAbTheme(event.matches ? "dark" : "light");
+    });
+  }
+}
+
+function toggleAbTheme() {
+  const nextTheme = getActiveAbTheme() === "dark" ? "light" : "dark";
+  try {
+    localStorage.setItem(AB_THEME_STORAGE_KEY, nextTheme);
+  } catch {}
+  applyAbTheme(nextTheme);
 }
 
 function formatDateTime(valueRaw) {
@@ -37,6 +103,7 @@ function formatDateTime(valueRaw) {
 }
 
 function applyStaticIcons() {
+  updateThemeToggleButton();
   const refreshBtn = document.getElementById("abTestsRefreshBtn");
   if (!refreshBtn) {
     return;
@@ -161,6 +228,11 @@ function showAbCoverHoverPreview(link) {
 }
 
 function bindAbPageEvents() {
+  const themeBtn = document.getElementById("abThemeToggleBtn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", toggleAbTheme);
+  }
+
   const refreshBtn = document.getElementById("abTestsRefreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", () => {
@@ -914,6 +986,12 @@ function renderAbSummaryFlow(checks) {
     .join("");
 }
 
+globalThis.AbDashboardUi = {
+  renderIcon,
+  formatDateTime,
+  renderAbSummaryFlow,
+};
+
 function renderAbOverlayMetricTableRows(rows, options = {}) {
   const {
     useRawText = false,
@@ -1058,6 +1136,7 @@ async function openAbXwayOverlay(button) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initializeAbTheme();
   applyStaticIcons();
   bindAbPageEvents();
   if (typeof ensureAbDashboardLoaded === "function") {

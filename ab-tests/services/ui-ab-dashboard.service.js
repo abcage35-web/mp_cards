@@ -174,6 +174,14 @@ const abDashboardStore = {
   listenersBound: false,
 };
 
+function isAbReactMode() {
+  return globalThis.__AB_USE_REACT__ === true;
+}
+
+function notifyAbDashboardUpdate() {
+  document.dispatchEvent(new CustomEvent("ab:dashboard-update"));
+}
+
 function getAbDashboardContentEl() {
   return document.getElementById("abTestsContent");
 }
@@ -2001,6 +2009,10 @@ function abBuildProductsFromFilteredTests(filteredTests) {
 }
 
 function renderAbDashboardContent() {
+  if (isAbReactMode()) {
+    notifyAbDashboardUpdate();
+    return;
+  }
   const contentEl = getAbDashboardContentEl();
   const metaEl = getAbDashboardMetaEl();
   if (!contentEl) {
@@ -2260,3 +2272,94 @@ function getAbDashboardTestById(testIdRaw) {
   }
   return abDashboardStore.data.tests.find((test) => String(test?.testId || "").trim() === testId) || null;
 }
+
+function setAbDashboardFilters(partial) {
+  const nextPartial = partial && typeof partial === "object" ? partial : {};
+  abDashboardStore.filters = {
+    ...abDashboardStore.filters,
+    ...nextPartial,
+  };
+  renderAbDashboardContent();
+}
+
+function resetAbDashboardFilters() {
+  abDashboardStore.filters = abCreateDefaultFilters();
+  renderAbDashboardContent();
+}
+
+function setAbDashboardView(nextViewRaw) {
+  const nextView = String(nextViewRaw || "").trim();
+  if (!["tests", "products", "both"].includes(nextView) || nextView === abDashboardStore.filters.view) {
+    return;
+  }
+  abDashboardStore.filters.view = nextView;
+  renderAbDashboardContent();
+}
+
+function setAbDashboardFunnelMode(nextModeRaw) {
+  const nextMode = String(nextModeRaw || "").trim();
+  if (!["bars", "pies"].includes(nextMode) || nextMode === abDashboardStore.funnelMode) {
+    return;
+  }
+  abDashboardStore.funnelMode = nextMode;
+  renderAbDashboardContent();
+}
+
+function toggleAbDashboardCabinetStageFilter(cabinetRaw = "all", stageRaw = "all", stageSourceRaw = "export") {
+  const cabinet = String(cabinetRaw || "all");
+  const stage = String(stageRaw || "all");
+  const stageSource = String(stageSourceRaw || "export");
+  const isSame =
+    abDashboardStore.filters.cabinet === cabinet &&
+    abDashboardStore.filters.stage === stage &&
+    String(abDashboardStore.filters.stageSource || "export") === stageSource &&
+    abDashboardStore.filters.view === "tests";
+
+  if (isSame) {
+    abDashboardStore.filters.cabinet = "all";
+    abDashboardStore.filters.stage = "all";
+    abDashboardStore.filters.stageSource = "export";
+  } else {
+    abDashboardStore.filters.cabinet = cabinet || "all";
+    abDashboardStore.filters.stage = stage || "all";
+    abDashboardStore.filters.stageSource = stageSource || "export";
+    abDashboardStore.filters.verdict = "all";
+    abDashboardStore.filters.view = "tests";
+  }
+  renderAbDashboardContent();
+}
+
+globalThis.AbDashboardApi = {
+  store: abDashboardStore,
+  limitOptions: AB_TEST_LIMIT_OPTIONS,
+  matrixMetricWidth: AB_MATRIX_METRIC_COL_WIDTH,
+  matrixVariantWidth: AB_MATRIX_VARIANT_COL_WIDTH,
+  funnelStageStyles: AB_FUNNEL_STAGE_STYLES,
+  createDefaultFilters: abCreateDefaultFilters,
+  setFilters: setAbDashboardFilters,
+  resetFilters: resetAbDashboardFilters,
+  setView: setAbDashboardView,
+  setFunnelMode: setAbDashboardFunnelMode,
+  toggleCabinetStageFilter: toggleAbDashboardCabinetStageFilter,
+  filterTests: abFilterTests,
+  buildProducts: abBuildProductsFromFilteredTests,
+  buildCabinetFunnelCards: abBuildCabinetFunnelCards,
+  buildSourceMetaText: abBuildSourceMetaText,
+  getAvailableMonthKeys: abGetAvailableMonthKeys,
+  buildDateRangeFromMonthKeys: abBuildDateRangeFromMonthKeys,
+  getMonthSelectionLabel: abGetMonthSelectionLabel,
+  formatMonthLabel: abFormatMonthLabel,
+  formatInt: abFormatInt,
+  formatCompactPeriodDateTime: abFormatCompactPeriodDateTime,
+  formatSourceDateTime: abFormatSourceDateTime,
+  normalizeStatus: abNormalizeStatus,
+  statusPillHtml: abStatusPill,
+  renderIconHtml: abRenderIcon,
+  getSummaryChecksBySource: abGetSummaryChecksBySource,
+  resolveCtrCr1DecisionRaw: abResolveCtrCr1DecisionRaw,
+  resolveOverallDecisionRaw: abResolveOverallDecisionRaw,
+  getTestById: getAbDashboardTestById,
+  ensureLoaded: ensureAbDashboardLoaded,
+  refreshData: refreshAbDashboardData,
+  notifyUpdated: notifyAbDashboardUpdate,
+};

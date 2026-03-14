@@ -241,6 +241,23 @@ body {
   background: linear-gradient(180deg, #0f8a80 0%, #14b8a6 100%);
 }
 
+.theme-toggle-btn {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 14px;
+  justify-content: center;
+}
+
+.theme-toggle-btn .ui-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-toggle-btn.is-dark {
+  color: #f59e0b;
+}
+
 .btn-has-icon,
 .ab-tests-head-actions {
   display: inline-flex;
@@ -2323,6 +2340,294 @@ body {
   color: var(--accent-strong);
   border-color: rgba(13, 148, 136, 0.26);
   background: rgba(240, 253, 250, 0.96);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --line: rgba(255, 255, 255, 0.08);
+  --ink: #e2e8f0;
+  --muted: #94a3b8;
+  --panel-bg: rgba(15, 23, 42, 0.86);
+  --accent: #14b8a6;
+  --accent-strong: #2dd4bf;
+  --accent-soft: rgba(45, 212, 191, 0.12);
+  --surface: #0f172a;
+  --surface-muted: #111827;
+  --surface-soft: rgba(30, 41, 59, 0.8);
+  --shadow-soft: 0 18px 42px rgba(2, 6, 23, 0.42);
+  --shadow-hover: 0 24px 56px rgba(2, 6, 23, 0.5);
+}
+
+[data-theme="dark"] body {
+  background: #0a0f1a;
+  color: var(--ink);
+}
+
+[data-theme="dark"] .ambient-a {
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.28) 0%, transparent 70%);
+}
+
+[data-theme="dark"] .ambient-b {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.24) 0%, transparent 70%);
+}
+
+[data-theme="dark"] .panel,
+[data-theme="dark"] .ab-funnel-dashboard,
+[data-theme="dark"] .ab-toolbar-card,
+[data-theme="dark"] .ab-overview-card,
+[data-theme="dark"] .ab-test-card,
+[data-theme="dark"] .ab-matrix-wrap,
+[data-theme="dark"] .ab-side-card,
+[data-theme="dark"] .ab-table-card,
+[data-theme="dark"] .ab-table-wrap,
+[data-theme="dark"] .ab-overview-table-wrap,
+[data-theme="dark"] .ab-xway-overlay-dialog,
+[data-theme="dark"] .ab-xway-summary-card,
+[data-theme="dark"] .ab-xway-campaigns-card,
+[data-theme="dark"] .ab-xway-summary-compare-card,
+[data-theme="dark"] .ab-xway-table-wrap {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 22px 48px rgba(2, 6, 23, 0.4);
+}
+
+[data-theme="dark"] .project-nav-btn,
+[data-theme="dark"] .ab-tests-state-card,
+[data-theme="dark"] .btn:not(.btn-primary),
+[data-theme="dark"] .ab-head-action-btn,
+[data-theme="dark"] .ab-link,
+[data-theme="dark"] .ab-toolbar-search,
+[data-theme="dark"] .ab-toolbar-field select,
+[data-theme="dark"] .ab-toolbar-field input,
+[data-theme="dark"] .ab-toolbar-months-summary,
+[data-theme="dark"] .ab-view-switch,
+[data-theme="dark"] .ab-view-btn.is-active,
+[data-theme="dark"] .ab-stat-chip,
+[data-theme="dark"] .ab-test-chip,
+[data-theme="dark"] .ab-status-pill,
+[data-theme="dark"] .ab-check-pill,
+[data-theme="dark"] .ab-check-pill.is-inline,
+[data-theme="dark"] .ab-funnel-mode-switch,
+[data-theme="dark"] .ab-funnel-mode-btn.is-active,
+[data-theme="dark"] .ab-funnel-result-pill,
+[data-theme="dark"] .ab-inline-status,
+[data-theme="dark"] .ab-product-test-link,
+[data-theme="dark"] .ab-xway-state-card,
+[data-theme="dark"] .ab-cover-link,
+[data-theme="dark"] .ab-image-placeholder {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(30, 41, 59, 0.94);
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .ab-toolbar-search input,
+[data-theme="dark"] .ab-toolbar-field select,
+[data-theme="dark"] .ab-toolbar-field input,
+[data-theme="dark"] .ab-toolbar-months-summary,
+[data-theme="dark"] .ab-test-title,
+[data-theme="dark"] .ab-hover-tooltip-copy,
+[data-theme="dark"] .ab-tooltip-report-list li,
+[data-theme="dark"] .ab-xway-summary-line,
+[data-theme="dark"] .ab-xway-campaigns-card li,
+[data-theme="dark"] .ab-xway-campaigns-empty,
+[data-theme="dark"] .ab-table td,
+[data-theme="dark"] .ab-overview-table td,
+[data-theme="dark"] .ab-mini-table td,
+[data-theme="dark"] .ab-variant-matrix td {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .eyebrow,
+[data-theme="dark"] .project-nav-btn.is-active,
+[data-theme="dark"] .ab-link,
+[data-theme="dark"] .ab-product-test-link,
+[data-theme="dark"] .ab-inline-status.good,
+[data-theme="dark"] .ab-funnel-result-pill.is-good,
+[data-theme="dark"] .ab-status-pill.is-good,
+[data-theme="dark"] .ab-ctr-boost-pill.is-good,
+[data-theme="dark"] .ab-delta-pill.is-good {
+  color: #5eead4;
+}
+
+[data-theme="dark"] .ab-tests-head-main h1,
+[data-theme="dark"] .ab-funnel-dashboard-head h3,
+[data-theme="dark"] .ab-funnel-card-head h4,
+[data-theme="dark"] .ab-test-head h4,
+[data-theme="dark"] .ab-overview-head h3,
+[data-theme="dark"] .ab-table-head h3,
+[data-theme="dark"] .ab-metrics-card h5,
+[data-theme="dark"] .ab-side-card h5,
+[data-theme="dark"] .ab-xway-overlay-head h3,
+[data-theme="dark"] .ab-xway-summary-card h4,
+[data-theme="dark"] .ab-xway-campaigns-card h4,
+[data-theme="dark"] .ab-xway-table-head h4,
+[data-theme="dark"] .ab-stat-chip strong,
+[data-theme="dark"] .ab-test-chip strong,
+[data-theme="dark"] .ab-funnel-stage-percent,
+[data-theme="dark"] .ab-funnel-donut-value,
+[data-theme="dark"] .ab-hover-tooltip-title,
+[data-theme="dark"] .ab-xway-summary-line strong {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .subtle,
+[data-theme="dark"] .ab-test-period,
+[data-theme="dark"] .ab-funnel-card-subtle,
+[data-theme="dark"] .ab-funnel-donut-meta,
+[data-theme="dark"] .ab-funnel-stage-count,
+[data-theme="dark"] .ab-toolbar-search input::placeholder,
+[data-theme="dark"] .ab-link-empty,
+[data-theme="dark"] .ab-tooltip-report-empty,
+[data-theme="dark"] .ab-hover-tooltip-copy,
+[data-theme="dark"] .ab-xway-overlay-meta,
+[data-theme="dark"] .ab-xway-summary-note,
+[data-theme="dark"] .ab-price-stage-item span,
+[data-theme="dark"] .ab-price-stage-empty,
+[data-theme="dark"] .ab-table-empty-row {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .btn:hover,
+[data-theme="dark"] .ab-head-action-btn:hover,
+[data-theme="dark"] .ab-link:hover,
+[data-theme="dark"] .ab-product-test-link:hover,
+[data-theme="dark"] .ab-funnel-mode-btn:hover,
+[data-theme="dark"] .ab-view-btn:hover,
+[data-theme="dark"] .project-nav-btn:hover {
+  background: rgba(51, 65, 85, 0.96);
+  border-color: rgba(148, 163, 184, 0.28);
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .theme-toggle-btn {
+  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(148, 163, 184, 0.26);
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .theme-toggle-btn:hover {
+  background: rgba(51, 65, 85, 0.96);
+}
+
+[data-theme="dark"] .btn-primary {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: linear-gradient(180deg, #0f766e 0%, #14b8a6 100%);
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .btn-primary:hover {
+  background: linear-gradient(180deg, #0f8a80 0%, #2dd4bf 100%);
+}
+
+[data-theme="dark"] .ab-source-line {
+  border-color: rgba(56, 189, 248, 0.22);
+  background: rgba(15, 23, 42, 0.92);
+  color: #7dd3fc;
+}
+
+[data-theme="dark"] .ab-tests-state-card.is-error,
+[data-theme="dark"] .ab-status-pill.is-bad,
+[data-theme="dark"] .ab-inline-status.bad,
+[data-theme="dark"] .ab-ctr-boost-pill.is-bad,
+[data-theme="dark"] .ab-delta-pill.is-bad,
+[data-theme="dark"] .ab-xway-inline-state.is-error,
+[data-theme="dark"] .ab-xway-state-card.is-error {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(127, 29, 29, 0.2);
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .ab-status-pill.is-neutral,
+[data-theme="dark"] .ab-ctr-boost-pill.is-neutral,
+[data-theme="dark"] .ab-delta-pill.is-neutral,
+[data-theme="dark"] .ab-delta-pill.is-unknown,
+[data-theme="dark"] .ab-funnel-result-pill.is-neutral,
+[data-theme="dark"] .ab-funnel-result-pill.is-pending {
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.94);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+[data-theme="dark"] .ab-funnel-card,
+[data-theme="dark"] .ab-funnel-card.is-pending {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(17, 24, 39, 0.96) 100%);
+}
+
+[data-theme="dark"] .ab-funnel-stage-row:hover,
+[data-theme="dark"] .ab-funnel-stage-row.is-active,
+[data-theme="dark"] .ab-funnel-pie-btn:hover,
+[data-theme="dark"] .ab-funnel-pie-btn.is-active {
+  background: rgba(30, 41, 59, 0.92);
+  border-color: rgba(56, 189, 248, 0.24);
+}
+
+[data-theme="dark"] .ab-funnel-stage-name,
+[data-theme="dark"] .ab-funnel-donut-label,
+[data-theme="dark"] .ab-funnel-source-head h4,
+[data-theme="dark"] .ab-price-stage-item strong,
+[data-theme="dark"] .ab-price-stage-head h5 {
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .ab-funnel-stage-bar,
+[data-theme="dark"] .ab-funnel-donut-track {
+  background: rgba(51, 65, 85, 0.96);
+  stroke: rgba(51, 65, 85, 0.96);
+}
+
+[data-theme="dark"] .ab-test-summary-frame,
+[data-theme="dark"] .ab-test-summary-frame.is-xway,
+[data-theme="dark"] .ab-price-stage-col,
+[data-theme="dark"] .ab-table th,
+[data-theme="dark"] .ab-overview-table th,
+[data-theme="dark"] .ab-mini-table th,
+[data-theme="dark"] .ab-variant-matrix thead th,
+[data-theme="dark"] .ab-variant-matrix tbody th {
+  border-color: rgba(71, 85, 105, 0.4);
+  background: rgba(15, 23, 42, 0.94);
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .ab-test-summary-frame-label,
+[data-theme="dark"] .ab-price-stage-label,
+[data-theme="dark"] .ab-overview-table th,
+[data-theme="dark"] .ab-table th,
+[data-theme="dark"] .ab-mini-table th,
+[data-theme="dark"] .ab-variant-matrix thead th {
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .ab-mini-table td,
+[data-theme="dark"] .ab-table td,
+[data-theme="dark"] .ab-overview-table td,
+[data-theme="dark"] .ab-variant-matrix td,
+[data-theme="dark"] .ab-variant-matrix th {
+  border-color: rgba(51, 65, 85, 0.72);
+}
+
+[data-theme="dark"] .ab-mini-table tbody td:first-child,
+[data-theme="dark"] .ab-variant-matrix tbody th {
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .ab-mini-table tbody tr:hover td {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+[data-theme="dark"] .ab-cover-link.is-best {
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.18);
+}
+
+[data-theme="dark"] .ab-cover-hover-preview img,
+[data-theme="dark"] .ab-hover-tooltip {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.98);
+}
+
+[data-theme="dark"] .ab-xway-overlay-backdrop {
+  background: rgba(2, 6, 23, 0.58);
 }
 
 @media (max-width: 1200px) {
