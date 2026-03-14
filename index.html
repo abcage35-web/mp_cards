@@ -3,133 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Media Plan — Проекты</title>
+    <title>Media Plan</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
     <script>
       (() => {
-        window.addEventListener("pageshow", (event) => {
-          if (event.persisted) {
-            window.location.reload();
+        const storageKey = "media-plan-theme";
+        let theme = "light";
+
+        try {
+          const savedTheme = localStorage.getItem(storageKey);
+          if (savedTheme === "dark" || savedTheme === "light") {
+            theme = savedTheme;
+          } else if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+            theme = "dark";
           }
-        });
+        } catch {}
 
-        if (!("serviceWorker" in navigator)) {
-          return;
-        }
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.style.colorScheme = theme;
+        document.documentElement.dataset.theme = theme;
 
-        const rootScope = `${window.location.origin}/`;
-        navigator.serviceWorker
-          .getRegistrations()
-          .then((registrations) =>
-            Promise.all(
-              registrations.map(async (registration) => {
-                if (registration.scope !== rootScope) {
-                  return false;
-                }
-                await registration.unregister();
-                return true;
-              }),
-            ),
-          )
-          .then((results) => {
-            if (Array.isArray(results) && results.some(Boolean)) {
+        try {
+          localStorage.setItem("ab-dashboard-theme", theme);
+        } catch {}
+
+        if ("serviceWorker" in navigator) {
+          window.addEventListener("pageshow", (event) => {
+            if (event.persisted) {
               window.location.reload();
             }
-          })
-          .catch(() => {});
+          });
+        }
       })();
     </script>
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: "IBM Plex Sans", sans-serif;
-        background: linear-gradient(160deg, #f7f5ee 0%, #edf7fb 60%, #e9f1ef 100%);
-        color: #1d3846;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-      }
-      .hub {
-        width: min(780px, 100%);
-        border: 1px solid rgba(22, 56, 71, 0.15);
-        border-radius: 22px;
-        background: rgba(255, 255, 255, 0.9);
-        box-shadow: 0 16px 44px rgba(17, 43, 56, 0.12);
-        padding: 22px;
-        display: grid;
-        gap: 14px;
-      }
-      h1 {
-        margin: 0;
-        font: 700 40px/1.03 "Space Grotesk", "IBM Plex Sans", sans-serif;
-      }
-      p {
-        margin: 0;
-        color: #4f6572;
-        font: 500 18px/1.4 "IBM Plex Sans", sans-serif;
-      }
-      .links {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(180px, 1fr));
-        gap: 10px;
-      }
-      .link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 56px;
-        border-radius: 14px;
-        border: 1px solid rgba(22, 56, 71, 0.2);
-        background: rgba(255, 255, 255, 0.95);
-        color: #163847;
-        font: 700 24px/1 "IBM Plex Sans", sans-serif;
-        text-decoration: none;
-      }
-      .link:hover {
-        border-color: rgba(0, 117, 143, 0.42);
-        background: rgba(0, 117, 143, 0.08);
-      }
-      .link.primary {
-        border-color: rgba(0, 117, 143, 0.48);
-        background: linear-gradient(180deg, #007b98 0%, #006f89 100%);
-        color: #fff;
-      }
-      .link.primary:hover {
-        background: linear-gradient(180deg, #0088a8 0%, #007890 100%);
-      }
-      @media (max-width: 760px) {
-        h1 {
-          font-size: 32px;
-        }
-        p {
-          font-size: 16px;
-        }
-        .links {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
   </head>
   <body>
-    <main class="hub">
-      <h1>Media Plan</h1>
-      <p>Выберите отдельный проект: дашборд карточек или AB‑тесты.</p>
-      <div class="links">
-        <a class="link primary" href="./cards/">Карточки</a>
-        <a class="link" href="./ab-tests/">AB‑тесты</a>
-      </div>
-    </main>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
