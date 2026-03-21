@@ -19,6 +19,8 @@ export function CardsPage() {
     root.dataset.embed = "1";
 
     return () => {
+      root.style.removeProperty("--global-filter-offset");
+
       if (previousEmbed === null) {
         root.removeAttribute("data-embed");
         return;

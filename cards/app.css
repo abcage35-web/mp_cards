@@ -2692,7 +2692,7 @@ html[data-embed="1"] .page-switch-panel {
   font-weight: 700;
 }
 
-h1 {
+.app-shell h1 {
   margin: 8px 0;
   font: 700 34px/1.05 "Space Grotesk", "IBM Plex Sans", sans-serif;
 }
@@ -2846,9 +2846,9 @@ h1 {
   color: var(--muted);
 }
 
-input,
-textarea,
-select {
+.app-shell input,
+.app-shell textarea,
+.app-shell select {
   width: 100%;
   border: 1px solid rgba(27, 42, 55, 0.2);
   border-radius: 10px;
@@ -2858,7 +2858,7 @@ select {
   background: rgba(255, 255, 255, 0.92);
 }
 
-select {
+.app-shell select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -2870,41 +2870,41 @@ select {
   background-size: 14px 14px;
 }
 
-select,
-select option,
-select optgroup {
+.app-shell select,
+.app-shell select option,
+.app-shell select optgroup {
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
-select option {
+.app-shell select option {
   background: #f4f8fa;
   color: #1f3a48;
   font-size: 12px;
   font-weight: 500;
 }
 
-select option:checked {
+.app-shell select option:checked {
   background: rgba(0, 117, 143, 0.16);
   color: #0d4f63;
   font-weight: 600;
 }
 
-select option:disabled,
-select optgroup:disabled {
+.app-shell select option:disabled,
+.app-shell select optgroup:disabled {
   background: rgba(230, 236, 240, 0.95);
   color: rgba(79, 98, 109, 0.75);
 }
 
-select optgroup {
+.app-shell select optgroup {
   background: #edf4f7;
   color: #4c6574;
   font-size: 12px;
   font-weight: 700;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+.app-shell input:focus,
+.app-shell textarea:focus,
+.app-shell select:focus {
   outline: 2px solid rgba(0, 117, 143, 0.28);
   border-color: rgba(0, 117, 143, 0.65);
 }
@@ -3451,7 +3451,7 @@ textarea {
   background: rgba(255, 255, 255, 0.86);
 }
 
-table {
+.app-shell table {
   border-collapse: collapse;
   width: 100%;
   table-layout: fixed;
@@ -6106,13 +6106,13 @@ select {
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
 }
 
-h1,
-.auth-card h2,
-.agreement-block-head h2,
-.agreement-total-value,
-.agreement-card-count,
-.seller-chip-plus,
-.bulk-progress-title {
+.app-shell h1,
+.app-shell .auth-card h2,
+.app-shell .agreement-block-head h2,
+.app-shell .agreement-total-value,
+.app-shell .agreement-card-count,
+.app-shell .seller-chip-plus,
+.app-shell .bulk-progress-title {
   font-family: "Inter", "Segoe UI", sans-serif;
   letter-spacing: -0.04em;
 }
@@ -6280,11 +6280,11 @@ h1,
   letter-spacing: 0.12em;
 }
 
-input,
-textarea,
-select,
-.filter-input,
-.filter-select {
+.app-shell input,
+.app-shell textarea,
+.app-shell select,
+.app-shell .filter-input,
+.app-shell .filter-select {
   border: 1px solid rgba(203, 213, 225, 0.92);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.96);
@@ -6292,15 +6292,15 @@ select,
   box-shadow: inset 0 1px 1px rgba(148, 163, 184, 0.08);
 }
 
-select,
-select option,
-select optgroup {
+.app-shell select,
+.app-shell select option,
+.app-shell select optgroup {
   font-family: "Inter", "Segoe UI", sans-serif;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+.app-shell input:focus,
+.app-shell textarea:focus,
+.app-shell select:focus {
   outline: 2px solid rgba(45, 212, 191, 0.18);
   border-color: rgba(20, 184, 166, 0.68);
 }
@@ -6377,8 +6377,8 @@ select:focus {
   gap: 14px 18px;
 }
 
-.agreement-block-head h2,
-h1 {
+.app-shell .agreement-block-head h2,
+.app-shell h1 {
   color: #0f172a;
   font-weight: 800;
 }
@@ -6742,20 +6742,20 @@ html.dark .agreement-card-limits.agreement-card-has-problem {
   border-color: rgba(129, 140, 248, 0.32);
 }
 
-html.dark input,
-html.dark textarea,
-html.dark select,
-html.dark .filter-input,
-html.dark .filter-select,
-html.dark .btn,
-html.dark .agreement-head-chart-btn,
-html.dark .agreement-stock-toggle,
-html.dark .agreement-card-filter,
-html.dark .agreement-icon-btn,
-html.dark .agreement-reset-btn,
-html.dark .agreement-cabinet-quick-filter,
-html.dark .page-btn,
-html.dark .bulk-progress-cancel {
+html.dark .app-shell input,
+html.dark .app-shell textarea,
+html.dark .app-shell select,
+html.dark .app-shell .filter-input,
+html.dark .app-shell .filter-select,
+html.dark .app-shell .btn,
+html.dark .app-shell .agreement-head-chart-btn,
+html.dark .app-shell .agreement-stock-toggle,
+html.dark .app-shell .agreement-card-filter,
+html.dark .app-shell .agreement-icon-btn,
+html.dark .app-shell .agreement-reset-btn,
+html.dark .app-shell .agreement-cabinet-quick-filter,
+html.dark .app-shell .page-btn,
+html.dark .app-shell .bulk-progress-cancel {
   border-color: rgba(51, 65, 85, 0.84);
   background: rgba(15, 23, 42, 0.92);
   color: #e2e8f0;

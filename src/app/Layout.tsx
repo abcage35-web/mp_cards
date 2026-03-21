@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useLocation } from "react-router";
 import { Navigation } from "./components/Navigation";
 
 export function Layout() {
+  const location = useLocation();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("ab-theme") === "dark";
@@ -15,6 +16,21 @@ export function Layout() {
     document.documentElement.classList.toggle("dark", darkMode);
     localStorage.setItem("ab-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+
+    body.style.margin = "0";
+    body.style.padding = "0";
+    body.style.minHeight = "100%";
+    body.style.background = "transparent";
+
+    if (!location.pathname.startsWith("/cards")) {
+      root.removeAttribute("data-embed");
+      root.style.removeProperty("--global-filter-offset");
+    }
+  }, [location.pathname]);
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] dark:bg-slate-950 transition-colors" style={{ fontFamily: "Inter, sans-serif" }}>

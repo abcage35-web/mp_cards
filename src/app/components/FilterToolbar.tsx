@@ -96,7 +96,7 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
             type="date"
             value={filters.dateFrom}
             onChange={e => onChange({ dateFrom: e.target.value, monthKeys: [] })}
-            className="h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[13px] px-2.5 cursor-pointer hover:border-slate-300 transition-colors"
+            className="h-9 w-[148px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[13px] px-2.5 cursor-pointer hover:border-slate-300 transition-colors"
             style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
           />
           {/* Date to */}
@@ -104,7 +104,7 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
             type="date"
             value={filters.dateTo}
             onChange={e => onChange({ dateTo: e.target.value, monthKeys: [] })}
-            className="h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[13px] px-2.5 cursor-pointer hover:border-slate-300 transition-colors"
+            className="h-9 w-[148px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[13px] px-2.5 cursor-pointer hover:border-slate-300 transition-colors"
             style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
           />
           {/* Months */}
