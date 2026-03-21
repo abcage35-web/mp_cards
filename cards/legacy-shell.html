@@ -44,12 +44,13 @@
         }
 
         const rootScope = `${window.location.origin}/`;
+        const cardsScope = `${window.location.origin}/cards/`;
         navigator.serviceWorker
           .getRegistrations()
           .then((registrations) =>
             Promise.all(
               registrations.map(async (registration) => {
-                if (registration.scope !== rootScope) {
+                if (registration.scope !== rootScope && registration.scope !== cardsScope) {
                   return false;
                 }
                 await registration.unregister();

@@ -432,17 +432,5 @@ function syncHoverZoomPosition() {
 }
 
 function registerServiceWorker() {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return;
-  }
-
-  if (!("serviceWorker" in navigator)) {
-    return;
-  }
-
-  if (!window.isSecureContext) {
-    return;
-  }
-
-  navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {});
+  return;
 }
