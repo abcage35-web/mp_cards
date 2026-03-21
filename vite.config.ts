@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -17,10 +17,45 @@ function copyItem(sourceRelativePath: string, outputRelativePath: string) {
   cpSync(sourcePath, outputPath, { recursive: true });
 }
 
+function syncRuntimeFallbackAsset(sourceRelativePath: string, outputRelativePaths: string[]) {
+  const sourcePath = resolve(__dirname, sourceRelativePath);
+
+  if (!existsSync(sourcePath)) {
+    return;
+  }
+
+  for (const outputRelativePath of outputRelativePaths) {
+    const outputPath = resolve(__dirname, outputRelativePath);
+    mkdirSync(dirname(outputPath), { recursive: true });
+    cpSync(sourcePath, outputPath, { recursive: true });
+  }
+}
+
+function syncRuntimeFallbackAssets() {
+  const distAssetsPath = resolve(__dirname, "dist", "assets");
+
+  if (!existsSync(distAssetsPath)) {
+    return;
+  }
+
+  const assetNames = readdirSync(distAssetsPath);
+  const runtimeJsAsset = assetNames.filter((assetName) => /^main-.*\.js$/.test(assetName)).sort().at(-1);
+  const runtimeCssAsset = assetNames.filter((assetName) => /^main-.*\.css$/.test(assetName)).sort().at(-1);
+
+  if (runtimeJsAsset) {
+    syncRuntimeFallbackAsset(`dist/assets/${runtimeJsAsset}`, ["assets/app.js", "dist/assets/app.js"]);
+  }
+
+  if (runtimeCssAsset) {
+    syncRuntimeFallbackAsset(`dist/assets/${runtimeCssAsset}`, ["assets/app.css", "dist/assets/app.css"]);
+  }
+}
+
 function copyLegacyAssetsPlugin() {
   return {
     name: "copy-legacy-assets",
     closeBundle() {
+      syncRuntimeFallbackAssets();
       copyItem("sw.js", "sw.js");
       copyItem("cards/app.css", "cards/app.css");
       copyItem("cards/app.js", "cards/app.js");
