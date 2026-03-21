@@ -1,32 +1,32 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Database, AlertTriangle, Loader2 } from "lucide-react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, Database, Loader2, RefreshCw } from "lucide-react";
 
 import {
   AB_TEST_LIMIT_OPTIONS,
   AB_XWAY_ERROR_CACHE_TTL_MS,
   abBuildDateRangeFromMonthKeys,
-  abBuildSourceMetaText,
   abFilterTests,
   abFormatInt,
-  abNormalizeStatus,
   buildXwayRequestKey,
   buildXwayRequestMeta,
-  buildXwaySummaryChecksFromPayload,
-  createDefaultFilters,
   fetchXwayPayload,
-  loadAbDashboardData,
-  type DashboardModel,
   type Filters,
   type Product,
-  type SummaryChecks,
   type TestCard,
   type XwayPayload,
 } from "../components/ab-service";
 import { FilterToolbar } from "../components/FilterToolbar";
-import { FunnelDashboard } from "../components/FunnelDashboard";
 import { ProductsTable } from "../components/ProductsTable";
 import { TestCardComponent } from "../components/TestCard";
-import { XwayDetailsDialog } from "../components/XwayDetailsDialog";
+import { XwayFunnelDashboard } from "../components/XwayFunnelDashboard";
+import {
+  buildXwayDashboardPatch,
+  buildXwayDashboardSourceMetaText,
+  createDefaultXwayDashboardFilters,
+  loadXwayDashboardData,
+  type XwayDashboardModel,
+  type XwayDashboardTest,
+} from "../components/xway-dashboard-service";
 
 type XwayStatus = "idle" | "loading" | "ready" | "error";
 
@@ -34,34 +34,6 @@ interface XwayStatusEntry {
   status: XwayStatus;
   error?: string;
   updatedAt?: number;
-}
-
-type XwayResolvedResult =
-  | {
-      status: "ready";
-      payload: XwayPayload;
-      checks: SummaryChecks;
-      savedAt: number;
-    }
-  | {
-      status: "error";
-      error: string;
-      savedAt: number;
-    };
-
-interface XwayDialogState {
-  open: boolean;
-  test: TestCard | null;
-  status: XwayStatus;
-  payload: XwayPayload | null;
-  error: string;
-}
-
-interface ProductSnapshotMeta {
-  key: string;
-  article: string;
-  shopId: number;
-  productId: number;
 }
 
 interface XwayProductSnapshot {
@@ -83,6 +55,19 @@ interface XwayProductSnapshotResponse {
   message?: string;
 }
 
+type XwayResolvedResult =
+  | {
+      status: "ready";
+      payload: XwayPayload;
+      patch: Partial<XwayDashboardTest>;
+      savedAt: number;
+    }
+  | {
+      status: "error";
+      error: string;
+      savedAt: number;
+    };
+
 function buildProductSnapshotKey(shopIdRaw: unknown, productIdRaw: unknown) {
   const shopId = Number(shopIdRaw);
   const productId = Number(productIdRaw);
@@ -92,36 +77,13 @@ function buildProductSnapshotKey(shopIdRaw: unknown, productIdRaw: unknown) {
   return `${shopId}:${productId}`;
 }
 
-function extractProductSnapshotMeta(test: TestCard, payload: XwayPayload): ProductSnapshotMeta | null {
-  const shopId = Number(payload?.product?.shopId);
-  const productId = Number(payload?.product?.productId);
-  const key = buildProductSnapshotKey(shopId, productId);
-  if (!key) {
-    return null;
-  }
-  return {
-    key,
-    article: String(payload?.product?.article || test.article || "").trim(),
-    shopId,
-    productId,
-  };
-}
-
-function resolveXwayVerdictKind(test: TestCard) {
-  const overall = String(test.xwaySummaryChecks?.overall || "").trim();
-  if (!overall || overall === "?") {
-    return "unknown";
-  }
-  return abNormalizeStatus(overall);
-}
-
-function buildProducts(tests: TestCard[], productMetaByTestId: Record<string, ProductSnapshotMeta>): Product[] {
+function buildProducts(tests: XwayDashboardTest[]): Product[] {
   const map = new Map<string, {
     article: string;
     title: string;
     type: string;
     cabinetSet: Set<string>;
-    tests: TestCard[];
+    tests: XwayDashboardTest[];
     good: number;
     bad: number;
     unknown: number;
@@ -131,13 +93,13 @@ function buildProducts(tests: TestCard[], productMetaByTestId: Record<string, Pr
     shopId: number;
     productId: number;
     wbUrl: string;
+    currentImageUrl: string;
   }>();
 
   for (const test of tests) {
     const key = (test.article || test.testId || "").trim();
     if (!key) continue;
     const currentMs = test.startedAtIso ? new Date(test.startedAtIso).getTime() : 0;
-    const productMeta = productMetaByTestId[test.testId] || null;
     if (!map.has(key)) {
       map.set(key, {
         article: key,
@@ -151,32 +113,31 @@ function buildProducts(tests: TestCard[], productMetaByTestId: Record<string, Pr
         latestAt: test.startedAt || test.endedAt || "",
         latestMs: currentMs,
         latestAtIso: test.startedAtIso || test.endedAtIso || "",
-        shopId: Number(productMeta?.shopId) || 0,
-        productId: Number(productMeta?.productId) || 0,
+        shopId: Number(test.shopId) || 0,
+        productId: Number(test.productId) || 0,
         wbUrl: String(test.wbUrl || "").trim(),
+        currentImageUrl: String(test.mainImageUrl || "").trim(),
       });
     }
     const item = map.get(key)!;
     item.tests.push(test);
     if (test.cabinet) item.cabinetSet.add(test.cabinet);
-    const xwayVerdictKind = resolveXwayVerdictKind(test);
-    if (xwayVerdictKind === "good") item.good += 1;
-    else if (xwayVerdictKind === "bad") item.bad += 1;
+    if (test.finalStatusKind === "good") item.good += 1;
+    else if (test.finalStatusKind === "bad") item.bad += 1;
     else item.unknown += 1;
+    if (!item.currentImageUrl && test.mainImageUrl) {
+      item.currentImageUrl = String(test.mainImageUrl || "").trim();
+    }
     if (currentMs > item.latestMs) {
       item.latestMs = currentMs;
       item.latestAt = test.startedAt || test.endedAt || "";
       item.latestAtIso = test.startedAtIso || test.endedAtIso || item.latestAtIso;
       item.title = test.productName || test.title || item.title;
       item.type = test.type || item.type;
+      item.shopId = Number(test.shopId) || item.shopId;
+      item.productId = Number(test.productId) || item.productId;
       item.wbUrl = String(test.wbUrl || "").trim() || item.wbUrl;
-      if (productMeta) {
-        item.shopId = Number(productMeta.shopId) || item.shopId;
-        item.productId = Number(productMeta.productId) || item.productId;
-      }
-    } else if ((!item.shopId || !item.productId) && productMeta) {
-      item.shopId = Number(productMeta.shopId) || item.shopId;
-      item.productId = Number(productMeta.productId) || item.productId;
+      item.currentImageUrl = String(test.mainImageUrl || "").trim() || item.currentImageUrl;
     }
   }
 
@@ -196,7 +157,7 @@ function buildProducts(tests: TestCard[], productMetaByTestId: Record<string, Pr
       shopId: item.shopId,
       productId: item.productId,
       wbUrl: item.wbUrl,
-      currentImageUrl: "",
+      currentImageUrl: item.currentImageUrl,
       currentStockValue: null,
       currentInStock: null,
     }))
@@ -218,55 +179,30 @@ function mergeProductSnapshots(productsRaw: Product[], snapshotsByKey: Record<st
   });
 }
 
-function areSummaryChecksEqual(a: SummaryChecks | null | undefined, b: SummaryChecks | null | undefined) {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return (
-    String(a.testCtr || "") === String(b.testCtr || "")
-    && String(a.testPrice || "") === String(b.testPrice || "")
-    && String(a.testCtrCr1 || "") === String(b.testCtrCr1 || "")
-    && String(a.overall || "") === String(b.overall || "")
-  );
-}
-
-export function DashboardPage() {
-  const [model, setModel] = useState<DashboardModel | null>(null);
+export function XwayAbTestsPage() {
+  const [model, setModel] = useState<XwayDashboardModel | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>(createDefaultFilters);
+  const [filters, setFilters] = useState<Filters>(() => ({ ...createDefaultXwayDashboardFilters() }));
   const [filterCollapsed, setFilterCollapsed] = useState(false);
   const [xwayStatusByTestId, setXwayStatusByTestId] = useState<Record<string, XwayStatusEntry>>({});
-  const [xwayDialogState, setXwayDialogState] = useState<XwayDialogState>({
-    open: false,
-    test: null,
-    status: "idle",
-    payload: null,
-    error: "",
-  });
   const [productSnapshotsByKey, setProductSnapshotsByKey] = useState<Record<string, XwayProductSnapshot>>({});
 
   const xwayCacheRef = useRef(new Map<string, XwayResolvedResult>());
   const xwayInflightRef = useRef(new Map<string, Promise<XwayResolvedResult>>());
   const productSnapshotCacheRef = useRef(new Map<string, XwayProductSnapshot>());
   const productSnapshotInflightRef = useRef(new Set<string>());
-  const xwayDialogRequestIdRef = useRef(0);
+  const didAutoHydrateRef = useRef(false);
 
-  const applyXwayChecksToModel = useCallback((testId: string, checks: SummaryChecks | null) => {
+  const applyPatchToModel = useCallback((testId: string, patch: Partial<XwayDashboardTest>) => {
     startTransition(() => {
       setModel((current) => {
         if (!current) return current;
         let changed = false;
         const nextTests = current.tests.map((test) => {
           if (test.testId !== testId) return test;
-          if (areSummaryChecksEqual(test.xwaySummaryChecks || null, checks)) {
-            return test;
-          }
           changed = true;
-          return {
-            ...test,
-            xwaySummaryChecks: checks || null,
-          };
+          return { ...test, ...patch };
         });
         return changed ? { ...current, tests: nextTests } : current;
       });
@@ -291,7 +227,7 @@ export function DashboardPage() {
     });
   }, []);
 
-  const resolveXwayForTest = useCallback(async (test: TestCard, options: { force?: boolean } = {}) => {
+  const resolveXwayForTest = useCallback(async (test: XwayDashboardTest, options: { force?: boolean } = {}) => {
     const meta = buildXwayRequestMeta(test);
     if (!meta.testId) {
       return {
@@ -321,11 +257,11 @@ export function DashboardPage() {
 
     const task = fetchXwayPayload(meta, { force: options.force })
       .then((payload) => {
-        const checks = buildXwaySummaryChecksFromPayload(test, payload);
+        const patch = buildXwayDashboardPatch(test, payload);
         const result: XwayResolvedResult = {
           status: "ready",
           payload,
-          checks,
+          patch,
           savedAt: Date.now(),
         };
         xwayCacheRef.current.set(key, result);
@@ -348,34 +284,12 @@ export function DashboardPage() {
     return task;
   }, []);
 
-  const hydrateXwayForTests = useCallback(async (testsRaw: TestCard[], options: { force?: boolean; reset?: boolean } = {}) => {
+  const hydrateXwayForTests = useCallback(async (testsRaw: XwayDashboardTest[], options: { force?: boolean } = {}) => {
     const queue = testsRaw
       .map((test) => ({ test, meta: buildXwayRequestMeta(test) }))
       .filter((item) => item.meta.testId);
 
     if (!queue.length) return;
-
-    const targetIds = new Set(queue.map((item) => item.test.testId));
-    if (options.reset) {
-      for (const item of queue) {
-        xwayCacheRef.current.delete(buildXwayRequestKey(item.meta));
-      }
-      startTransition(() => {
-        setModel((current) => {
-          if (!current) return current;
-          let changed = false;
-          const nextTests = current.tests.map((test) => {
-            if (!targetIds.has(test.testId) || !test.xwaySummaryChecks) return test;
-            changed = true;
-            return {
-              ...test,
-              xwaySummaryChecks: null,
-            };
-          });
-          return changed ? { ...current, tests: nextTests } : current;
-        });
-      });
-    }
 
     setXwayStatusByTestId((current) => {
       const next = { ...current };
@@ -399,17 +313,16 @@ export function DashboardPage() {
         if (!item) return;
         const result = await resolveXwayForTest(item.test, { force: options.force });
         if (result.status === "ready") {
-          applyXwayChecksToModel(item.test.testId, result.checks);
+          applyPatchToModel(item.test.testId, result.patch);
           updateXwayStatus(item.test.testId, "ready");
         } else {
-          applyXwayChecksToModel(item.test.testId, null);
           updateXwayStatus(item.test.testId, "error", result.error);
         }
       }
     };
 
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, () => worker()));
-  }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus]);
+  }, [applyPatchToModel, resolveXwayForTest, updateXwayStatus]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -418,14 +331,14 @@ export function DashboardPage() {
     xwayInflightRef.current.clear();
     productSnapshotCacheRef.current.clear();
     productSnapshotInflightRef.current.clear();
+    didAutoHydrateRef.current = false;
     setProductSnapshotsByKey({});
     try {
-      const data = await loadAbDashboardData();
+      const data = await loadXwayDashboardData();
       setModel(data);
-      setFetchedAt(new Date().toISOString());
       setXwayStatusByTestId({});
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить AB-данные.");
+      setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить XWAY-данные.");
     } finally {
       setLoading(false);
     }
@@ -475,7 +388,11 @@ export function DashboardPage() {
           for (const snapshot of payload.items) {
             const key = buildProductSnapshotKey(snapshot.shopId, snapshot.productId) || String(snapshot.key || "").trim();
             if (!key) continue;
-            productSnapshotCacheRef.current.set(key, { ...snapshot, key });
+            const normalizedSnapshot = {
+              ...snapshot,
+              key,
+            };
+            productSnapshotCacheRef.current.set(key, normalizedSnapshot);
           }
 
           setProductSnapshotsByKey((current) => {
@@ -483,7 +400,10 @@ export function DashboardPage() {
             for (const snapshot of payload.items) {
               const key = buildProductSnapshotKey(snapshot.shopId, snapshot.productId) || String(snapshot.key || "").trim();
               if (!key) continue;
-              next[key] = { ...snapshot, key };
+              next[key] = {
+                ...snapshot,
+                key,
+              };
             }
             return next;
           });
@@ -515,7 +435,7 @@ export function DashboardPage() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setFilters(createDefaultFilters());
+    setFilters({ ...createDefaultXwayDashboardFilters() });
   }, []);
 
   const handleStageFilter = useCallback((cabinet: string, stage: string, source: string) => {
@@ -523,145 +443,54 @@ export function DashboardPage() {
       const isSame =
         previous.cabinet === cabinet
         && previous.stage === stage
-        && (previous.stageSource || "export") === source
+        && (previous.stageSource || "xway") === source
         && previous.view === "tests";
       if (isSame) {
         return {
           ...previous,
           cabinet: "all",
           stage: "all",
-          stageSource: "export",
+          stageSource: "xway",
         };
       }
       return {
         ...previous,
         cabinet: cabinet || "all",
         stage: stage || "all",
-        stageSource: source || "export",
+        stageSource: source || "xway",
         verdict: "all",
         view: "tests",
       };
     });
   }, []);
 
-  const filteredTests = model ? abFilterTests(model, filters) : [];
-  const filteredXwaySignature = useMemo(
-    () =>
-      filteredTests
-        .map((test) => buildXwayRequestKey(buildXwayRequestMeta(test)))
-        .sort()
-        .join("||"),
-    [filteredTests],
-  );
-
-  const productMetaByTestId = useMemo(() => {
-    const next: Record<string, ProductSnapshotMeta> = {};
-    for (const test of filteredTests) {
-      const cached = xwayCacheRef.current.get(buildXwayRequestKey(buildXwayRequestMeta(test)));
-      if (cached?.status !== "ready") continue;
-      const meta = extractProductSnapshotMeta(test, cached.payload);
-      if (!meta) continue;
-      next[test.testId] = meta;
-    }
-    return next;
-  }, [filteredTests, filteredXwaySignature, xwayStatusByTestId]);
+  const filteredTests = model ? (abFilterTests(model, filters) as XwayDashboardTest[]) : [];
 
   useEffect(() => {
-    if (!model || !filteredXwaySignature) return;
-    void hydrateXwayForTests(filteredTests);
-  }, [filteredXwaySignature, hydrateXwayForTests, model]); // filteredTests is encoded in signature.
+    if (!model || didAutoHydrateRef.current) return;
+    didAutoHydrateRef.current = true;
+    void hydrateXwayForTests(abFilterTests(model, filters) as XwayDashboardTest[]);
+  }, [filters, hydrateXwayForTests, model]);
 
   const handleRefreshFilteredXway = useCallback(async () => {
-    await hydrateXwayForTests(filteredTests, { force: true, reset: true });
+    await hydrateXwayForTests(filteredTests, { force: true });
   }, [filteredTests, hydrateXwayForTests]);
 
-  const handleRefreshSingleXway = useCallback(async (test: TestCard) => {
-    const meta = buildXwayRequestMeta(test);
-    if (!meta.testId) return;
-    xwayCacheRef.current.delete(buildXwayRequestKey(meta));
-    applyXwayChecksToModel(test.testId, null);
+  const handleRefreshSingleXway = useCallback(async (testRaw: TestCard) => {
+    const test = testRaw as XwayDashboardTest;
     updateXwayStatus(test.testId, "loading");
     const result = await resolveXwayForTest(test, { force: true });
     if (result.status === "ready") {
-      applyXwayChecksToModel(test.testId, result.checks);
+      applyPatchToModel(test.testId, result.patch);
       updateXwayStatus(test.testId, "ready");
-      if (xwayDialogState.open && xwayDialogState.test?.testId === test.testId) {
-        setXwayDialogState({
-          open: true,
-          test,
-          status: "ready",
-          payload: result.payload,
-          error: "",
-        });
-      }
       return;
     }
-    applyXwayChecksToModel(test.testId, null);
     updateXwayStatus(test.testId, "error", result.error);
-    if (xwayDialogState.open && xwayDialogState.test?.testId === test.testId) {
-      setXwayDialogState({
-        open: true,
-        test,
-        status: "error",
-        payload: null,
-        error: result.error,
-      });
-    }
-  }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus, xwayDialogState.open, xwayDialogState.test?.testId]);
-
-  const handleCloseXwayDialog = useCallback(() => {
-    xwayDialogRequestIdRef.current += 1;
-    setXwayDialogState({
-      open: false,
-      test: null,
-      status: "idle",
-      payload: null,
-      error: "",
-    });
-  }, []);
-
-  const handleOpenXwayDialog = useCallback(async (test: TestCard) => {
-    const requestId = xwayDialogRequestIdRef.current + 1;
-    xwayDialogRequestIdRef.current = requestId;
-    setXwayDialogState({
-      open: true,
-      test,
-      status: "loading",
-      payload: null,
-      error: "",
-    });
-
-    const cached = xwayCacheRef.current.get(buildXwayRequestKey(buildXwayRequestMeta(test)));
-    const result = await resolveXwayForTest(test, { force: cached?.status === "error" });
-    if (xwayDialogRequestIdRef.current !== requestId) return;
-
-    if (result.status === "ready") {
-      applyXwayChecksToModel(test.testId, result.checks);
-      updateXwayStatus(test.testId, "ready");
-      setXwayDialogState({
-        open: true,
-        test,
-        status: "ready",
-        payload: result.payload,
-        error: "",
-      });
-      return;
-    }
-
-    applyXwayChecksToModel(test.testId, null);
-    updateXwayStatus(test.testId, "error", result.error);
-    setXwayDialogState({
-      open: true,
-      test,
-      status: "error",
-      payload: null,
-      error: result.error,
-    });
-  }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus]);
+  }, [applyPatchToModel, resolveXwayForTest, updateXwayStatus]);
 
   const testLimit = Math.max(1, Number(filters.limit) || AB_TEST_LIMIT_OPTIONS[0]);
   const limitedTests = filteredTests.slice(0, testLimit);
-  const groupedProducts = buildProducts(filteredTests, productMetaByTestId);
+  const groupedProducts = buildProducts(filteredTests);
   const filteredProducts = mergeProductSnapshots(groupedProducts, productSnapshotsByKey);
 
   const showTests = filters.view === "tests" || filters.view === "both";
@@ -673,17 +502,17 @@ export function DashboardPage() {
   }, [groupedProducts, hydrateProductSnapshots, showProducts]);
 
   const sourceRowsLabel = model
-    ? `Строк в подложке: ${abFormatInt(model.rowCounts.catalog)} · строк в техвыгрузке: ${abFormatInt(model.rowCounts.technical)} · строк в результатах обложек: ${abFormatInt(model.rowCounts.results)}`
+    ? `Тестов в XWAY: ${abFormatInt(model.total)} · карточек со снапшотом обложек: ${abFormatInt(model.rowCounts.technical)} · показов в выборке: ${abFormatInt(model.liveTotals.views)}`
     : "";
 
-  const fetchedLabel = fetchedAt
+  const fetchedLabel = model?.fetchedAt
     ? new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-      }).format(new Date(fetchedAt))
+      }).format(new Date(model.fetchedAt))
     : "";
 
   return (
@@ -691,14 +520,14 @@ export function DashboardPage() {
       <header className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-4 md:p-5 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] text-teal-700 dark:text-teal-400 uppercase tracking-[0.14em] mb-0.5" style={{ fontWeight: 700 }}>
-              AB-тесты обложек
+            <p className="text-[11px] text-orange-700 dark:text-orange-400 uppercase tracking-[0.14em] mb-0.5" style={{ fontWeight: 700 }}>
+              AB-тесты XWAY
             </p>
             <h1 className="text-[28px] md:text-[36px] text-slate-900 dark:text-slate-100 tracking-tight" style={{ fontWeight: 800, lineHeight: 1.05 }}>
               Дашборд аналитики
             </h1>
             <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-1.5" style={{ fontWeight: 500, lineHeight: 1.4 }}>
-              {fetchedLabel ? abBuildSourceMetaText(fetchedLabel) : "Загрузка источников данных…"}
+              {fetchedLabel ? `${buildXwayDashboardSourceMetaText(fetchedLabel)} Первый пересчёт XWAY запускается при открытии страницы, дальше обновление ручное.` : "Загрузка live-источника XWAY…"}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -709,7 +538,7 @@ export function DashboardPage() {
               className={`h-10 px-5 rounded-xl border text-[14px] inline-flex items-center gap-2 cursor-pointer transition-all ${
                 loading
                   ? "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-400 cursor-wait"
-                  : "border-teal-300 bg-gradient-to-b from-teal-600 to-teal-700 text-white shadow-sm hover:shadow-md hover:from-teal-500 hover:to-teal-600"
+                  : "border-orange-300 bg-gradient-to-b from-orange-500 to-orange-600 text-white shadow-sm hover:shadow-md hover:from-orange-400 hover:to-orange-500"
               }`}
               style={{ fontWeight: 700 }}
             >
@@ -723,9 +552,9 @@ export function DashboardPage() {
       {loading && !model ? (
         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center gap-3">
-            <Loader2 className="w-5 h-5 text-teal-600 animate-spin shrink-0" />
+            <Loader2 className="w-5 h-5 text-orange-500 animate-spin shrink-0" />
             <span className="text-[14px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 600 }}>
-              Загружаю AB-выгрузки и пересчитываю тесты…
+              Загружаю AB-выгрузку из XWAY и пересчитываю успехи тестов…
             </span>
           </div>
         </div>
@@ -736,9 +565,11 @@ export function DashboardPage() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
             <div>
-              <p className="text-[14px] text-red-800 dark:text-red-300" style={{ fontWeight: 600 }}>{error}</p>
+              <p className="text-[14px] text-red-800 dark:text-red-300" style={{ fontWeight: 600 }}>
+                {error}
+              </p>
               <p className="text-[13px] text-red-500 dark:text-red-400 mt-1" style={{ fontWeight: 500 }}>
-                Проверьте доступ к Google Sheets и нажмите «Обновить данные».
+                Проверьте локальный XWAY proxy и нажмите «Обновить данные».
               </p>
             </div>
           </div>
@@ -750,7 +581,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             <Database className="w-5 h-5 text-slate-400 shrink-0" />
             <span className="text-[14px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 500 }}>
-              Нет данных для AB-дашборда.
+              Нет данных для XWAY-дашборда.
             </span>
           </div>
         </div>
@@ -769,12 +600,12 @@ export function DashboardPage() {
           />
 
           {sourceRowsLabel ? (
-            <div className="bg-sky-50/60 dark:bg-sky-900/20 border border-sky-200/60 dark:border-sky-800/40 rounded-xl px-4 py-2 text-[12px] text-sky-800/70 dark:text-sky-300/70" style={{ fontWeight: 600 }}>
+            <div className="bg-orange-50/60 dark:bg-orange-900/20 border border-orange-200/60 dark:border-orange-800/40 rounded-xl px-4 py-2 text-[12px] text-orange-800/80 dark:text-orange-300/70" style={{ fontWeight: 600 }}>
               {sourceRowsLabel}
             </div>
           ) : null}
 
-          <FunnelDashboard
+          <XwayFunnelDashboard
             filteredTests={filteredTests}
             filters={filters}
             onStageFilter={handleStageFilter}
@@ -797,7 +628,9 @@ export function DashboardPage() {
                     test={test}
                     xwayStatus={xwayStatusByTestId[test.testId]}
                     onRefreshXway={handleRefreshSingleXway}
-                    onOpenXwayMetrics={handleOpenXwayDialog}
+                    onOpenXwayMetrics={() => {}}
+                    summaryLayout="xway-only"
+                    showXwayMetricsButton={false}
                   />
                 ))
               )}
@@ -807,15 +640,6 @@ export function DashboardPage() {
           {showProducts ? <ProductsTable products={filteredProducts} /> : null}
         </>
       ) : null}
-
-      <XwayDetailsDialog
-        open={xwayDialogState.open}
-        test={xwayDialogState.test}
-        status={xwayDialogState.status}
-        payload={xwayDialogState.payload}
-        error={xwayDialogState.error}
-        onClose={handleCloseXwayDialog}
-      />
     </div>
   );
 }

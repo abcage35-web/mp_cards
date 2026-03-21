@@ -46,6 +46,9 @@ export interface Variant {
   ctrBoostValue: number | null;
   ctrBoostText: string;
   ctrBoostKind: string;
+  statusRaw?: string;
+  isPending?: boolean;
+  isActive?: boolean;
 }
 
 export interface ComparisonRow {
@@ -107,6 +110,13 @@ export interface Product {
   bad: number;
   unknown: number;
   latestAt: string;
+  latestAtIso?: string;
+  shopId?: number;
+  productId?: number;
+  wbUrl?: string;
+  currentImageUrl?: string;
+  currentStockValue?: number | null;
+  currentInStock?: boolean | null;
 }
 
 export interface FunnelStage {
@@ -119,6 +129,7 @@ export interface FunnelCard {
   cabinet: string;
   total: number;
   source: string;
+  priceMissingCount: number;
   stages: FunnelStage[];
 }
 
@@ -612,7 +623,7 @@ function abBuildProducts(tests: TestCard[]): Product[] {
     const key = (test.article || test.testId || "").trim();
     if (!key) continue;
     if (!map.has(key)) {
-      map.set(key, { article: key, title: test.productName || test.title, type: test.type, cabinetSet: new Set(), tests: [], good: 0, bad: 0, unknown: 0, latestAt: test.startedAt || test.endedAt || "" });
+      map.set(key, { article: key, title: test.productName || test.title, type: test.type, cabinetSet: new Set(), tests: [], good: 0, bad: 0, unknown: 0, latestAt: test.startedAt || test.endedAt || "", latestAtIso: test.startedAtIso || test.endedAtIso || "" });
     }
     const item = map.get(key);
     item.tests.push(test);
@@ -620,14 +631,18 @@ function abBuildProducts(tests: TestCard[]): Product[] {
     if (test.finalStatusKind === "good") item.good++;
     else if (test.finalStatusKind === "bad") item.bad++;
     else item.unknown++;
-    const currentMs = item.latestAt ? new Date(item.latestAt).getTime() : 0;
-    const nextMs = test.startedAt ? new Date(test.startedAt).getTime() : 0;
-    if (nextMs > currentMs) item.latestAt = test.startedAt;
+    const currentMs = item.latestAtIso ? new Date(item.latestAtIso).getTime() : 0;
+    const nextIso = test.startedAtIso || test.endedAtIso || "";
+    const nextMs = nextIso ? new Date(nextIso).getTime() : 0;
+    if (nextMs > currentMs) {
+      item.latestAt = test.startedAt || test.endedAt || "";
+      item.latestAtIso = nextIso;
+    }
   }
   return Array.from(map.values()).map(item => ({
     article: item.article, title: item.title, type: item.type,
     cabinets: Array.from(item.cabinetSet) as string[], tests: item.tests, testsCount: item.tests.length,
-    good: item.good, bad: item.bad, unknown: item.unknown, latestAt: item.latestAt,
+    good: item.good, bad: item.bad, unknown: item.unknown, latestAt: item.latestAt, latestAtIso: item.latestAtIso,
   })).sort((a, b) => b.testsCount !== a.testsCount ? b.testsCount - a.testsCount : 0);
 }
 
@@ -777,11 +792,15 @@ export function abBuildCabinetFunnelCards(tests: TestCard[], cabinetOrder: strin
     const cabinetTests = list.filter(i => i?.cabinet === cabinet);
     const total = cabinetTests.length;
     if (!total) return null;
+    const priceMissingCount = cabinetTests.filter(i => {
+      const raw = abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price");
+      return !raw || raw === "?";
+    }).length;
     const ctrPassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctr"))).length;
     const pricePassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price"))).length;
     const ctrCr1Passed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctrcr1"))).length;
     const overallPassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "overall"))).length;
-    return { cabinet, total, source: sourceKey, stages: [
+    return { cabinet, total, source: sourceKey, priceMissingCount, stages: [
       { key: "ctr", label: "CTR", count: ctrPassed },
       { key: "price", label: "Цена", count: pricePassed },
       { key: "ctrcr1", label: "CTR x CR1", count: ctrCr1Passed },
@@ -845,6 +864,7 @@ export interface XwayMetricRow {
   label: string;
   kind: string;
   before: number | null;
+  during?: number | null;
   after: number | null;
   delta: number | null;
 }
@@ -861,6 +881,7 @@ export interface XwayTotals {
   clicks?: number;
   atbs?: number;
   orders?: number;
+  sumPrice?: number;
 }
 
 export interface XwayPayload {
@@ -871,7 +892,12 @@ export interface XwayPayload {
   campaignExternalId: string;
   range?: {
     before?: string;
+    during?: {
+      from?: string;
+      to?: string;
+    };
     after?: string;
+    afterAvailable?: boolean;
   };
   product?: {
     shopId?: number;
@@ -884,14 +910,38 @@ export interface XwayPayload {
     name?: string;
     startedAt?: string;
     endedAt?: string;
+    avgCtr?: number | null;
+    progress?: number;
+    launchStatus?: string;
+    status?: string;
   };
+  variantStats?: Array<{
+    url?: string;
+    views?: number | null;
+    clicks?: number | null;
+    spend?: number | null;
+    ctr?: number | null;
+    ctrToAvg?: number | null;
+    ctrToMax?: number | null;
+    avgCtr?: number | null;
+    status?: string;
+    dateStart?: string;
+    main?: boolean;
+  }>;
   matchedCampaigns?: {
     before?: XwayMatchedCampaign[];
+    during?: XwayMatchedCampaign[];
     after?: XwayMatchedCampaign[];
   };
   totals?: {
     before?: XwayTotals;
+    during?: XwayTotals;
     after?: XwayTotals;
+  };
+  priceTimeline?: {
+    before?: number | null;
+    during?: number | null;
+    after?: number | null;
   };
   metrics?: XwayMetricRow[];
 }

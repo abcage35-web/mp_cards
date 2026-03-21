@@ -13,9 +13,18 @@ interface Props {
   };
   onRefreshXway: (test: TestCardType) => void;
   onOpenXwayMetrics: (test: TestCardType) => void;
+  summaryLayout?: "dual" | "xway-only";
+  showXwayMetricsButton?: boolean;
 }
 
-export function TestCardComponent({ test, xwayStatus, onRefreshXway, onOpenXwayMetrics }: Props) {
+export function TestCardComponent({
+  test,
+  xwayStatus,
+  onRefreshXway,
+  onOpenXwayMetrics,
+  summaryLayout = "dual",
+  showXwayMetricsButton = true,
+}: Props) {
   const [showReport, setShowReport] = useState(false);
   const matrixWidthPx = AB_MATRIX_METRIC_COL_WIDTH + test.variants.length * AB_MATRIX_VARIANT_COL_WIDTH;
   const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} — ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
@@ -34,6 +43,7 @@ export function TestCardComponent({ test, xwayStatus, onRefreshXway, onOpenXwayM
     { label: "CTR x CR1", raw: test.summaryChecks.testCtrCr1 },
     { label: "Итог", raw: test.summaryChecks.overall },
   ];
+  const lifecycleStatus = resolveTestLifecycleStatus(test);
 
   return (
     <article className="border border-slate-200/80 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-shadow">
@@ -61,6 +71,7 @@ export function TestCardComponent({ test, xwayStatus, onRefreshXway, onOpenXwayM
 
           {/* Action buttons - top right */}
           <div className="shrink-0 flex items-center gap-1 flex-wrap justify-end">
+            <TestLifecyclePill status={lifecycleStatus} />
             <div className="relative">
               <button
                 onClick={() => setShowReport(!showReport)}
@@ -90,11 +101,13 @@ export function TestCardComponent({ test, xwayStatus, onRefreshXway, onOpenXwayM
               disabled={xwayStatus?.status === "loading"}
               onClick={() => onRefreshXway(test)}
             />
-            <SmallIconBtn
-              icon={<BarChart3 className="w-3.5 h-3.5" />}
-              title="XWAY конверсии"
-              onClick={() => onOpenXwayMetrics(test)}
-            />
+            {showXwayMetricsButton ? (
+              <SmallIconBtn
+                icon={<BarChart3 className="w-3.5 h-3.5" />}
+                title="XWAY конверсии"
+                onClick={() => onOpenXwayMetrics(test)}
+              />
+            ) : null}
             <LinkBtn url={test.xwayUrl} label="XWay" />
             <LinkBtn url={test.wbUrl} label="WB" />
           </div>
@@ -103,100 +116,115 @@ export function TestCardComponent({ test, xwayStatus, onRefreshXway, onOpenXwayM
 
       {/* Summary checks row - horizontal, visually appealing */}
       <div className="px-4 pb-2">
-        <div className="flex gap-2">
-          <SummaryCard label="ВЫГРУЗКА" checks={checksFlow} />
-          <SummaryCard label="XWAY" checks={xwayChecksFlow} status={xwayStatus?.status || "idle"} error={xwayStatus?.error || ""} />
-        </div>
+        {summaryLayout === "xway-only" ? (
+          <div className="flex gap-2">
+            <SummaryCard label="XWAY" checks={xwayChecksFlow || checksFlow} status={xwayStatus?.status || "idle"} error={xwayStatus?.error || ""} />
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <SummaryCard label="ВЫГРУЗКА" checks={checksFlow} />
+            <SummaryCard label="XWAY" checks={xwayChecksFlow} status={xwayStatus?.status || "idle"} error={xwayStatus?.error || ""} />
+          </div>
+        )}
       </div>
 
       {/* Content: matrix + comparison side by side, same height */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_minmax(420px,0.88fr)] gap-3 px-4 pb-3">
         {/* Left: Variant matrix */}
-        <div className="overflow-auto rounded-lg border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900">
-          <table
-            className="border-collapse"
-            style={{ width: `${matrixWidthPx}px`, minWidth: `${matrixWidthPx}px`, tableLayout: "fixed" }}
-          >
-            <colgroup>
-              <col style={{ width: AB_MATRIX_METRIC_COL_WIDTH }} />
-              {test.variants.map((_, i) => <col key={i} style={{ width: AB_MATRIX_VARIANT_COL_WIDTH }} />)}
-            </colgroup>
-            <thead>
-              <tr>
-                <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-left text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
-                  Метрика
-                </th>
-                {test.variants.map(v => (
-                  <th
-                    key={v.index}
-                    className={`border-b border-r border-slate-100 dark:border-slate-700 px-2 py-1.5 text-center text-[10px] uppercase tracking-wider ${
-                      v.isBest ? "bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400" : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
-                    }`}
-                    style={{ fontWeight: 700 }}
-                  >
-                    Вариант {v.index}
+        <div className="overflow-hidden rounded-lg border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 self-stretch">
+          <div className="h-full overflow-x-auto overflow-y-hidden">
+            <table
+              className="border-collapse h-full"
+              style={{ width: `${matrixWidthPx}px`, minWidth: `${matrixWidthPx}px`, tableLayout: "fixed" }}
+            >
+              <colgroup>
+                <col style={{ width: AB_MATRIX_METRIC_COL_WIDTH }} />
+                {test.variants.map((_, i) => <col key={i} style={{ width: AB_MATRIX_VARIANT_COL_WIDTH }} />)}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-left text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
+                    Метрика
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1.5 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
-                  Обложка
-                </th>
-                {test.variants.map(v => (
-                  <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1.5 text-center h-[80px]">
-                    <div className="flex items-center justify-center h-full">
-                      {v.imageUrl ? (
-                        <CoverImage imageUrl={v.imageUrl} index={v.index} isBest={v.isBest} />
-                      ) : (
-                        <div className="w-[56px] aspect-[3/4] rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-[8px] text-slate-400" style={{ fontWeight: 500 }}>
-                          нет обложки
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                ))}
-              </tr>
-              <CompactMatrixRow label="Показы" variants={test.variants} render={v => v.views} />
-              <CompactMatrixRow label="Клики" variants={test.variants} render={v => v.clicks} />
-              <tr>
-                <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
-                  CTR
-                </th>
-                {test.variants.map(v => (
-                  <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1 text-center text-[13px] text-slate-800 dark:text-slate-200" style={{ fontWeight: 700 }}>
-                    <div className="inline-flex items-center gap-1 flex-wrap justify-center">
-                      <span>{v.ctr}</span>
-                      {v.ctrBoostText && v.ctrBoostKind && (
-                        <span className={`inline-flex items-center h-[18px] px-1 rounded-full text-[9px] border ${
-                          v.ctrBoostKind === "good" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" :
-                          v.ctrBoostKind === "bad" ? "border-red-200 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/40 dark:text-red-400" :
-                          "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                        }`} style={{ fontWeight: 700 }}>
-                          {v.ctrBoostText}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
-                  Время установки
-                </th>
-                {test.variants.map(v => (
-                  <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1 text-center text-[12px] text-slate-700 dark:text-slate-300" style={{ fontWeight: 600 }}>
-                    <div>
-                      <div>{v.installedAtDate}</div>
-                      <div className="text-[10px] text-slate-400">{v.installedAtTime || "—"}</div>
-                    </div>
-                  </td>
-                ))}
-              </tr>
-              <CompactMatrixRow label="Время активности" variants={test.variants} render={v => v.hours} isLast />
-            </tbody>
-          </table>
+                  {test.variants.map(v => (
+                    <th
+                      key={v.index}
+                      className={`border-b border-r border-slate-100 dark:border-slate-700 px-2 py-1.5 text-center text-[10px] uppercase tracking-wider ${
+                        v.isBest ? "bg-emerald-50/60 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400" : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                      }`}
+                      style={{ fontWeight: 700 }}
+                    >
+                      Вариант {v.index}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1.5 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
+                    Обложка
+                  </th>
+                  {test.variants.map(v => (
+                    <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1.5 text-center h-[80px]">
+                      <div className="flex items-center justify-center h-full">
+                        {v.imageUrl ? (
+                          <CoverImage imageUrl={v.imageUrl} index={v.index} isBest={v.isBest} isActive={Boolean(v.isActive)} isPending={Boolean(v.isPending)} statusRaw={String(v.statusRaw || "")} />
+                        ) : (
+                          <div className="relative flex items-center justify-center">
+                            {v.isPending ? (
+                              <span className="absolute -top-1 -right-1 z-10 inline-flex items-center gap-1 h-[14px] px-1 rounded-full bg-amber-500/95 text-white text-[7px]" style={{ fontWeight: 700 }}>
+                                Очередь
+                              </span>
+                            ) : null}
+                            <div className="w-[56px] aspect-[3/4] rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-[8px] text-slate-400" style={{ fontWeight: 500 }}>
+                              нет обложки
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+                <CompactMatrixRow label="Показы" variants={test.variants} render={v => v.views} />
+                <CompactMatrixRow label="Клики" variants={test.variants} render={v => v.clicks} />
+                <tr>
+                  <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
+                    CTR
+                  </th>
+                  {test.variants.map(v => (
+                    <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1 text-center text-[13px] text-slate-800 dark:text-slate-200" style={{ fontWeight: 700 }}>
+                      <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                        <span>{v.ctr}</span>
+                        {v.ctrBoostText && v.ctrBoostKind && (
+                          <span className={`inline-flex items-center h-[18px] px-1 rounded-full text-[9px] border ${
+                            v.ctrBoostKind === "good" ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" :
+                            v.ctrBoostKind === "bad" ? "border-red-200 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/40 dark:text-red-400" :
+                            "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                          }`} style={{ fontWeight: 700 }}>
+                            {v.ctrBoostText}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 px-2 py-1 text-left text-[12px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 700 }}>
+                    Время установки
+                  </th>
+                  {test.variants.map(v => (
+                    <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1 text-center text-[12px] text-slate-700 dark:text-slate-300" style={{ fontWeight: 600 }}>
+                      <div>
+                        <div>{v.installedAtDate}</div>
+                        <div className="text-[10px] text-slate-400">{v.installedAtTime || "—"}</div>
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+                <CompactMatrixRow label="Время активности" variants={test.variants} render={v => v.hours} isLast />
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Right: comparison metrics - no external title, info inside table, matching height */}
@@ -316,7 +344,21 @@ function SummaryCard({
 }
 
 // ── Cover image with hover preview ──
-function CoverImage({ imageUrl, index, isBest }: { imageUrl: string; index: number; isBest: boolean }) {
+function CoverImage({
+  imageUrl,
+  index,
+  isBest,
+  isActive,
+  isPending,
+  statusRaw,
+}: {
+  imageUrl: string;
+  index: number;
+  isBest: boolean;
+  isActive: boolean;
+  isPending: boolean;
+  statusRaw: string;
+}) {
   const [preview, setPreview] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   const linkRef = useRef<HTMLAnchorElement>(null);
 
@@ -343,14 +385,36 @@ function CoverImage({ imageUrl, index, isBest }: { imageUrl: string; index: numb
           Лучшая
         </span>
       )}
+      {isActive ? (
+        <span className="absolute -bottom-1 -right-1 z-10 inline-flex items-center gap-1 h-[14px] px-1 rounded-full bg-teal-500 text-white text-[7px]" style={{ fontWeight: 700 }}>
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+          </span>
+          В эфире
+        </span>
+      ) : null}
+      {!isActive && isPending ? (
+        <span className="absolute -bottom-1 -right-1 z-10 inline-flex items-center h-[14px] px-1 rounded-full bg-amber-500/95 text-white text-[7px]" style={{ fontWeight: 700 }}>
+          Очередь
+        </span>
+      ) : null}
+      {isActive ? <span className="absolute inset-0 rounded-md border-2 border-teal-400/70 animate-pulse pointer-events-none" /> : null}
       <a
         ref={linkRef}
         href={imageUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className={`block w-[56px] rounded-md overflow-hidden border-2 transition-all ${isBest ? "border-emerald-400 shadow-sm shadow-emerald-100" : "border-slate-200 dark:border-slate-600 hover:border-slate-300"}`}
+        className={`block w-[56px] rounded-md overflow-hidden border-2 transition-all ${
+          isActive
+            ? "border-teal-400 shadow-sm shadow-teal-100"
+            : isBest
+              ? "border-emerald-400 shadow-sm shadow-emerald-100"
+              : "border-slate-200 dark:border-slate-600 hover:border-slate-300"
+        }`}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        title={statusRaw || `Обложка ${index}`}
       >
         <img src={imageUrl} alt={`Обложка ${index}`} loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover block" />
       </a>
@@ -372,6 +436,39 @@ function CoverImage({ imageUrl, index, isBest }: { imageUrl: string; index: numb
 }
 
 // ── Sub-components ──
+function resolveTestLifecycleStatus(test: TestCardType) {
+  const launchStatus = String((test as { launchStatus?: string })?.launchStatus || "").trim().toUpperCase();
+  if (launchStatus) {
+    if (["LAUNCHED", "PENDING", "ACTIVE", "RUNNING", "CREATED", "IN_PROGRESS"].includes(launchStatus)) {
+      return "running" as const;
+    }
+    if (["DONE", "COMPLETED", "FINISHED", "REJECTED", "STOPPED"].includes(launchStatus)) {
+      return "completed" as const;
+    }
+  }
+
+  const endedAtIso = String(test.endedAtIso || "").trim();
+  return endedAtIso ? ("completed" as const) : ("running" as const);
+}
+
+function TestLifecyclePill({ status }: { status: "running" | "completed" }) {
+  const isRunning = status === "running";
+
+  return (
+    <span
+      className={`h-7 px-2.5 rounded-lg border text-[11px] inline-flex items-center gap-1.5 ${
+        isRunning
+          ? "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+          : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+      }`}
+      style={{ fontWeight: 700 }}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? "bg-teal-500 animate-pulse" : "bg-slate-400 dark:bg-slate-500"}`} />
+      {isRunning ? "Идет" : "Завершен"}
+    </span>
+  );
+}
+
 function Chip({ label, value }: { label: string; value: string }) {
   return (
     <span className="inline-flex items-center gap-0.5 h-[22px] rounded-full border border-slate-200/80 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 px-2 text-[10px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>

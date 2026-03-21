@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -71,8 +72,105 @@ function copyLegacyAssetsPlugin() {
   };
 }
 
+function buildHeadersFromNodeRequest(nodeHeaders: Record<string, string | string[] | undefined>) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(nodeHeaders)) {
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        headers.append(name, item);
+      }
+      continue;
+    }
+    headers.set(name, value);
+  }
+  return headers;
+}
+
+async function sendFetchResponse(nodeResponse: import("node:http").ServerResponse, response: Response) {
+  nodeResponse.statusCode = response.status;
+  nodeResponse.statusMessage = response.statusText;
+
+  response.headers.forEach((value, name) => {
+    nodeResponse.setHeader(name, value);
+  });
+
+  const body = response.body ? Buffer.from(await response.arrayBuffer()) : Buffer.alloc(0);
+  nodeResponse.end(body);
+}
+
+function createLocalFunctionsPlugin() {
+  const routeEntries = new Map<string, string>([
+    ["/api/xway-ab-test", "functions/api/xway-ab-test.js"],
+    ["/api/xway-ab-tests", "functions/api/xway-ab-tests.js"],
+    ["/api/xway-product-snapshots", "functions/api/xway-product-snapshots.js"],
+  ]);
+
+  const attachMiddleware = (middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void }) => {
+    middlewares.use(async (req, res, next) => {
+      const requestUrl = String(req.url || "/");
+      const baseUrl = `http://${req.headers.host || "localhost:5173"}`;
+      const url = new URL(requestUrl, baseUrl);
+      const entryRelativePath = routeEntries.get(url.pathname);
+
+      if (!entryRelativePath) {
+        next();
+        return;
+      }
+
+      const method = String(req.method || "GET").toUpperCase();
+      const handlerName = method === "OPTIONS" ? "onRequestOptions" : method === "GET" ? "onRequestGet" : "";
+      if (!handlerName) {
+        next();
+        return;
+      }
+
+      try {
+        const moduleUrl = pathToFileURL(resolve(__dirname, entryRelativePath)).href;
+        const module = await import(moduleUrl);
+        const handler = module[handlerName];
+
+        if (typeof handler !== "function") {
+          next();
+          return;
+        }
+
+        const request = new Request(url.toString(), {
+          method,
+          headers: buildHeadersFromNodeRequest(req.headers),
+        });
+        const response = await handler({
+          request,
+          env: process.env,
+        });
+        await sendFetchResponse(res, response);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Local function handler failed";
+        const response = new Response(JSON.stringify({ ok: false, message }), {
+          status: 500,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store",
+          },
+        });
+        await sendFetchResponse(res, response);
+      }
+    });
+  };
+
+  return {
+    name: "local-functions-bridge",
+    configureServer(server: { middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void } }) {
+      attachMiddleware(server.middlewares);
+    },
+    configurePreviewServer(server: { middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void | Promise<void> } }) {
+      attachMiddleware(server.middlewares);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), copyLegacyAssetsPlugin()],
+  plugins: [react(), tailwindcss(), copyLegacyAssetsPlugin(), createLocalFunctionsPlugin()],
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

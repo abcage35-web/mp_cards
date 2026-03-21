@@ -232,6 +232,7 @@ export function xwayAggregateCampaignStats(campaignsRaw) {
     clicks: 0,
     atbs: 0,
     orders: 0,
+    sumPrice: 0,
     matchedCount: 0,
   };
 
@@ -241,6 +242,7 @@ export function xwayAggregateCampaignStats(campaignsRaw) {
     totals.clicks += Number(stat.clicks) || 0;
     totals.atbs += Number(stat.atbs) || 0;
     totals.orders += Number(stat.orders) || 0;
+    totals.sumPrice += Number(stat.sumPrice) || 0;
     totals.matchedCount += 1;
   }
 
@@ -269,6 +271,9 @@ export function xwayBuildConversionMetrics(totalsRaw) {
 }
 
 export function xwayBuildDiff(afterRaw, beforeRaw) {
+  if (afterRaw === null || afterRaw === undefined || beforeRaw === null || beforeRaw === undefined) {
+    return null;
+  }
   const afterValue = Number(afterRaw);
   const beforeValue = Number(beforeRaw);
   if (!Number.isFinite(afterValue) || !Number.isFinite(beforeValue) || beforeValue === 0) {

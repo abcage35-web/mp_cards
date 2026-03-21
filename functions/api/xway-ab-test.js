@@ -42,6 +42,13 @@ function buildProductPageReferer(shopIdRaw, productIdRaw) {
 }
 
 function normalizeCampaignRecord(campaign) {
+  const rawSumPrice = campaign?.stat?.sum_price;
+  const normalizedSumPrice = Number(
+    typeof rawSumPrice === "string"
+      ? rawSumPrice.replace(/[^\d,.-]/g, "").replace(",", ".")
+      : rawSumPrice,
+  );
+
   return {
     id: Number(campaign?.id) || 0,
     externalId: String(campaign?.external_id || "").trim(),
@@ -53,6 +60,7 @@ function normalizeCampaignRecord(campaign) {
       clicks: Number(campaign?.stat?.clicks) || 0,
       atbs: Number(campaign?.stat?.atbs) || 0,
       orders: Number(campaign?.stat?.orders) || 0,
+      sumPrice: Number.isFinite(normalizedSumPrice) ? normalizedSumPrice : 0,
     },
   };
 }
@@ -65,7 +73,7 @@ function matchCampaignRecord(campaign, campaignTypeRaw, campaignExternalIdRaw) {
   return xwayMatchCampaignType(campaign, campaignTypeRaw);
 }
 
-function buildMetricsRows(beforeMetrics, afterMetrics) {
+function buildMetricsRows(beforeMetrics, duringMetrics, afterMetrics) {
   const rows = [
     { key: "ctr", label: "CTR", percent: true },
     { key: "cr1", label: "CR1", percent: true },
@@ -78,10 +86,106 @@ function buildMetricsRows(beforeMetrics, afterMetrics) {
     key: row.key,
     label: row.label,
     kind: row.percent ? "percent" : "number",
-    before: beforeMetrics[row.key],
-    after: afterMetrics[row.key],
-    delta: xwayBuildDiff(afterMetrics[row.key], beforeMetrics[row.key]),
+    before: beforeMetrics?.[row.key] ?? null,
+    during: duringMetrics?.[row.key] ?? null,
+    after: afterMetrics?.[row.key] ?? null,
+    delta: xwayBuildDiff(afterMetrics?.[row.key] ?? null, beforeMetrics?.[row.key] ?? null),
   }));
+}
+
+function buildAveragePrice(totalsRaw) {
+  const totals = totalsRaw || {};
+  const sumPrice = Number(totals.sumPrice);
+  const orders = Number(totals.orders);
+  if (!Number.isFinite(sumPrice) || !Number.isFinite(orders) || orders <= 0) {
+    return null;
+  }
+  return sumPrice / orders;
+}
+
+function resolveVariantImageUrl(item) {
+  const candidates = [
+    item?.url,
+    item?.image_url,
+    item?.imageUrl,
+    item?.img,
+    item?.image,
+    item?.src,
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function normalizeVariantStats(statsRaw, imagesRaw) {
+  const stats = Array.isArray(statsRaw) ? statsRaw : [];
+  const images = Array.isArray(imagesRaw) ? imagesRaw : [];
+  const variants = [];
+  const indexByKey = new Map();
+  let blankCounter = 0;
+
+  const ensureVariant = (source, fallback = {}) => {
+    const url = resolveVariantImageUrl(source) || resolveVariantImageUrl(fallback);
+    const key = url || `blank-${blankCounter += 1}`;
+    let index = indexByKey.get(key);
+
+    if (index === undefined) {
+      index = variants.length;
+      indexByKey.set(key, index);
+      variants.push({
+        url,
+        views: null,
+        clicks: null,
+        spend: null,
+        ctr: null,
+        ctrToAvg: null,
+        ctrToMax: null,
+        avgCtr: null,
+        status: "",
+        dateStart: "",
+        main: false,
+      });
+    }
+
+    const target = variants[index];
+    const views = Number(source?.views);
+    const clicks = Number(source?.clicks);
+    const spend = Number(source?.sum);
+    const ctr = Number(source?.CTR);
+    const ctrToAvg = Number(source?.CTR_to_avg);
+    const ctrToMax = Number(source?.CTR_to_max);
+    const avgCtr = Number(source?.avg_ctr);
+    const status = String(source?.status || fallback?.status || target.status || "").trim();
+    const dateStart = String(source?.date_start || fallback?.date_start || target.dateStart || "").trim();
+
+    target.url = url || target.url;
+    target.views = Number.isFinite(views) ? views : target.views;
+    target.clicks = Number.isFinite(clicks) ? clicks : target.clicks;
+    target.spend = Number.isFinite(spend) ? spend : target.spend;
+    target.ctr = Number.isFinite(ctr) ? ctr / 100 : target.ctr;
+    target.ctrToAvg = Number.isFinite(ctrToAvg) ? ctrToAvg / 100 : target.ctrToAvg;
+    target.ctrToMax = Number.isFinite(ctrToMax) ? ctrToMax / 100 : target.ctrToMax;
+    target.avgCtr = Number.isFinite(avgCtr) ? avgCtr / 100 : target.avgCtr;
+    target.status = status;
+    target.dateStart = dateStart;
+    target.main = Boolean(source?.main || fallback?.main || target.main);
+  };
+
+  for (const item of images) {
+    ensureVariant(item);
+  }
+
+  for (const item of stats) {
+    ensureVariant(item);
+  }
+
+  return variants;
 }
 
 export async function onRequestGet(context) {
@@ -132,14 +236,18 @@ export async function onRequestGet(context) {
     const endedAtIso = explicitEndedAt || String(testInfo?.finished_at || "").trim();
     const startedDate = xwayIsoDateFromDateLike(startedAtIso);
     const endedDate = xwayIsoDateFromDateLike(endedAtIso);
+    const todayDate = xwayIsoDateFromDateLike(new Date().toISOString());
+    const duringEndDate = endedDate || xwayIsoDateFromDateLike(new Date().toISOString());
     const beforeDate = xwayShiftIsoDate(startedDate, -1);
-    const afterDate = xwayShiftIsoDate(endedDate, 1);
-    if (!beforeDate || !afterDate) {
+    const afterDateCandidate = endedDate ? xwayShiftIsoDate(endedDate, 1) : "";
+    const hasAfterWindow = Boolean(afterDateCandidate && todayDate && afterDateCandidate <= todayDate);
+    const afterDate = hasAfterWindow ? afterDateCandidate : "";
+    if (!beforeDate || !duringEndDate) {
       return json(
         {
           ok: false,
           error: "invalid_test_dates",
-          message: "Не удалось определить даты теста для расчета метрик до/после.",
+          message: "Не удалось определить даты теста для расчета метрик.",
         },
         { status: 422 },
       );
@@ -148,7 +256,7 @@ export async function onRequestGet(context) {
     const campaignType = explicitCampaignType || parseCampaignTypeFallback(testInfo?.name);
     const campaignExternalId = explicitCampaignExternalId || parseCampaignExternalIdFallback(testInfo?.name);
 
-    const [beforeStata, afterStata] = await Promise.all([
+    const [beforeStata, duringStata, afterStata] = await Promise.all([
       xwayFetchJson(
         env,
         `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${beforeDate}&end=${beforeDate}&tags&active_camps=1`,
@@ -156,25 +264,38 @@ export async function onRequestGet(context) {
       ),
       xwayFetchJson(
         env,
-        `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${afterDate}&end=${afterDate}&tags&active_camps=1`,
+        `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${startedDate}&end=${duringEndDate}&tags&active_camps=1`,
         { referer: productPageReferer },
       ),
+      afterDate
+        ? xwayFetchJson(
+            env,
+            `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${afterDate}&end=${afterDate}&tags&active_camps=1`,
+            { referer: productPageReferer },
+          )
+        : Promise.resolve(null),
     ]);
 
     const beforeCampaignsAll = (Array.isArray(beforeStata?.campaign_wb) ? beforeStata.campaign_wb : []).map(normalizeCampaignRecord);
+    const duringCampaignsAll = (Array.isArray(duringStata?.campaign_wb) ? duringStata.campaign_wb : []).map(normalizeCampaignRecord);
     const afterCampaignsAll = (Array.isArray(afterStata?.campaign_wb) ? afterStata.campaign_wb : []).map(normalizeCampaignRecord);
 
     const beforeCampaigns = beforeCampaignsAll.filter((campaign) =>
       matchCampaignRecord(campaign, campaignType, campaignExternalId),
     );
-    const afterCampaigns = afterCampaignsAll.filter((campaign) =>
+    const duringCampaigns = duringCampaignsAll.filter((campaign) =>
       matchCampaignRecord(campaign, campaignType, campaignExternalId),
     );
+    const afterCampaigns = hasAfterWindow
+      ? afterCampaignsAll.filter((campaign) => matchCampaignRecord(campaign, campaignType, campaignExternalId))
+      : [];
 
     const beforeTotals = xwayAggregateCampaignStats(beforeCampaigns);
-    const afterTotals = xwayAggregateCampaignStats(afterCampaigns);
+    const duringTotals = xwayAggregateCampaignStats(duringCampaigns);
+    const afterTotals = hasAfterWindow ? xwayAggregateCampaignStats(afterCampaigns) : null;
     const beforeMetrics = xwayBuildConversionMetrics(beforeTotals);
-    const afterMetrics = xwayBuildConversionMetrics(afterTotals);
+    const duringMetrics = xwayBuildConversionMetrics(duringTotals);
+    const afterMetrics = hasAfterWindow && afterTotals ? xwayBuildConversionMetrics(afterTotals) : null;
 
     return json({
       ok: true,
@@ -184,7 +305,12 @@ export async function onRequestGet(context) {
       campaignExternalId,
       range: {
         before: beforeDate,
+        during: {
+          from: startedDate,
+          to: duringEndDate,
+        },
         after: afterDate,
+        afterAvailable: hasAfterWindow,
       },
       product: {
         shopId,
@@ -197,9 +323,19 @@ export async function onRequestGet(context) {
         name: String(testInfo?.name || "").trim(),
         startedAt: startedAtIso,
         endedAt: endedAtIso,
+        avgCtr: Number.isFinite(Number(testInfo?.avg_ctr)) ? Number(testInfo.avg_ctr) / 100 : null,
+        progress: Number(testInfo?.progress) || 0,
+        launchStatus: String(testInfo?.launch_status || "").trim(),
+        status: String(testInfo?.status || "").trim(),
       },
+      variantStats: normalizeVariantStats(testInfo?.images_stats, testInfo?.images),
       matchedCampaigns: {
         before: beforeCampaigns.map((campaign) => ({
+          id: campaign.id,
+          externalId: campaign.externalId,
+          name: campaign.name || campaign.query,
+        })),
+        during: duringCampaigns.map((campaign) => ({
           id: campaign.id,
           externalId: campaign.externalId,
           name: campaign.name || campaign.query,
@@ -212,9 +348,15 @@ export async function onRequestGet(context) {
       },
       totals: {
         before: beforeTotals,
-        after: afterTotals,
+        during: duringTotals,
+        after: afterTotals || undefined,
       },
-      metrics: buildMetricsRows(beforeMetrics, afterMetrics),
+      priceTimeline: {
+        before: buildAveragePrice(beforeTotals),
+        during: buildAveragePrice(duringTotals),
+        after: hasAfterWindow && afterTotals ? buildAveragePrice(afterTotals) : null,
+      },
+      metrics: buildMetricsRows(beforeMetrics, duringMetrics, afterMetrics),
     });
   } catch (error) {
     return json(

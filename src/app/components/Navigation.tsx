@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router";
-import { BarChart3, FileText, Sun, Moon, ExternalLink } from "lucide-react";
+import { BarChart3, FileText, Sun, Moon, ExternalLink, FlaskConical } from "lucide-react";
 
 interface NavigationProps {
   darkMode: boolean;
@@ -10,7 +10,8 @@ export function Navigation({ darkMode, onToggleDarkMode }: NavigationProps) {
   const location = useLocation();
 
   const navItems = [
-    { path: "/", label: "Дашборд", icon: BarChart3 },
+    { path: "/ab-tests-xway", label: "AB-тесты XWAY", icon: FlaskConical },
+    { path: "/ab-tests", label: "AB-тесты", icon: BarChart3 },
     { path: "/cards", label: "Карточки товаров", icon: FileText },
   ];
 
@@ -24,7 +25,7 @@ export function Navigation({ darkMode, onToggleDarkMode }: NavigationProps) {
             const Icon = item.icon;
             const pathname = location.pathname.replace(/\/+$/, "") || "/";
             const normalizedPath = item.path.replace(/\/+$/, "") || "/";
-            const isDashboardAlias = normalizedPath === "/" && pathname === "/ab-tests";
+            const isDashboardAlias = normalizedPath === "/ab-tests" && pathname === "/";
             const isActive = pathname === normalizedPath || isDashboardAlias;
             
             return (
