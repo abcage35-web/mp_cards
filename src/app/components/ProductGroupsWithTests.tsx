@@ -58,7 +58,7 @@ export function ProductGroupsWithTests({
                     className={`${GRID_ROW_CLASS} border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2`}
                     style={{ gridTemplateColumns: GROUP_HEADER_COLUMNS }}
                   >
-                    {["Обложка WB", "Артикул", "Название", "Остаток", "Кабинеты", "Тестов", "Хорошо XWAY", "Плохо XWAY", "Последний старт"].map((label) => (
+                    {["Обложка", "Артикул", "Название", "Остаток", "Кабинеты", "Тестов", "Хорошо XWAY", "Плохо XWAY", "Последний старт"].map((label) => (
                       <div
                         key={label}
                         className={GRID_HEADER_CELL_CLASS}
