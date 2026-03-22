@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { type Product, type TestCard, abFormatInt } from "./ab-service";
 
@@ -10,6 +11,9 @@ interface Props {
 }
 
 const GROUP_HEADER_COLUMNS = "92px 132px minmax(280px,1.8fr) 140px minmax(170px,1fr) 84px 110px 110px 170px";
+const GRID_ROW_CLASS = "grid items-center";
+const GRID_HEADER_CELL_CLASS = "px-3 text-left text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400";
+const GRID_BODY_CELL_CLASS = "px-3";
 
 export function ProductGroupsWithTests({
   products,
@@ -51,13 +55,13 @@ export function ProductGroupsWithTests({
               <div className="overflow-x-auto">
                 <div className="min-w-[1160px]">
                   <div
-                    className="grid border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2"
+                    className={`${GRID_ROW_CLASS} border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2`}
                     style={{ gridTemplateColumns: GROUP_HEADER_COLUMNS }}
                   >
                     {["Обложка WB", "Артикул", "Название", "Остаток", "Кабинеты", "Тестов", "Хорошо XWAY", "Плохо XWAY", "Последний старт"].map((label) => (
                       <div
                         key={label}
-                        className="pr-3 text-left text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400"
+                        className={GRID_HEADER_CELL_CLASS}
                         style={{ fontWeight: 700 }}
                       >
                         {label}
@@ -66,21 +70,21 @@ export function ProductGroupsWithTests({
                   </div>
 
                   <div
-                    className="grid items-center gap-3 px-4 py-3"
+                    className={`${GRID_ROW_CLASS} py-3`}
                     style={{ gridTemplateColumns: GROUP_HEADER_COLUMNS }}
                   >
-                    <div className="pr-3">
+                    <div className={GRID_BODY_CELL_CLASS}>
                       <CurrentCoverThumb product={product} />
                     </div>
 
                     <div
-                      className="pr-3 text-[13px] text-slate-700 dark:text-slate-300 whitespace-nowrap"
+                      className={`${GRID_BODY_CELL_CLASS} text-[13px] text-slate-700 dark:text-slate-300 whitespace-nowrap`}
                       style={{ fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}
                     >
                       {product.article || "—"}
                     </div>
 
-                    <div className="min-w-0 pr-3">
+                    <div className={`${GRID_BODY_CELL_CLASS} min-w-0`}>
                       <div
                         className="truncate text-[13px] text-slate-800 dark:text-slate-100"
                         style={{ fontWeight: 700 }}
@@ -106,27 +110,27 @@ export function ProductGroupsWithTests({
                       </div>
                     </div>
 
-                    <div className="pr-3">
+                    <div className={GRID_BODY_CELL_CLASS}>
                       <StockBadge value={product.currentStockValue} inStock={product.currentInStock} />
                     </div>
 
-                    <div className="pr-3 text-[12px] text-slate-600 dark:text-slate-400" style={{ fontWeight: 600 }}>
+                    <div className={`${GRID_BODY_CELL_CLASS} text-[12px] text-slate-600 dark:text-slate-400`} style={{ fontWeight: 600 }}>
                       {product.cabinets.join(", ") || "—"}
                     </div>
 
-                    <div className="pr-3 text-[13px] text-slate-800 dark:text-slate-200" style={{ fontWeight: 800 }}>
+                    <div className={`${GRID_BODY_CELL_CLASS} text-[13px] text-slate-800 dark:text-slate-200`} style={{ fontWeight: 800 }}>
                       {abFormatInt(product.testsCount)}
                     </div>
 
-                    <div className="pr-3">
+                    <div className={GRID_BODY_CELL_CLASS}>
                       <InlineStatus value={product.good} type="good" />
                     </div>
 
-                    <div className="pr-3">
+                    <div className={GRID_BODY_CELL_CLASS}>
                       <InlineStatus value={product.bad} type="bad" />
                     </div>
 
-                    <div className="pr-3 text-[12px] text-slate-500 dark:text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
+                    <div className={`${GRID_BODY_CELL_CLASS} text-[12px] text-slate-500 dark:text-slate-400 whitespace-nowrap`} style={{ fontWeight: 600 }}>
                       <LastStartCell product={product} />
                     </div>
                   </div>
@@ -251,19 +255,22 @@ function CurrentCoverThumb({ product }: { product: Product }) {
   return (
     <div className="relative">
       {trigger}
-      {preview.visible ? (
-        <div
-          className="fixed pointer-events-none z-[10000] transition-opacity duration-150"
-          style={{ left: preview.x, top: preview.y, width: 220, transform: "translateX(-50%)", opacity: 1 }}
-        >
-          <img
-            src={imageUrl}
-            alt={`${product.title || product.article || "Обложка"} (увеличенная)`}
-            className="w-full aspect-[3/4] object-cover block rounded-2xl border border-slate-200/80 bg-white dark:border-slate-700/80"
-            style={{ boxShadow: "0 22px 44px rgba(16,31,41,0.24), 0 4px 12px rgba(16,31,41,0.16)" }}
-          />
-        </div>
-      ) : null}
+      {preview.visible && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed pointer-events-none z-[100000] transition-opacity duration-150"
+              style={{ left: preview.x, top: preview.y, width: 220, transform: "translateX(-50%)", opacity: 1 }}
+            >
+              <img
+                src={imageUrl}
+                alt={`${product.title || product.article || "Обложка"} (увеличенная)`}
+                className="w-full aspect-[3/4] object-cover block rounded-2xl border border-slate-200/80 bg-white"
+                style={{ boxShadow: "0 22px 44px rgba(16,31,41,0.24), 0 4px 12px rgba(16,31,41,0.16)" }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
