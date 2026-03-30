@@ -2092,94 +2092,231 @@ function getProblemsChartSeriesConfig() {
   ];
 }
 
-function hasProblemSnapshotStockPositiveData(snapshot, cabinetRaw = "all") {
-  if (!snapshot || typeof snapshot !== "object") {
+function parseProblemsChartHistoryBoolean(valueRaw) {
+  const value = String(valueRaw || "").trim().toLowerCase();
+  if (value === "да") {
+    return true;
+  }
+  if (value === "нет") {
     return false;
   }
-
-  const cabinet = String(cabinetRaw || "all").trim() || "all";
-  if (cabinet === "all") {
-    return Boolean(snapshot.stockPositive?.problems && typeof snapshot.stockPositive.problems === "object");
+  if (!value || /^н\/д$/i.test(value) || value === "—" || value === "-") {
+    return null;
   }
-
-  const items = Array.isArray(snapshot.cabinets) ? snapshot.cabinets : [];
-  const target = items.find((item) => String(item?.cabinet || "").trim() === cabinet);
-  return Boolean(target?.stockPositive?.problems && typeof target.stockPositive.problems === "object");
+  return null;
 }
 
-function ensureLatestProblemsChartSnapshotStockPositiveData() {
-  if (!Array.isArray(state.updateSnapshots) || state.updateSnapshots.length <= 0) {
-    return;
+function parseProblemsChartHistoryInteger(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value || /^н\/д$/i.test(value) || value === "—" || value === "-") {
+    return null;
   }
-  if (!Array.isArray(state.rows) || state.rows.length <= 0) {
-    return;
+  const digits = value.replace(/[^\d-]/g, "");
+  if (!digits || digits === "-") {
+    return null;
+  }
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+function parseProblemsChartHistoryDecimal(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value || /^н\/д$/i.test(value) || value === "—" || value === "-") {
+    return null;
+  }
+  const match = value.replace(/\s+/g, "").replace(",", ".").match(/-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseProblemsChartHistoryFieldValue(fieldRaw, valueRaw) {
+  const field = String(fieldRaw || "").trim();
+  if (!field) {
+    return undefined;
   }
 
-  const lastIndex = state.updateSnapshots.length - 1;
-  const lastSnapshot = state.updateSnapshots[lastIndex];
-  if (hasProblemSnapshotStockPositiveData(lastSnapshot, "all")) {
-    return;
+  if (
+    field === "hasData" ||
+    field === "hasRich" ||
+    field === "hasRecommendations" ||
+    field === "hasVideo" ||
+    field === "hasAutoplay" ||
+    field === "hasTags" ||
+    field === "coverDuplicate" ||
+    field === "inStock"
+  ) {
+    return parseProblemsChartHistoryBoolean(valueRaw);
   }
 
-  const rebuilt = buildProblemSnapshot(state.rows, {
-    source: lastSnapshot?.source,
-    actionKey: lastSnapshot?.actionKey,
-    mode: lastSnapshot?.mode,
-    at: lastSnapshot?.at,
-  });
-  rebuilt.id = String(lastSnapshot?.id || rebuilt.id);
-  state.updateSnapshots = normalizeProblemSnapshots([
-    ...state.updateSnapshots.slice(0, lastIndex),
-    rebuilt,
-  ]);
-  persistState();
+  if (field === "error" || field === "marketError") {
+    const value = String(valueRaw || "").trim();
+    return /^нет$/i.test(value) ? "" : value;
+  }
+
+  if (
+    field === "stockValue" ||
+    field === "currentPrice" ||
+    field === "basePrice" ||
+    field === "reviewCount" ||
+    field === "richCount" ||
+    field === "recommendationKnownCount" ||
+    field === "listingSlidesCount" ||
+    field === "richSlidesCount" ||
+    field === "colorCount"
+  ) {
+    return parseProblemsChartHistoryInteger(valueRaw);
+  }
+
+  if (field === "rating") {
+    return parseProblemsChartHistoryDecimal(valueRaw);
+  }
+
+  return undefined;
+}
+
+function isProblemsChartStockPositiveRow(row) {
+  if (typeof isStockPositiveProblemRow === "function") {
+    return isStockPositiveProblemRow(row);
+  }
+  return Number.isFinite(row?.stockValue) && row.stockValue > 0;
+}
+
+function getProblemsChartCurrentStockRows(cabinetRaw = "all") {
+  const sourceRows = getRowsByCabinet(state.rows, cabinetRaw);
+  return sourceRows.filter((row) => isProblemsChartStockPositiveRow(row));
+}
+
+function getProblemsChartRowCreatedAtMs(row) {
+  const match = String(row?.id || "").match(/^row-(\d+)-/);
+  const createdAtMs = match ? Number(match[1]) : NaN;
+  return Number.isFinite(createdAtMs) ? createdAtMs : 0;
+}
+
+function buildProblemsChartHistoricalSnapshotFromRow(row, atRaw) {
+  if (!row) {
+    return null;
+  }
+
+  const currentSnapshot =
+    typeof captureRowUpdateSnapshot === "function"
+      ? captureRowUpdateSnapshot(row)
+      : {
+          hasData: Boolean(row?.data),
+          error: String(row?.error || "").trim(),
+          hasRich: row?.data?.hasRich ?? null,
+          hasRecommendations: row?.data?.hasSellerRecommendations ?? null,
+          hasVideo: row?.data?.hasVideo ?? null,
+          hasAutoplay: row?.data?.hasAutoplay ?? null,
+          hasTags: row?.data?.hasTags ?? null,
+          coverDuplicate: row?.data?.coverSlideDuplicate ?? null,
+        };
+  const targetMs = new Date(atRaw).getTime();
+  if (!Number.isFinite(targetMs)) {
+    return currentSnapshot;
+  }
+
+  const rowCreatedAtMs = getProblemsChartRowCreatedAtMs(row);
+  if (rowCreatedAtMs > 0 && targetMs < rowCreatedAtMs) {
+    return null;
+  }
+
+  const historicalSnapshot = {
+    ...currentSnapshot,
+  };
+  const logs =
+    typeof normalizeRowUpdateLogs === "function"
+      ? normalizeRowUpdateLogs(row?.updateLogs)
+      : Array.isArray(row?.updateLogs)
+        ? row.updateLogs
+        : [];
+
+  for (let logIndex = logs.length - 1; logIndex >= 0; logIndex -= 1) {
+    const entry = logs[logIndex];
+    const entryMs = new Date(entry?.at).getTime();
+    if (!Number.isFinite(entryMs) || entryMs <= targetMs) {
+      continue;
+    }
+
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (let changeIndex = changes.length - 1; changeIndex >= 0; changeIndex -= 1) {
+      const change = changes[changeIndex];
+      const field = String(change?.field || "").trim();
+      const parsedValue = parseProblemsChartHistoryFieldValue(field, change?.beforeText);
+      if (parsedValue === undefined) {
+        continue;
+      }
+      historicalSnapshot[field] = parsedValue;
+    }
+  }
+
+  return historicalSnapshot;
+}
+
+function buildProblemsChartHistoricalRow(row, atRaw) {
+  const snapshot = buildProblemsChartHistoricalSnapshotFromRow(row, atRaw);
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    cabinet: row.cabinet,
+    error: String(snapshot.error || "").trim(),
+    data:
+      snapshot.hasData === true
+        ? {
+            hasSellerRecommendations: snapshot.hasRecommendations,
+            hasRich: snapshot.hasRich,
+            hasVideo: snapshot.hasVideo,
+            hasAutoplay: snapshot.hasAutoplay,
+            hasTags: snapshot.hasTags,
+            coverSlideDuplicate: snapshot.coverDuplicate,
+          }
+        : null,
+  };
 }
 
 function getSnapshotProblemsByZone(snapshot, cabinetRaw = "all", options = {}) {
   const cabinet = String(cabinetRaw || "all").trim() || "all";
   const stockPositiveOnly = options.stockPositiveOnly === true;
+  const stockRows = Array.isArray(options.stockRows) ? options.stockRows : [];
   const series = getProblemsChartSeriesConfig();
   const result = Object.fromEntries(series.map((item) => [item.key, 0]));
   if (!snapshot || typeof snapshot !== "object") {
-    return {
-      values: result,
-      hasStockPositiveData: !stockPositiveOnly,
-    };
+    return { values: result };
   }
-  let sourceProblems = snapshot?.problems;
-  let hasStockPositiveData = !stockPositiveOnly;
-  if (cabinet === "all") {
-    if (stockPositiveOnly && hasProblemSnapshotStockPositiveData(snapshot, cabinet)) {
-      sourceProblems = snapshot?.stockPositive?.problems;
-    } else {
-      sourceProblems = snapshot?.problems;
-      hasStockPositiveData = !stockPositiveOnly;
+
+  if (stockPositiveOnly) {
+    const historicalRows = stockRows
+      .map((row) => buildProblemsChartHistoricalRow(row, snapshot.at))
+      .filter(Boolean);
+    const sourceProblems = getProblemStats(historicalRows);
+    for (const item of series) {
+      result[item.key] = Math.max(0, Number(sourceProblems[item.key]) || 0);
     }
+    return { values: result };
+  }
+
+  let sourceProblems = snapshot?.problems;
+  if (cabinet === "all") {
+    sourceProblems = snapshot?.problems;
   } else {
     const items = Array.isArray(snapshot.cabinets) ? snapshot.cabinets : [];
     const target = items.find((item) => String(item?.cabinet || "").trim() === cabinet);
-    if (stockPositiveOnly && hasProblemSnapshotStockPositiveData(snapshot, cabinet)) {
-      sourceProblems = target?.stockPositive?.problems;
-    } else {
-      sourceProblems = target?.problems;
-      hasStockPositiveData = !stockPositiveOnly;
-    }
+    sourceProblems = target?.problems;
   }
 
   if (!sourceProblems || typeof sourceProblems !== "object") {
-    return {
-      values: result,
-      hasStockPositiveData,
-    };
+    return { values: result };
   }
 
   for (const item of series) {
     result[item.key] = Math.max(0, Number(sourceProblems[item.key]) || 0);
   }
-  return {
-    values: result,
-    hasStockPositiveData,
-  };
+  return { values: result };
 }
 
 function getSnapshotDayKey(atRaw) {
@@ -2264,7 +2401,11 @@ function buildDailySnapshotsWithCarry(snapshotsRaw) {
   const firstDayKey = getSnapshotDayKey(dailySnapshots[0]?.at);
   const lastDayKey = getSnapshotDayKey(dailySnapshots[dailySnapshots.length - 1]?.at);
   const firstDay = parseSnapshotDayKey(firstDayKey);
-  const lastDay = parseSnapshotDayKey(lastDayKey);
+  const lastSnapshotDay = parseSnapshotDayKey(lastDayKey);
+  const today = new Date();
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const lastDay =
+    lastSnapshotDay && todayDay.getTime() > lastSnapshotDay.getTime() ? todayDay : lastSnapshotDay;
   if (!firstDay || !lastDay) {
     return dailySnapshots;
   }
@@ -2339,7 +2480,6 @@ function openProblemsChart() {
   }
 
   ensureProblemSnapshotsInitialized();
-  ensureLatestProblemsChartSnapshotStockPositiveData();
   renderProblemsChartCabinetFilter();
   renderProblemsChartStockFilterButton();
   renderProblemsChartContent();
@@ -2394,6 +2534,7 @@ function renderProblemsChartContent() {
   const snapshots = buildDailySnapshotsWithCarry(snapshotsByTime);
   const cabinet = normalizeProblemsChartCabinetFilter(state.chartCabinetFilter, snapshotsByTime);
   const stockPositiveOnly = state.chartStockPositiveOnly === true;
+  const stockRows = stockPositiveOnly ? getProblemsChartCurrentStockRows(cabinet) : [];
   state.chartCabinetFilter = cabinet;
 
   if (snapshots.length <= 0) {
@@ -2407,13 +2548,16 @@ function renderProblemsChartContent() {
     const atDate = new Date(snapshot.at);
     const snapshotProblems = getSnapshotProblemsByZone(snapshot, cabinet, {
       stockPositiveOnly,
+      stockRows,
     });
     const values = snapshotProblems.values;
+    const actualAtRaw = snapshot.isCarryForward && snapshot.carryFromAt ? snapshot.carryFromAt : snapshot.at;
     const total = seriesConfig.reduce((sum, item) => sum + Number(values[item.key] || 0), 0);
     return {
       index,
       at: atDate,
       atLabel: formatDateTime(snapshot.at),
+      actualAtLabel: formatDateTime(actualAtRaw),
       dateLabel: new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
         month: "2-digit",
@@ -2432,12 +2576,8 @@ function renderProblemsChartContent() {
       action: getActionLabel(snapshot.actionKey),
       mode: getModeLabel(snapshot.mode),
       isCarryForward: snapshot.isCarryForward === true,
-      hasStockPositiveData: snapshotProblems.hasStockPositiveData,
     };
   });
-  const stockFallbackCount = stockPositiveOnly
-    ? points.filter((point) => point.hasStockPositiveData === false).length
-    : 0;
 
   const width = 1040;
   const height = 340;
@@ -2577,20 +2717,15 @@ function renderProblemsChartContent() {
       </span>`;
     })
     .join("");
-  const fallbackNoteHtml =
-    stockPositiveOnly && stockFallbackCount > 0
-      ? `<div class="overlay-note problems-chart-filter-note">Для ${stockFallbackCount} старых срезов данных по остаткам ещё не было, поэтому показан общий срез.</div>`
-      : "";
 
   el.problemsChartContent.innerHTML = `
-    ${fallbackNoteHtml}
     <div class="problems-chart-summary overlay-note">
       <span><strong>Кабинет:</strong> ${escapeHtml(cabinetLabel)}</span>
       <span><strong>Товары:</strong> ${escapeHtml(productsLabel)}</span>
       <span><strong>Срезов (дней):</strong> ${mapped.length}</span>
       <span><strong>Последнее всего:</strong> ${lastPoint ? lastPoint.total : 0}</span>
       <span><strong>Дельта всего:</strong> ${escapeHtml(deltaText)}</span>
-      <span><strong>Последнее обновление:</strong> ${escapeHtml(lastPoint?.atLabel || "-")}</span>
+      <span><strong>Последнее обновление:</strong> ${escapeHtml(lastPoint?.actualAtLabel || "-")}</span>
     </div>
     <div class="problems-chart-legend">${latestSeriesHtml}</div>
     <div class="problems-chart-stage">
