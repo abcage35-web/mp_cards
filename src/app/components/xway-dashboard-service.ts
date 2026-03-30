@@ -3,6 +3,7 @@ import {
   abFormatInt,
   abGetCurrentMonthRange,
   abNormalizeStatus,
+  buildXwaySummaryChecksFromPayload,
   loadAbDashboardData,
   type ComparisonRow,
   type DashboardModel,
@@ -755,18 +756,21 @@ function buildXwaySummaryChecks(payload: XwayPayload, sheetPrice: XwaySheetPrice
   const boostCtr = Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr) ? bestCtr / baselineCtr - 1 : null;
   const ctrCr1Delta = payload.metrics?.find((row) => String(row.label || "").trim().toUpperCase() === "CTR*CR1")?.delta ?? null;
   const { priceDeltas } = buildSheetPriceMetrics(sheetPrice);
-  const ctrDecisionRaw = resolveCtrDecisionRaw(boostCtr);
   const priceDecisionRaw = String(sheetPrice?.priceDecisionRaw || "?").trim() || "?";
-  const ctrCr1DecisionRaw = resolveCtrCr1DecisionRaw(ctrCr1Delta);
-  const overall = resolveOverallDecisionRaw([ctrDecisionRaw, priceDecisionRaw, ctrCr1DecisionRaw]);
+  const checks = buildXwaySummaryChecksFromPayload(
+    {
+      summaryChecks: {
+        testCtr: "",
+        testPrice: priceDecisionRaw,
+        testCtrCr1: "",
+        overall: "",
+      },
+    },
+    payload,
+  );
 
   return {
-    checks: {
-      testCtr: ctrDecisionRaw,
-      testPrice: priceDecisionRaw,
-      testCtrCr1: ctrCr1DecisionRaw,
-      overall,
-    },
+    checks,
     boostCtr,
     ctrCr1Delta: Number.isFinite(Number(ctrCr1Delta)) ? Number(ctrCr1Delta) : null,
     priceDeltas,

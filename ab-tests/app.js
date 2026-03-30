@@ -1005,8 +1005,24 @@ function getAbExportSummaryChecks(testIdRaw) {
 
 function getAbXwaySummaryChecks(testIdRaw, payload) {
   const exportChecks = getAbExportSummaryChecks(testIdRaw);
-  const exportCtrRaw = String(exportChecks?.ctr || "").trim();
   const priceRaw = String(exportChecks?.price || "").trim();
+  const variantStats = Array.isArray(payload?.variantStats) ? payload.variantStats : [];
+  const baseline =
+    variantStats.find((row) => row?.main)
+    || variantStats.find((row) => Number.isFinite(Number(row?.ctr)))
+    || variantStats[0]
+    || null;
+  const baselineCtr = Number(baseline?.ctr);
+  const bestCtr = variantStats.reduce((max, row) => {
+    const ctr = Number(row?.ctr);
+    return Number.isFinite(ctr) && ctr > max ? ctr : max;
+  }, Number.NEGATIVE_INFINITY);
+  const ctrRaw =
+    Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr)
+      ? bestCtr / baselineCtr - 1 > 0
+        ? "WIN"
+        : "LOOSE"
+      : "?";
   const rows = Array.isArray(payload?.metrics) ? payload.metrics : [];
   const ctrCr1Row = rows.find((row) => String(row?.label || "").trim().toUpperCase() === "CTR*CR1");
 
@@ -1014,14 +1030,14 @@ function getAbXwaySummaryChecks(testIdRaw, payload) {
     typeof abResolveCtrCr1DecisionRaw === "function" ? abResolveCtrCr1DecisionRaw(Number(ctrCr1Row?.delta)) : "";
   const overallRaw =
     typeof abResolveOverallDecisionRaw === "function"
-      ? abResolveOverallDecisionRaw([exportCtrRaw, priceRaw, ctrCr1Raw])
+      ? abResolveOverallDecisionRaw([ctrRaw, priceRaw, ctrCr1Raw])
       : "";
 
   return {
-    testCtr: exportCtrRaw,
+    testCtr: String(ctrRaw || "").trim(),
     testPrice: priceRaw,
     testCtrCr1: String(ctrCr1Raw || "").trim(),
-    ctr: exportCtrRaw,
+    ctr: String(ctrRaw || "").trim(),
     price: priceRaw,
     ctrCr1: String(ctrCr1Raw || "").trim(),
     overall: String(overallRaw || "").trim(),

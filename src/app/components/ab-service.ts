@@ -1060,15 +1060,28 @@ export function buildXwaySummaryChecksFromPayload(
   test: Pick<TestCard, "summaryChecks">,
   payload: XwayPayload,
 ): SummaryChecks {
-  const exportCtrRaw = String(test?.summaryChecks?.testCtr || "").trim();
-  const priceRaw = String(test?.summaryChecks?.testPrice || "").trim();
+  const variants = Array.isArray(payload?.variantStats) ? payload.variantStats : [];
+  const baseline =
+    variants.find((item) => item?.main)
+    || variants.find((item) => Number.isFinite(Number(item?.ctr)))
+    || variants[0]
+    || null;
+  const baselineCtr = Number(baseline?.ctr);
+  const bestCtr = variants.reduce((max, item) => {
+    const ctr = Number(item?.ctr);
+    return Number.isFinite(ctr) && ctr > max ? ctr : max;
+  }, Number.NEGATIVE_INFINITY);
+  const ctrRaw = abResolveCtrDecisionRaw(
+    Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr) ? bestCtr / baselineCtr - 1 : null,
+  );
+  const priceRaw = String(test?.summaryChecks?.testPrice || "").trim() || "?";
   const rows = Array.isArray(payload?.metrics) ? payload.metrics : [];
   const ctrCr1Row = rows.find((row) => String(row?.label || "").trim().toUpperCase() === "CTR*CR1");
   const ctrCr1Raw = abResolveCtrCr1DecisionRaw(Number(ctrCr1Row?.delta));
-  const overallRaw = abResolveOverallDecisionRaw([exportCtrRaw, priceRaw, ctrCr1Raw]);
+  const overallRaw = abResolveOverallDecisionRaw([ctrRaw, priceRaw, ctrCr1Raw]);
 
   return {
-    testCtr: exportCtrRaw,
+    testCtr: String(ctrRaw || "").trim(),
     testPrice: priceRaw,
     testCtrCr1: String(ctrCr1Raw || "").trim(),
     overall: String(overallRaw || "").trim(),
