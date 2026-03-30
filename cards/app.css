@@ -6905,3 +6905,403 @@ html.dark tbody td {
 html.dark tbody tr:hover {
   background: rgba(20, 184, 166, 0.08);
 }
+
+html.dark .actions-updated-at {
+  color: #7f93a8;
+}
+
+html.dark .actions-divider {
+  background: rgba(100, 116, 139, 0.42);
+}
+
+html.dark .icon-btn,
+html.dark .status-icon,
+html.dark .wb-link-icon {
+  border-color: rgba(51, 65, 85, 0.88);
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+html.dark .icon-btn,
+html.dark .status-icon-idle,
+html.dark .wb-link-icon {
+  color: #cbd5e1;
+}
+
+html.dark .icon-btn:hover,
+html.dark .status-icon-btn:hover,
+html.dark .wb-link-icon:hover {
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.38);
+}
+
+html.dark .icon-btn-refresh {
+  color: #67e8f9;
+  border-color: rgba(34, 211, 238, 0.34);
+}
+
+html.dark .icon-btn-history {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+html.dark .icon-btn-remove {
+  color: #fda4af;
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+html.dark .icon-btn-refresh:hover {
+  border-color: rgba(34, 211, 238, 0.56);
+  background: rgba(8, 47, 73, 0.82);
+}
+
+html.dark .icon-btn-history:hover {
+  border-color: rgba(96, 165, 250, 0.54);
+  background: rgba(30, 41, 59, 0.98);
+}
+
+html.dark .icon-btn-remove:hover {
+  border-color: rgba(248, 113, 113, 0.56);
+  background: rgba(69, 10, 10, 0.7);
+}
+
+html.dark .icon-btn-refresh:active {
+  background: rgba(8, 47, 73, 0.92);
+}
+
+html.dark .icon-btn-history:active {
+  background: rgba(30, 41, 59, 1);
+}
+
+html.dark .icon-btn-remove:active {
+  background: rgba(69, 10, 10, 0.84);
+}
+
+html.dark .status-icon-ok {
+  color: #5eead4;
+  border-color: rgba(45, 212, 191, 0.4);
+  background: rgba(4, 120, 87, 0.3);
+}
+
+html.dark .status-icon-loading {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(120, 53, 15, 0.4);
+}
+
+html.dark .status-icon-error {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.38);
+}
+
+html.dark .status-icon-queued {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.38);
+  background: rgba(30, 64, 175, 0.28);
+}
+
+html.dark .article-code-chip,
+html.dark .pill-info,
+html.dark .product-meta-chip,
+html.dark .product-meta-chip-brand,
+html.dark .product-meta-chip-colors,
+html.dark .product-info-item,
+html.dark .check-item,
+html.dark .checks-filter-toggle,
+html.dark .checks-filter-popover,
+html.dark .product-info-cell .pill-info {
+  border-color: rgba(51, 65, 85, 0.84);
+  background: rgba(15, 23, 42, 0.92);
+  color: #cbd5e1;
+}
+
+html.dark .product-meta-chip-brand {
+  color: #e2e8f0;
+}
+
+html.dark .product-meta-chip-colors {
+  border-style: dashed;
+  color: #5eead4;
+  background: rgba(13, 148, 136, 0.14);
+}
+
+html.dark .product-meta-chip-colors:hover {
+  border-color: rgba(45, 212, 191, 0.48);
+  background: rgba(13, 148, 136, 0.2);
+}
+
+html.dark .product-info-label,
+html.dark .check-label,
+html.dark .checks-filter-item > span {
+  color: #94a3b8;
+}
+
+html.dark .product-info-old {
+  color: #7f93a8;
+}
+
+html.dark .product-info-cell .pill-info {
+  background: rgba(30, 41, 59, 0.96);
+  color: #e2e8f0;
+}
+
+html.dark .pill-ok {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+
+html.dark .pill-no {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+html.dark .pill-na {
+  background: rgba(71, 85, 105, 0.38);
+  color: #cbd5e1;
+}
+
+html.dark .checks-filter-toggle.is-active {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(13, 148, 136, 0.18);
+  color: #ccfbf1;
+}
+
+html.dark .checks-filter-popover {
+  box-shadow: 0 26px 60px rgba(2, 6, 23, 0.52);
+}
+
+html.dark .preview-backdrop {
+  background: rgba(2, 6, 23, 0.82);
+}
+
+html.dark .preview-card,
+html.dark .recommendations-card,
+html.dark .preview-stage,
+html.dark .rich-strip-item,
+html.dark .rich-stage-stream,
+html.dark .rich-snippet,
+html.dark .overlay-note,
+html.dark .limits-note,
+html.dark .recommendation-summary,
+html.dark .row-history-item,
+html.dark .problems-chart-legend-item,
+html.dark .problems-chart-stage,
+html.dark .seller-settings-row,
+html.dark .seller-settings-form,
+html.dark .limits-section,
+html.dark .recommendation-empty,
+html.dark .recommendation-ids,
+html.dark .recommendation-source,
+html.dark .color-variant-card,
+html.dark .recommendation-item {
+  border-color: rgba(51, 65, 85, 0.84);
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.36);
+}
+
+html.dark .overlay-note,
+html.dark .limits-note,
+html.dark .recommendation-summary {
+  background: rgba(30, 41, 59, 0.92);
+  color: #cbd5e1;
+}
+
+html.dark .recommendations-card h3,
+html.dark .limits-section-head h4,
+html.dark .seller-settings-cabinet,
+html.dark .row-history-time,
+html.dark .problems-chart-legend-item strong,
+html.dark .color-variant-id,
+html.dark .recommendation-source-count,
+html.dark .recommendation-title,
+html.dark .recommendation-title .mono {
+  color: #e2e8f0;
+}
+
+html.dark #recommendationsSubtle,
+html.dark #richCaption,
+html.dark .row-history-meta,
+html.dark .row-history-no-changes,
+html.dark .problems-chart-summary span,
+html.dark .problems-chart-legend-delta,
+html.dark .seller-settings-id,
+html.dark .limits-global-field,
+html.dark .limits-cabinet-row,
+html.dark .recommendation-meta,
+html.dark .recommendation-source-ids,
+html.dark .color-variant-meta,
+html.dark .color-variant-cover-empty {
+  color: #94a3b8;
+}
+
+html.dark .preview-stage,
+html.dark .rich-stage-stream {
+  background: rgba(2, 6, 23, 0.86);
+}
+
+html.dark .preview-nav,
+html.dark .preview-thumb,
+html.dark .preview-refresh,
+html.dark .preview-close,
+html.dark .row-history-filter-toggle,
+html.dark .color-variant-add-btn {
+  border-color: rgba(51, 65, 85, 0.84);
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+html.dark .preview-close {
+  background: rgba(13, 148, 136, 0.18);
+  color: #5eead4;
+}
+
+html.dark .preview-refresh,
+html.dark .row-history-filter-toggle,
+html.dark .color-variant-add-btn {
+  color: #cbd5e1;
+}
+
+html.dark .preview-refresh:hover:not(:disabled),
+html.dark .preview-nav:hover:not(:disabled),
+html.dark .row-history-filter-toggle:hover:not(:disabled),
+html.dark .color-variant-add-btn:hover {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(30, 41, 59, 0.98);
+  color: #f8fafc;
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.4);
+}
+
+html.dark .preview-close:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.28);
+  color: #ccfbf1;
+}
+
+html.dark .preview-refresh:active:not(:disabled),
+html.dark .preview-nav:active:not(:disabled),
+html.dark .row-history-filter-toggle:active:not(:disabled),
+html.dark .color-variant-add-btn:active {
+  background: rgba(30, 41, 59, 1);
+}
+
+html.dark .preview-close:active:not(:disabled) {
+  background: rgba(13, 148, 136, 0.34);
+}
+
+html.dark .row-history-filter-toggle.is-active {
+  border-color: rgba(45, 212, 191, 0.44);
+  background: rgba(13, 148, 136, 0.22);
+  color: #ccfbf1;
+}
+
+html.dark .preview-thumb.is-active {
+  border-color: rgba(45, 212, 191, 0.78);
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.2);
+}
+
+html.dark .preview-thumb:hover:not(.is-active) {
+  border-color: rgba(45, 212, 191, 0.44);
+}
+
+html.dark .rich-stage-pane {
+  border-left-color: rgba(51, 65, 85, 0.78);
+}
+
+html.dark .rich-strip-item img,
+html.dark .rich-stage-item img,
+html.dark .color-variant-cover,
+html.dark .color-variant-cover img,
+html.dark .recommendation-slides img {
+  background: rgba(2, 6, 23, 0.86);
+}
+
+html.dark .rich-strip-item,
+html.dark .color-variant-cover {
+  border-color: rgba(51, 65, 85, 0.72);
+}
+
+html.dark .rich-strip-item:hover,
+html.dark .rich-strip-item.is-active {
+  border-color: rgba(45, 212, 191, 0.48);
+}
+
+html.dark .rich-strip-index {
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+}
+
+html.dark .row-history-item.is-error,
+html.dark .row-history-error {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(69, 10, 10, 0.38);
+  color: #fecaca;
+}
+
+html.dark .row-history-status {
+  border-color: rgba(71, 85, 105, 0.82);
+  background: rgba(30, 41, 59, 0.98);
+  color: #cbd5e1;
+}
+
+html.dark .row-history-item.is-error .row-history-status {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.52);
+  color: #fecaca;
+}
+
+html.dark .row-history-changes {
+  color: #cbd5e1;
+}
+
+html.dark .problems-chart-grid-row line {
+  stroke: rgba(71, 85, 105, 0.62);
+}
+
+html.dark .problems-chart-grid-row text,
+html.dark .problems-chart-axis-x {
+  fill: #94a3b8;
+}
+
+html.dark .problems-chart-axis-x-time {
+  fill: #64748b;
+}
+
+html.dark .problems-chart-point {
+  stroke: rgba(15, 23, 42, 0.96);
+}
+
+html.dark .problems-chart-point-value {
+  stroke: rgba(2, 6, 23, 0.96);
+}
+
+html.dark .seller-settings-link {
+  color: #5eead4;
+}
+
+html.dark .seller-settings-reserved-label {
+  border-color: rgba(71, 85, 105, 0.82);
+  background: rgba(30, 41, 59, 0.94);
+  color: #94a3b8;
+}
+
+html.dark .limits-section.is-preferred {
+  border-color: rgba(45, 212, 191, 0.32);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.14) inset;
+}
+
+html.dark .limits-cabinet-row {
+  background: rgba(30, 41, 59, 0.92);
+}
+
+html.dark .limits-cabinet-row.is-over {
+  background: rgba(69, 10, 10, 0.46);
+  color: #fca5a5;
+}
+
+html.dark .recommendation-source-count,
+html.dark .color-variant-stat {
+  border-color: rgba(71, 85, 105, 0.82);
+  background: rgba(30, 41, 59, 0.96);
+  color: #e2e8f0;
+}
