@@ -6887,6 +6887,80 @@ html.dark .agreement-card-limits .agreement-problem-cabinet-item {
   color: #bfdbfe;
 }
 
+html.dark .auth-role-badge.is-admin {
+  color: #86efac;
+  background: rgba(20, 83, 45, 0.5);
+}
+
+html.dark .auth-role-badge.is-user {
+  color: #67e8f9;
+  background: rgba(8, 47, 73, 0.52);
+}
+
+html.dark .global-filters-summary-value {
+  background: rgba(13, 148, 136, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+html.dark .global-filter-chip,
+html.dark .preset-chip {
+  border-color: rgba(51, 65, 85, 0.84);
+  background: rgba(15, 23, 42, 0.94);
+  color: #cbd5e1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+html.dark .global-filter-chip:hover,
+html.dark .preset-chip:hover {
+  border-color: rgba(45, 212, 191, 0.34);
+  background: rgba(30, 41, 59, 0.96);
+  color: #f8fafc;
+}
+
+html.dark .global-filter-chip.is-active,
+html.dark .preset-chip.is-active {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(13, 148, 136, 0.16);
+  color: #99f6e4;
+}
+
+html.dark .global-filter-chip-count,
+html.dark .preset-chip-count {
+  background: rgba(51, 65, 85, 0.78);
+  color: #cbd5e1;
+}
+
+html.dark .global-filter-chip-count.is-problems,
+html.dark .preset-chip-count.is-problems {
+  background: rgba(127, 29, 29, 0.36);
+  color: #fca5a5;
+}
+
+html.dark .global-filter-chip-count.is-rows,
+html.dark .preset-chip-count.is-rows {
+  background: rgba(8, 47, 73, 0.58);
+  color: #67e8f9;
+}
+
+html.dark .agreement-total-meta-pill {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.52);
+  color: #cbd5e1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+html.dark .agreement-total-alert .agreement-total-meta-pill {
+  border-color: rgba(249, 115, 22, 0.18);
+  background: rgba(67, 20, 7, 0.36);
+  color: #fdba74;
+}
+
+html.dark .agreement-total-ok .agreement-total-meta-pill {
+  border-color: rgba(45, 212, 191, 0.18);
+  background: rgba(4, 120, 87, 0.24);
+  color: #99f6e4;
+}
+
 html.dark thead th {
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.92));
   border-bottom-color: rgba(51, 65, 85, 0.76);
