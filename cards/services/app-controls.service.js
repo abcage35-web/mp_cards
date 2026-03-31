@@ -403,6 +403,21 @@ async function saveShadowPendingPayload(shadowRows) {
     return false;
   }
 
+  const applySavedPayloadToLiveState = () => {
+    if (typeof applyParsedState === "function") {
+      try {
+        applyParsedState(payload);
+      } catch {
+        // noop: persisted payload is still available via local/cloud restore
+      }
+    }
+    if (typeof render === "function") {
+      render();
+    } else if (typeof renderSummary === "function") {
+      renderSummary();
+    }
+  };
+
   const canUseCloudSync = typeof isAuthenticated === "function" ? isAuthenticated() : true;
   if (canUseCloudSync && typeof sendCloudStatePayload === "function") {
     try {
@@ -411,6 +426,7 @@ async function saveShadowPendingPayload(shadowRows) {
         if (typeof persistStateLocalPayload === "function") {
           persistStateLocalPayload(payload);
         }
+        applySavedPayloadToLiveState();
         if (typeof clearShadowPendingPayload === "function") {
           clearShadowPendingPayload();
         }
@@ -423,6 +439,7 @@ async function saveShadowPendingPayload(shadowRows) {
 
   if (typeof persistShadowPendingPayload === "function") {
     persistShadowPendingPayload(payload);
+    applySavedPayloadToLiveState();
     return true;
   }
 
