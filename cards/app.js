@@ -283,6 +283,11 @@ const richGallery = {
   titlePrefix: "",
 };
 
+const wbImageRecovery = {
+  hostProbeByKey: new Map(),
+  rowRepairByRowId: new Map(),
+};
+
 const el = {
   mainView: document.getElementById("mainView"),
   cardsPage: document.getElementById("cardsPage"),
@@ -1281,7 +1286,557 @@ function bindEvents() {
   document.addEventListener("pointerover", handleIconHintPointerOver);
   document.addEventListener("pointermove", handleIconHintPointerMove);
   document.addEventListener("pointerout", handleIconHintPointerOut);
+  document.addEventListener("error", handleRepairableImageError, true);
+  document.addEventListener("load", handleRepairableImageLoad, true);
   window.addEventListener("blur", hideIconHintTooltip);
+}
+
+function getWbImageElementSrc(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return "";
+  }
+  return String(image.getAttribute("src") || image.currentSrc || image.src || "").trim();
+}
+
+function getWbImageOriginalUrl(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return "";
+  }
+
+  const stored = String(image.dataset.wbImageOriginalUrl || "").trim();
+  if (stored) {
+    return stored;
+  }
+
+  const current = getWbImageElementSrc(image);
+  if (current) {
+    image.dataset.wbImageOriginalUrl = current;
+  }
+  return current;
+}
+
+function readWbImageAttemptedUrls(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(String(image.dataset.wbImageAttemptedUrls || "[]"));
+    return Array.isArray(parsed) ? parsed.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function markWbImageAttemptedUrl(image, urlRaw) {
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const url = String(urlRaw || "").trim();
+  if (!url) {
+    return;
+  }
+
+  const urls = readWbImageAttemptedUrls(image);
+  if (urls.includes(url)) {
+    return;
+  }
+  urls.push(url);
+  image.dataset.wbImageAttemptedUrls = JSON.stringify(urls.slice(-24));
+}
+
+function readWbImageCandidateQueue(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(String(image.dataset.wbImageCandidateQueue || "[]"));
+    return Array.isArray(parsed) ? parsed.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeWbImageCandidateQueue(image, urlsRaw) {
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const urls = Array.isArray(urlsRaw) ? urlsRaw.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  if (urls.length <= 0) {
+    delete image.dataset.wbImageCandidateQueue;
+    return;
+  }
+  image.dataset.wbImageCandidateQueue = JSON.stringify(urls.slice(0, 24));
+}
+
+function queueWbImageCandidates(image, urlsRaw) {
+  if (!(image instanceof HTMLImageElement)) {
+    return;
+  }
+
+  const current = getWbImageElementSrc(image);
+  const attempted = new Set(readWbImageAttemptedUrls(image));
+  const existingQueue = readWbImageCandidateQueue(image);
+  const nextQueue = [];
+  const seen = new Set();
+
+  for (const urlRaw of [...existingQueue, ...(Array.isArray(urlsRaw) ? urlsRaw : [])]) {
+    const url = String(urlRaw || "").trim();
+    if (!url || url === current || attempted.has(url) || seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
+    nextQueue.push(url);
+  }
+
+  writeWbImageCandidateQueue(image, nextQueue);
+}
+
+function syncWbImageCompanionState(image, nextUrlRaw) {
+  const nextUrl = String(nextUrlRaw || "").trim();
+  if (!(image instanceof HTMLImageElement) || !nextUrl) {
+    return;
+  }
+
+  const previewUrl = toSlidePreviewUrl(nextUrl);
+  const slideThumbLink = image.closest(".slide-thumb");
+  if (slideThumbLink instanceof HTMLAnchorElement && previewUrl) {
+    slideThumbLink.href = previewUrl;
+    slideThumbLink.dataset.url = previewUrl;
+  }
+
+  if (image === el.previewImage && Array.isArray(previewGallery.items) && previewGallery.items.length > 0) {
+    const currentItem = previewGallery.items[previewGallery.currentIndex];
+    if (currentItem) {
+      currentItem.url = nextUrl;
+    }
+  }
+
+  const previewThumbButton = image.closest("[data-preview-index]");
+  if (previewThumbButton instanceof HTMLElement) {
+    const previewIndex = Number(previewThumbButton.dataset.previewIndex);
+    if (Number.isInteger(previewIndex) && previewGallery.items[previewIndex]) {
+      previewGallery.items[previewIndex].thumb = nextUrl;
+    }
+  }
+}
+
+function applyNextWbImageCandidate(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return false;
+  }
+
+  const queue = readWbImageCandidateQueue(image);
+  while (queue.length > 0) {
+    const nextUrl = String(queue.shift() || "").trim();
+    writeWbImageCandidateQueue(image, queue);
+    if (!nextUrl) {
+      continue;
+    }
+    syncWbImageCompanionState(image, nextUrl);
+    image.src = nextUrl;
+    return true;
+  }
+
+  return false;
+}
+
+function getRepairableImageOwnerRowId(image) {
+  if (!(image instanceof HTMLImageElement)) {
+    return "";
+  }
+
+  const thumbWithRow = image.closest("[data-row-id]");
+  if (thumbWithRow instanceof HTMLElement) {
+    const rowId = String(thumbWithRow.dataset.rowId || "").trim();
+    if (rowId) {
+      return rowId;
+    }
+  }
+
+  const tableRow = image.closest("tr[data-id]");
+  if (tableRow instanceof HTMLElement) {
+    const rowId = String(tableRow.dataset.id || "").trim();
+    if (rowId) {
+      return rowId;
+    }
+  }
+
+  if (el.previewModal && el.previewModal.contains(image)) {
+    return String(previewGallery.rowId || "").trim();
+  }
+
+  return "";
+}
+
+function replaceWbImageHostIfMatched(urlRaw, nmIdRaw, hostSuffixRaw) {
+  const url = String(urlRaw || "").trim();
+  const nmId = String(nmIdRaw || "").trim();
+  const hostSuffix = String(hostSuffixRaw || "").trim();
+  if (!url || !nmId || !hostSuffix || typeof parseWbBasketImageUrl !== "function") {
+    return url;
+  }
+
+  const parsed = parseWbBasketImageUrl(url);
+  if (!parsed || String(parsed.nmId) !== nmId) {
+    return url;
+  }
+
+  const replaced = replaceWbBasketImageHost(url, hostSuffix);
+  return replaced || url;
+}
+
+function replaceWbImageByTemplate(urlRaw, templateRaw) {
+  const url = String(urlRaw || "").trim();
+  const template =
+    templateRaw && typeof templateRaw === "object"
+      ? templateRaw
+      : typeof parseWbBasketImageUrl === "function"
+        ? parseWbBasketImageUrl(templateRaw)
+        : null;
+  if (!url || !template || typeof parseWbBasketImageUrl !== "function") {
+    return url;
+  }
+
+  const parsed = parseWbBasketImageUrl(url);
+  if (!parsed || Number(parsed.nmId) !== Number(template.nmId)) {
+    return url;
+  }
+
+  const replaced = buildWbBasketImageUrl({
+    ...parsed,
+    hostSuffix: template.hostSuffix,
+    ext: template.ext,
+  });
+  return replaced || url;
+}
+
+function applyResolvedHostToStateImages(nmIdRaw, hostSuffixRaw) {
+  const nmId = String(nmIdRaw || "").trim();
+  const hostSuffix = String(hostSuffixRaw || "").trim();
+  if (!nmId || !hostSuffix) {
+    return false;
+  }
+
+  let changed = false;
+
+  for (const row of Array.isArray(state.rows) ? state.rows : []) {
+    const data = row?.data;
+    if (!data || typeof data !== "object") {
+      continue;
+    }
+
+    if (Array.isArray(data.slides) && data.slides.length > 0) {
+      data.slides = data.slides.map((url) => {
+        const replaced = replaceWbImageHostIfMatched(url, nmId, hostSuffix);
+        if (replaced !== url) {
+          changed = true;
+        }
+        return replaced;
+      });
+    }
+
+    if (Array.isArray(data.recommendationDetails) && data.recommendationDetails.length > 0) {
+      data.recommendationDetails = data.recommendationDetails.map((item) => {
+        if (!item || typeof item !== "object" || !Array.isArray(item.slides) || item.slides.length <= 0) {
+          return item;
+        }
+
+        const nextSlides = item.slides.map((url) => {
+          const replaced = replaceWbImageHostIfMatched(url, nmId, hostSuffix);
+          if (replaced !== url) {
+            changed = true;
+          }
+          return replaced;
+        });
+
+        return {
+          ...item,
+          slides: nextSlides,
+        };
+      });
+    }
+  }
+
+  const cachedVariant = state.colorVariantsCache?.[nmId];
+  if (cachedVariant?.data?.cover) {
+    const nextCover = replaceWbImageHostIfMatched(cachedVariant.data.cover, nmId, hostSuffix);
+    if (nextCover && nextCover !== cachedVariant.data.cover) {
+      cachedVariant.data.cover = nextCover;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    persistState();
+  }
+  return changed;
+}
+
+function applyResolvedImageTemplateToStateImages(templateUrlRaw) {
+  const template = typeof parseWbBasketImageUrl === "function" ? parseWbBasketImageUrl(templateUrlRaw) : null;
+  if (!template) {
+    return false;
+  }
+
+  let changed = false;
+  const nmId = String(template.nmId);
+
+  for (const row of Array.isArray(state.rows) ? state.rows : []) {
+    const data = row?.data;
+    if (!data || typeof data !== "object") {
+      continue;
+    }
+
+    if (Array.isArray(data.slides) && data.slides.length > 0) {
+      data.slides = data.slides.map((url) => {
+        const replaced = replaceWbImageByTemplate(url, template);
+        if (replaced !== url) {
+          changed = true;
+        }
+        return replaced;
+      });
+    }
+
+    if (Array.isArray(data.recommendationDetails) && data.recommendationDetails.length > 0) {
+      data.recommendationDetails = data.recommendationDetails.map((item) => {
+        if (!item || typeof item !== "object" || !Array.isArray(item.slides) || item.slides.length <= 0) {
+          return item;
+        }
+
+        const nextSlides = item.slides.map((url) => {
+          const replaced = replaceWbImageByTemplate(url, template);
+          if (replaced !== url) {
+            changed = true;
+          }
+          return replaced;
+        });
+
+        return {
+          ...item,
+          slides: nextSlides,
+        };
+      });
+    }
+  }
+
+  const cachedVariant = state.colorVariantsCache?.[nmId];
+  if (cachedVariant?.data?.cover) {
+    const nextCover = replaceWbImageByTemplate(cachedVariant.data.cover, template);
+    if (nextCover && nextCover !== cachedVariant.data.cover) {
+      cachedVariant.data.cover = nextCover;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    persistState();
+  }
+  return changed;
+}
+
+async function resolveFreshHostForRepairableImage(urlRaw) {
+  if (typeof parseWbBasketImageUrl !== "function" || typeof resolveBasketHost !== "function") {
+    return "";
+  }
+
+  const parsed = parseWbBasketImageUrl(urlRaw);
+  if (!parsed) {
+    return "";
+  }
+
+  const cacheKey = `${parsed.vol}:${parsed.part}:${parsed.nmId}`;
+  let task = wbImageRecovery.hostProbeByKey.get(cacheKey);
+  if (!task) {
+    task = Promise.resolve(
+      resolveBasketHost({
+        nmId: parsed.nmId,
+        vol: parsed.vol,
+        part: parsed.part,
+        forceProbe: true,
+      }),
+    )
+      .then((value) => String(value || "").trim())
+      .catch(() => "")
+      .finally(() => {
+        if (wbImageRecovery.hostProbeByKey.get(cacheKey) === task) {
+          wbImageRecovery.hostProbeByKey.delete(cacheKey);
+        }
+      });
+    wbImageRecovery.hostProbeByKey.set(cacheKey, task);
+  }
+
+  return task;
+}
+
+function refreshPreviewGalleryFromRow(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId || !el.previewModal || el.previewModal.hidden || String(previewGallery.rowId || "") !== rowId) {
+    return;
+  }
+
+  const row = getRowById(rowId);
+  const items = buildPreviewItemsFromRow(row);
+  if (items.length <= 0) {
+    closePreview();
+    return;
+  }
+
+  const nextIndex = Math.max(0, Math.min(items.length - 1, Number(previewGallery.currentIndex) || 0));
+  const titlePrefix = row?.nmId ? `Артикул ${row.nmId}` : previewGallery.titlePrefix || "";
+  openPreviewGallery(items, nextIndex, titlePrefix, rowId);
+}
+
+function refreshRecommendationsOverlayFromRow(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId || !el.recommendationsModal || el.recommendationsModal.hidden || !el.recommendationsContent) {
+    return;
+  }
+
+  if (String(el.recommendationsContent.dataset.rowId || "").trim() !== rowId) {
+    return;
+  }
+
+  const mode = String(el.recommendationsContent.dataset.mode || "").trim();
+  if (mode === "color-variants") {
+    openColorVariants(rowId, { forceRefresh: false, skipBackgroundFetch: true }).catch(() => {});
+    return;
+  }
+
+  if (mode === "recommendations") {
+    const row = getRowById(rowId);
+    if (row) {
+      renderRecommendationsOverlay(row);
+    }
+  }
+}
+
+async function queueRepairableImageRowRefresh(rowIdRaw) {
+  const rowId = String(rowIdRaw || "").trim();
+  if (!rowId || state.isBulkLoading || typeof loadRow !== "function") {
+    return false;
+  }
+
+  let task = wbImageRecovery.rowRepairByRowId.get(rowId);
+  if (!task) {
+    task = (async () => {
+      const row = getRowById(rowId);
+      if (!row || row.loading || state.isBulkLoading) {
+        return false;
+      }
+
+      await loadRow(rowId, {
+        silentStart: true,
+        forceHostProbe: true,
+        mode: "content-only",
+        source: "system",
+        actionKey: "image-repair",
+        recordProblemSnapshot: false,
+      });
+
+      refreshPreviewGalleryFromRow(rowId);
+      refreshRecommendationsOverlayFromRow(rowId);
+      return true;
+    })().finally(() => {
+      if (wbImageRecovery.rowRepairByRowId.get(rowId) === task) {
+        wbImageRecovery.rowRepairByRowId.delete(rowId);
+      }
+    });
+    wbImageRecovery.rowRepairByRowId.set(rowId, task);
+  }
+
+  return task;
+}
+
+async function startRepairableImageHostRecovery(image) {
+  if (!(image instanceof HTMLImageElement) || typeof buildWbBasketImageFallbackUrls !== "function") {
+    return;
+  }
+
+  const originalUrl = getWbImageOriginalUrl(image);
+  const parsed = typeof parseWbBasketImageUrl === "function" ? parseWbBasketImageUrl(originalUrl) : null;
+  if (!parsed) {
+    return;
+  }
+
+  const freshHost = await resolveFreshHostForRepairableImage(originalUrl);
+  if (!freshHost) {
+    const rowId = getRepairableImageOwnerRowId(image);
+    if (rowId) {
+      await queueRepairableImageRowRefresh(rowId);
+    }
+    return;
+  }
+
+  applyResolvedHostToStateImages(parsed.nmId, freshHost);
+  queueWbImageCandidates(image, buildWbBasketImageFallbackUrls(originalUrl, { hostSuffix: freshHost }));
+
+  if (applyNextWbImageCandidate(image)) {
+    return;
+  }
+
+  const rowId = getRepairableImageOwnerRowId(image);
+  if (rowId) {
+    await queueRepairableImageRowRefresh(rowId);
+  }
+}
+
+function handleRepairableImageError(event) {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || typeof parseWbBasketImageUrl !== "function") {
+    return;
+  }
+
+  const currentUrl = getWbImageElementSrc(image);
+  if (!parseWbBasketImageUrl(currentUrl)) {
+    return;
+  }
+
+  getWbImageOriginalUrl(image);
+  markWbImageAttemptedUrl(image, currentUrl);
+
+  if (
+    image.dataset.wbImageHostRepairStarted !== "1" &&
+    typeof buildWbBasketImageFallbackUrls === "function"
+  ) {
+    queueWbImageCandidates(image, buildWbBasketImageFallbackUrls(getWbImageOriginalUrl(image)));
+  }
+
+  if (applyNextWbImageCandidate(image)) {
+    return;
+  }
+
+  if (image.dataset.wbImageHostRepairStarted !== "1") {
+    image.dataset.wbImageHostRepairStarted = "1";
+    void startRepairableImageHostRecovery(image);
+    return;
+  }
+
+  const rowId = getRepairableImageOwnerRowId(image);
+  if (!rowId || image.dataset.wbImageRowRepairStarted === "1") {
+    return;
+  }
+
+  image.dataset.wbImageRowRepairStarted = "1";
+  void queueRepairableImageRowRefresh(rowId);
+}
+
+function handleRepairableImageLoad(event) {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || typeof parseWbBasketImageUrl !== "function") {
+    return;
+  }
+
+  const currentUrl = getWbImageElementSrc(image);
+  if (!parseWbBasketImageUrl(currentUrl)) {
+    return;
+  }
+
+  const originalUrl = String(image.dataset.wbImageOriginalUrl || "").trim();
+  if (originalUrl && currentUrl !== originalUrl) {
+    applyResolvedImageTemplateToStateImages(currentUrl);
+  }
 }
 
 

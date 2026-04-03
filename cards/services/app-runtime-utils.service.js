@@ -1253,6 +1253,164 @@ function toSlidePreviewUrl(urlRaw) {
     .replace("/images/tm/", "/images/big/");
 }
 
+function parseWbBasketImageUrl(urlRaw) {
+  const url = String(urlRaw || "").trim();
+  if (!url) {
+    return null;
+  }
+
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(url, window.location.origin);
+  } catch {
+    return null;
+  }
+
+  const hostMatch = parsedUrl.hostname.match(/^basket-(\d{1,3})\.wbbasket\.ru$/i);
+  if (!hostMatch) {
+    return null;
+  }
+
+  const pathMatch = parsedUrl.pathname.match(
+    /^\/vol(\d+)\/part(\d+)\/(\d+)\/images\/([^/]+)\/([^/.]+)\.(webp|jpg|jpeg|png|gif|avif)$/i,
+  );
+  if (!pathMatch) {
+    return null;
+  }
+
+  const vol = Number(pathMatch[1]);
+  const part = Number(pathMatch[2]);
+  const nmId = Number(pathMatch[3]);
+  if (!Number.isInteger(vol) || !Number.isInteger(part) || !Number.isInteger(nmId) || nmId <= 0) {
+    return null;
+  }
+
+  return {
+    protocol: parsedUrl.protocol || "https:",
+    hostSuffix: String(hostMatch[1]).padStart(2, "0"),
+    vol,
+    part,
+    nmId,
+    size: String(pathMatch[4] || "").trim().toLowerCase(),
+    fileName: String(pathMatch[5] || "").trim(),
+    ext: String(pathMatch[6] || "").trim().toLowerCase(),
+    search: parsedUrl.search || "",
+    hash: parsedUrl.hash || "",
+  };
+}
+
+function buildWbBasketImageUrl(partsRaw) {
+  const parts = partsRaw && typeof partsRaw === "object" ? partsRaw : null;
+  if (!parts) {
+    return "";
+  }
+
+  const hostSuffix = String(parts.hostSuffix || "").trim().padStart(2, "0");
+  const vol = Number(parts.vol);
+  const part = Number(parts.part);
+  const nmId = Number(parts.nmId);
+  const size = String(parts.size || "").trim();
+  const fileName = String(parts.fileName || "").trim();
+  const ext = String(parts.ext || "").trim().toLowerCase();
+
+  if (
+    !hostSuffix ||
+    !Number.isInteger(vol) ||
+    !Number.isInteger(part) ||
+    !Number.isInteger(nmId) ||
+    !size ||
+    !fileName ||
+    !ext
+  ) {
+    return "";
+  }
+
+  const search = String(parts.search || "");
+  const hash = String(parts.hash || "");
+  return `https://basket-${hostSuffix}.wbbasket.ru/vol${vol}/part${part}/${nmId}/images/${size}/${fileName}.${ext}${search}${hash}`;
+}
+
+function replaceWbBasketImageHost(urlRaw, hostSuffixRaw) {
+  const parsed = parseWbBasketImageUrl(urlRaw);
+  const hostSuffix = String(hostSuffixRaw || "").trim();
+  if (!parsed || !hostSuffix) {
+    return "";
+  }
+  return buildWbBasketImageUrl({
+    ...parsed,
+    hostSuffix,
+  });
+}
+
+function getWbBasketImageSizeFallbackOrder(sizeRaw) {
+  const size = String(sizeRaw || "").trim().toLowerCase();
+  if (size === "c246x328") {
+    return ["c246x328", "c516x688", "big", "large", "tm"];
+  }
+  if (size === "c516x688") {
+    return ["c516x688", "big", "large", "c246x328", "tm"];
+  }
+  if (size === "large") {
+    return ["large", "big", "c516x688", "c246x328", "tm"];
+  }
+  if (size === "tm") {
+    return ["tm", "c246x328", "c516x688", "big", "large"];
+  }
+  return ["big", "large", "c516x688", "c246x328", "tm"];
+}
+
+function getWbBasketImageExtFallbackOrder(extRaw) {
+  const ext = String(extRaw || "").trim().toLowerCase();
+  const ordered = [];
+  const addExt = (valueRaw) => {
+    const value = String(valueRaw || "").trim().toLowerCase();
+    if (!value || ordered.includes(value)) {
+      return;
+    }
+    ordered.push(value);
+  };
+
+  addExt(ext);
+  if (ext !== "webp") {
+    addExt("webp");
+  }
+  addExt("jpg");
+  addExt("jpeg");
+  addExt("png");
+  return ordered;
+}
+
+function buildWbBasketImageFallbackUrls(urlRaw, options = {}) {
+  const parsed = parseWbBasketImageUrl(urlRaw);
+  if (!parsed) {
+    return [];
+  }
+
+  const hostSuffix = String(options.hostSuffix || parsed.hostSuffix).trim().padStart(2, "0");
+  const sizes = getWbBasketImageSizeFallbackOrder(parsed.size);
+  const exts = getWbBasketImageExtFallbackOrder(parsed.ext);
+  const urls = [];
+  const seen = new Set();
+
+  for (const size of sizes) {
+    for (const ext of exts) {
+      const candidate = buildWbBasketImageUrl({
+        ...parsed,
+        hostSuffix,
+        size,
+        ext,
+      });
+      if (!candidate || seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      urls.push(candidate);
+    }
+  }
+
+  return urls;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
