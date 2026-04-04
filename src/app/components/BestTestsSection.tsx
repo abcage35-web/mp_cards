@@ -311,22 +311,45 @@ function CompactMetricTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key} className={row.highlight ? "bg-slate-950/60" : ""}>
-                <td className={`whitespace-nowrap border-b border-r border-slate-800 px-2 py-1 text-[10px] ${row.highlight ? "bg-slate-800/85 text-white" : "bg-slate-800/55 text-slate-200"}`} style={{ fontWeight: 800 }}>
+              <tr key={row.key} className={row.highlight ? "bg-emerald-500/8" : ""}>
+                <td
+                  className={`whitespace-nowrap border-b border-r border-slate-800 px-2 py-1 text-[10px] ${
+                    row.highlight
+                      ? "bg-emerald-500/18 text-emerald-200"
+                      : "bg-slate-800/55 text-slate-200"
+                  }`}
+                  style={{ fontWeight: 800 }}
+                >
                   {row.label}
                 </td>
-                <td className="border-b border-r border-slate-800 px-1.5 py-1 text-center text-slate-100">
+                <td
+                  className={`border-b border-r border-slate-800 px-1.5 py-1 text-center ${
+                    row.highlight ? "bg-emerald-500/6 text-emerald-100" : "text-slate-100"
+                  }`}
+                >
                   {row.before}
                 </td>
                 {showDuring ? (
-                  <td className="border-b border-r border-slate-800 px-1.5 py-1 text-center text-slate-100">
+                  <td
+                    className={`border-b border-r border-slate-800 px-1.5 py-1 text-center ${
+                      row.highlight ? "bg-emerald-500/6 text-emerald-100" : "text-slate-100"
+                    }`}
+                  >
                     {row.during || <span className="text-[10px] text-slate-500">—</span>}
                   </td>
                 ) : null}
-                <td className="border-b border-r border-slate-800 px-1.5 py-1 text-center text-slate-100">
+                <td
+                  className={`border-b border-r border-slate-800 px-1.5 py-1 text-center ${
+                    row.highlight ? "bg-emerald-500/6 text-emerald-100" : "text-slate-100"
+                  }`}
+                >
                   {row.after}
                 </td>
-                <td className="border-b border-slate-800 px-1.5 py-1 text-center">
+                <td
+                  className={`border-b border-slate-800 px-1.5 py-1 text-center ${
+                    row.highlight ? "bg-emerald-500/6" : ""
+                  }`}
+                >
                   {row.growthNode || <DeltaBadge kind={row.growthKind} text={row.growthText} />}
                 </td>
               </tr>
