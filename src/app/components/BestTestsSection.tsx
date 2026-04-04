@@ -209,7 +209,7 @@ function DeltaBadge({ kind, text }: { kind?: string; text?: string }) {
 function DateBadge({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <span
-      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[10px] ${
+      className={`inline-flex h-6 items-center rounded-full border px-2 text-[9px] ${
         accent
           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
           : "border-slate-700 bg-slate-950/80 text-slate-300"
@@ -229,9 +229,9 @@ function CompactMetricTable({
   rows: MetricRow[];
 }) {
   return (
-    <section className="overflow-hidden rounded-[18px] border border-slate-800 bg-slate-900">
-      <div className="border-b border-slate-800 px-3 py-2.5">
-        <div className="text-[13px] text-white" style={{ fontWeight: 900 }}>
+    <section className="overflow-hidden rounded-[16px] border border-slate-800 bg-slate-900">
+      <div className="border-b border-slate-800 px-2.5 py-2">
+        <div className="text-[12px] text-white" style={{ fontWeight: 900 }}>
           {title}
         </div>
       </div>
@@ -246,16 +246,16 @@ function CompactMetricTable({
           </colgroup>
           <thead>
             <tr>
-              <th className="border-b border-r border-slate-800 bg-slate-800/75 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-300" style={{ fontWeight: 800 }}>
+              <th className="border-b border-r border-slate-800 bg-slate-800/75 px-2.5 py-1.5 text-left text-[9px] uppercase tracking-[0.12em] text-slate-300" style={{ fontWeight: 800 }}>
                 Метрика
               </th>
-              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-2 py-1.5 text-center text-[10px] text-slate-100" style={{ fontWeight: 800 }}>
                 До
               </th>
-              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-2 py-1.5 text-center text-[10px] text-slate-100" style={{ fontWeight: 800 }}>
                 После
               </th>
-              <th className="border-b border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+              <th className="border-b border-slate-800 bg-slate-950/70 px-2 py-1.5 text-center text-[10px] text-slate-100" style={{ fontWeight: 800 }}>
                 Прирост
               </th>
             </tr>
@@ -263,16 +263,16 @@ function CompactMetricTable({
           <tbody>
             {rows.map((row) => (
               <tr key={row.key} className={row.highlight ? "bg-slate-950/60" : ""}>
-                <td className={`border-b border-r border-slate-800 px-3 py-2 text-[11px] ${row.highlight ? "bg-slate-800/85 text-white" : "bg-slate-800/55 text-slate-200"}`} style={{ fontWeight: 800 }}>
+                <td className={`border-b border-r border-slate-800 px-2.5 py-1.5 text-[10px] ${row.highlight ? "bg-slate-800/85 text-white" : "bg-slate-800/55 text-slate-200"}`} style={{ fontWeight: 800 }}>
                   {row.label}
                 </td>
-                <td className="border-b border-r border-slate-800 px-2 py-2 text-center text-slate-100">
+                <td className="border-b border-r border-slate-800 px-1.5 py-1.5 text-center text-slate-100">
                   {row.before}
                 </td>
-                <td className="border-b border-r border-slate-800 px-2 py-2 text-center text-slate-100">
+                <td className="border-b border-r border-slate-800 px-1.5 py-1.5 text-center text-slate-100">
                   {row.after}
                 </td>
-                <td className="border-b border-slate-800 px-2 py-2 text-center">
+                <td className="border-b border-slate-800 px-1.5 py-1.5 text-center">
                   {row.growthNode || <DeltaBadge kind={row.growthKind} text={row.growthText} />}
                 </td>
               </tr>
@@ -286,7 +286,7 @@ function CompactMetricTable({
 
 function buildValueNode(value: string) {
   return (
-    <span className="font-mono text-[12px] text-slate-100" style={{ fontWeight: 800 }}>
+    <span className="font-mono text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
       {value || "—"}
     </span>
   );
@@ -348,9 +348,9 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   });
 
   return (
-    <article className="overflow-hidden rounded-[24px] border border-slate-800 bg-slate-950 shadow-[0_18px_48px_-28px_rgba(15,23,42,0.7)]">
-      <header className="border-b border-slate-800 bg-slate-900/85 px-3 py-3">
-        <div className="flex flex-col gap-2">
+    <article className="overflow-hidden rounded-[22px] border border-slate-800 bg-slate-950 shadow-[0_18px_48px_-28px_rgba(15,23,42,0.7)]">
+      <header className="border-b border-slate-800 bg-slate-900/85 px-2.5 py-2.5">
+        <div className="flex flex-col gap-1.5">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -363,10 +363,10 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
                 </div>
               </div>
 
-              <h3 className="mt-2 line-clamp-2 text-[14px] text-white" style={{ fontWeight: 900, lineHeight: 1.15 }}>
+              <h3 className="mt-1.5 line-clamp-2 text-[13px] text-white" style={{ fontWeight: 900, lineHeight: 1.15 }}>
                 {test.title || test.productName || `Тест ${test.testId}`}
               </h3>
-              <p className="mt-1 text-[11px] text-slate-400" style={{ fontWeight: 600 }}>
+              <p className="mt-0.5 text-[10px] text-slate-400" style={{ fontWeight: 600 }}>
                 Тест {test.testId} · {beforeRkDate} — {afterRkDate}
               </p>
             </div>
@@ -387,7 +387,7 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
         </div>
       </header>
 
-      <div className="grid gap-2 p-2.5">
+      <div className="grid gap-1.5 p-2">
         <CompactMetricTable title="AB-тест" rows={abRows} />
         <CompactMetricTable title="РК" rows={rkRows} />
       </div>
@@ -437,7 +437,7 @@ export function BestTestsSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
         {tests.map((test, index) => (
           <BestTestCard key={test.testId || `${test.article}-${index}`} test={test} rank={index + 1} />
         ))}
