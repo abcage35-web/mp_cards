@@ -358,6 +358,47 @@ export function abFormatCompactPeriodDateTime(isoRaw: string): string {
   return `${parts.date} (${parts.time || "—"})`;
 }
 
+function parseXwayTestUrl(rawUrl: string) {
+  const value = String(rawUrl || "").trim();
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(?:https?:\/\/am\.xway\.ru)?\/wb\/shop\/(\d+)\/product\/(\d+)(?:\/ab-test\/(\d+))?/i);
+  if (!match) {
+    return null;
+  }
+
+  const [, shopId, productId, testId = ""] = match;
+  return {
+    shopId: String(shopId || "").trim(),
+    productId: String(productId || "").trim(),
+    testId: String(testId || "").trim(),
+  };
+}
+
+export function abBuildXwayAbTestUrl(rawUrl: string) {
+  const value = String(rawUrl || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const parsed = parseXwayTestUrl(value);
+  if (parsed?.shopId && parsed?.productId && parsed?.testId) {
+    return `https://am.xway.ru/wb/shop/${parsed.shopId}/product/${parsed.productId}/ab-test/${parsed.testId}`;
+  }
+
+  return value.includes("/ab-test/") ? value : "";
+}
+
+export function abBuildXwayRkUrl(rawUrl: string) {
+  const parsed = parseXwayTestUrl(rawUrl);
+  if (!parsed?.shopId || !parsed?.productId) {
+    return "";
+  }
+  return `https://am.xway.ru/wb/shop/${parsed.shopId}/product/${parsed.productId}`;
+}
+
 // ── Data building ──
 function abCell(row: any, id: string) {
   if (!row || typeof row !== "object") return { v: "", f: "" };

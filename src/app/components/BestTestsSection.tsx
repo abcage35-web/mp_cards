@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ExternalLink, Trophy } from "lucide-react";
 
-import { abFormatCompactPeriodDateTime, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
+import { abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
 
 interface Props {
   tests: TestCard[];
@@ -383,6 +383,8 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   const beforeRkDate = formatBlockDate(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
   const afterRkDate = formatBlockDate(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
   const title = test.title || test.productName || `Тест ${test.testId}`;
+  const abTestUrl = abBuildXwayAbTestUrl(test.xwayUrl);
+  const rkUrl = abBuildXwayRkUrl(test.xwayUrl);
 
   const abRows: MetricRow[] = [
     {
@@ -449,7 +451,8 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center gap-1">
-              <LinkChip href={test.xwayUrl} label="XWAY" />
+              <LinkChip href={abTestUrl} label="AB-тест" />
+              <LinkChip href={rkUrl} label="РК" />
               <LinkChip href={test.wbUrl} label="WB" />
             </div>
           </div>

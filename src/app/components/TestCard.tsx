@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { ExternalLink, Info, RefreshCw, BarChart3, ArrowRight, ChevronRight } from "lucide-react";
-import { type TestCard as TestCardType, abFormatCompactPeriodDateTime, AB_MATRIX_METRIC_COL_WIDTH, AB_MATRIX_VARIANT_COL_WIDTH } from "./ab-service";
+import { type TestCard as TestCardType, abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, AB_MATRIX_METRIC_COL_WIDTH, AB_MATRIX_VARIANT_COL_WIDTH } from "./ab-service";
 import { StatusPill } from "./StatusPill";
 
 type XwayStatus = "idle" | "loading" | "ready" | "error";
@@ -81,6 +81,8 @@ export function TestCardComponent({
   const [showReport, setShowReport] = useState(false);
   const matrixWidthPx = AB_MATRIX_METRIC_COL_WIDTH + test.variants.length * AB_MATRIX_VARIANT_COL_WIDTH;
   const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} — ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
+  const abTestUrl = abBuildXwayAbTestUrl(test.xwayUrl);
+  const rkUrl = abBuildXwayRkUrl(test.xwayUrl);
   const rkBeforeDate = formatDateOnly(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
   const rkDuringDate = buildPeriodLabel(test.startedAtIso, test.endedAtIso, test.startedAt, test.endedAt);
   const rkAfterDate = formatDateOnly(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
@@ -164,7 +166,8 @@ export function TestCardComponent({
                 onClick={() => onOpenXwayMetrics(test)}
               />
             ) : null}
-            <LinkBtn url={test.xwayUrl} label="XWay" />
+            <LinkBtn url={abTestUrl} label="AB-тест" />
+            <LinkBtn url={rkUrl} label="РК" />
             <LinkBtn url={test.wbUrl} label="WB" />
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { ExternalLink, ImageIcon } from "lucide-react";
 
-import { abFormatInt } from "./ab-service";
+import { abBuildXwayRkUrl, abFormatInt } from "./ab-service";
 import { StatusPill } from "./StatusPill";
 import { type XwayAbTest, xwayAbLaunchStatusLabel } from "./xway-ab-service";
 
@@ -41,6 +41,7 @@ function launchStatusStyles(rawValue: string) {
 
 export function XwayAbTestCard({ test }: Props) {
   const gallery = test.imageUrls.length ? test.imageUrls : (test.mainImageUrl ? [test.mainImageUrl] : []);
+  const rkUrl = abBuildXwayRkUrl(test.xwayUrl);
 
   return (
     <article className="border border-slate-200/80 dark:border-slate-700/80 rounded-2xl bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -64,16 +65,30 @@ export function XwayAbTestCard({ test }: Props) {
             </p>
           </div>
 
-          <a
-            href={test.xwayUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 h-9 px-3 rounded-xl border border-teal-300 bg-gradient-to-b from-teal-600 to-teal-700 text-white text-[13px] inline-flex items-center gap-2 shadow-sm hover:shadow-md hover:from-teal-500 hover:to-teal-600 transition-all"
-            style={{ fontWeight: 700 }}
-          >
-            <span>XWAY</span>
-            <ExternalLink className="w-4 h-4" />
-          </a>
+          <div className="shrink-0 flex items-center gap-2">
+            <a
+              href={test.xwayUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-9 px-3 rounded-xl border border-teal-300 bg-gradient-to-b from-teal-600 to-teal-700 text-white text-[13px] inline-flex items-center gap-2 shadow-sm hover:shadow-md hover:from-teal-500 hover:to-teal-600 transition-all"
+              style={{ fontWeight: 700 }}
+            >
+              <span>AB-тест</span>
+              <ExternalLink className="w-4 h-4" />
+            </a>
+            {rkUrl ? (
+              <a
+                href={rkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[13px] inline-flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                style={{ fontWeight: 700 }}
+              >
+                <span>РК</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-3">
