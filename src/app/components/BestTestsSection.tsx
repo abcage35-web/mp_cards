@@ -65,9 +65,23 @@ function getComparisonRow(test: TestCard, label: string) {
   return test.comparisonRows.find((row) => String(row.label || "").trim() === label) || null;
 }
 
-function getAfterCtrCr1Score(test: TestCard) {
+function getCtrCr1GrowthScore(test: TestCard) {
   const row = getComparisonRow(test, "CTR*CR1");
-  return parseDisplayNumber(row?.after ?? null);
+  const before = parseDisplayNumber(row?.before ?? null);
+  const after = parseDisplayNumber(row?.after ?? null);
+  if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) {
+    return null;
+  }
+  return after / before - 1;
+}
+
+function getCtrCr1GrowthText(test: TestCard) {
+  const row = getComparisonRow(test, "CTR*CR1");
+  const current = String(row?.deltaText || "").trim();
+  if (current && current !== "—") {
+    return current;
+  }
+  return formatSignedPercentDelta(parseDisplayNumber(row?.before ?? null), parseDisplayNumber(row?.after ?? null)) || "—";
 }
 
 function isCompletedTest(test: TestCard) {
@@ -364,7 +378,7 @@ function buildValueNode(value: string) {
 function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   const baselineVariant = getBaselineVariant(test);
   const bestVariant = getBestVariant(test) || baselineVariant;
-  const rkCtrCr1Row = getComparisonRow(test, "CTR*CR1");
+  const rkCtrCr1GrowthText = getCtrCr1GrowthText(test);
   const abTestActivityPeriod = formatAbTestActivityPeriod(test);
   const beforeRkDate = formatBlockDate(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
   const afterRkDate = formatBlockDate(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
@@ -430,7 +444,7 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
               </span>
               <div className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300" style={{ fontWeight: 800 }}>
                 <Trophy className="h-3 w-3" />
-                CTR*CR1: {rkCtrCr1Row?.after || "—"}
+                Прирост CTR*CR1: {rkCtrCr1GrowthText}
               </div>
             </div>
 
@@ -485,9 +499,9 @@ export function getBestCompletedTests<T extends TestCard>(testsRaw: T[]) {
   const tests = Array.isArray(testsRaw) ? testsRaw : [];
 
   return [...tests]
-    .filter((test) => isCompletedTest(test) && isSuccessfulCleanTest(test) && Number.isFinite(getAfterCtrCr1Score(test)))
+    .filter((test) => isCompletedTest(test) && isSuccessfulCleanTest(test) && Number.isFinite(getCtrCr1GrowthScore(test)))
     .sort((a, b) => {
-      const scoreDiff = Number(getAfterCtrCr1Score(b)) - Number(getAfterCtrCr1Score(a));
+      const scoreDiff = Number(getCtrCr1GrowthScore(b)) - Number(getCtrCr1GrowthScore(a));
       if (scoreDiff !== 0) return scoreDiff;
       return sortTimestampDesc(a, b);
     });
@@ -495,7 +509,7 @@ export function getBestCompletedTests<T extends TestCard>(testsRaw: T[]) {
 
 export function BestTestsSection({
   tests,
-  emptyMessage = "Нет завершённых успешных чистых тестов с рассчитанным CTR*CR1 после под выбранные фильтры.",
+  emptyMessage = "Нет завершённых успешных чистых тестов с рассчитанным приростом CTR*CR1 под выбранные фильтры.",
 }: Props) {
   if (!tests.length) {
     return (
@@ -514,7 +528,7 @@ export function BestTestsSection({
               Лучшие
             </h2>
             <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
-              Только успешные по воронке чистых тестов, сортировка по `CTR*CR1 после` по убыванию.
+              Только успешные по воронке чистых тестов, сортировка по `приросту CTR*CR1` по убыванию.
             </p>
           </div>
           <div className="inline-flex h-9 items-center rounded-2xl border border-slate-200/80 bg-slate-50 px-3 text-[12px] text-slate-700 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200" style={{ fontWeight: 800 }}>
