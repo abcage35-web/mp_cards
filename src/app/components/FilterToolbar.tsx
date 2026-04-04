@@ -139,7 +139,7 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
-              {(["tests", "products", "both"] as const).map(v => (
+              {(["tests", "products", "both", "best"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => onChange({ view: v })}
@@ -150,7 +150,7 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
                   }`}
                   style={{ fontWeight: 700 }}
                 >
-                  {v === "tests" ? "По тестам" : v === "products" ? "По товарам" : "Оба вида"}
+                  {v === "tests" ? "По тестам" : v === "products" ? "По товарам" : v === "both" ? "Оба вида" : "Лучшие"}
                 </button>
               ))}
             </div>

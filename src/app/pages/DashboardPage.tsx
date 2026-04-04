@@ -22,6 +22,7 @@ import {
   type TestCard,
   type XwayPayload,
 } from "../components/ab-service";
+import { BestTestsSection, getBestCompletedTests } from "../components/BestTestsSection";
 import { FilterToolbar } from "../components/FilterToolbar";
 import { FunnelDashboard } from "../components/FunnelDashboard";
 import { ProductGroupsWithTests } from "../components/ProductGroupsWithTests";
@@ -662,6 +663,8 @@ export function DashboardPage() {
 
   const testLimit = Math.max(1, Number(filters.limit) || AB_TEST_LIMIT_OPTIONS[0]);
   const limitedTests = filteredTests.slice(0, testLimit);
+  const bestTests = useMemo(() => getBestCompletedTests(filteredTests), [filteredTests]);
+  const limitedBestTests = useMemo(() => bestTests.slice(0, testLimit), [bestTests, testLimit]);
   const groupedProducts = buildProducts(filteredTests, productMetaByTestId);
   const filteredProducts = mergeProductSnapshots(groupedProducts, productSnapshotsByKey);
   const limitedProducts = useMemo(
@@ -672,6 +675,8 @@ export function DashboardPage() {
   const showTests = filters.view === "tests";
   const showProducts = filters.view === "products";
   const showBoth = filters.view === "both";
+  const showBest = filters.view === "best";
+  const toolbarTests = showBest ? bestTests : filteredTests;
 
   useEffect(() => {
     if ((!showProducts && !showBoth) || !groupedProducts.length) return;
@@ -766,7 +771,7 @@ export function DashboardPage() {
         <>
           <FilterToolbar
             model={model}
-            filteredTests={filteredTests}
+            filteredTests={toolbarTests}
             filters={filters}
             onChange={handleFilterChange}
             onReset={handleReset}
@@ -826,6 +831,8 @@ export function DashboardPage() {
               )}
             />
           ) : null}
+
+          {showBest ? <BestTestsSection tests={limitedBestTests} /> : null}
         </>
       ) : null}
 
