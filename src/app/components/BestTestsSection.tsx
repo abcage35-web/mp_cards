@@ -135,8 +135,8 @@ function shiftIsoDateTime(isoRaw: string, days: number) {
 }
 
 function formatAbTestActivityPeriod(test: TestCard) {
-  const startedAt = formatBlockDate(test.startedAtIso, test.startedAt);
-  const endedAt = formatBlockDate(test.endedAtIso, test.endedAt);
+  const startedAt = formatBlockDate(String(test.abActivityStartedAtIso || "").trim() || test.startedAtIso, test.startedAt);
+  const endedAt = formatBlockDate(String(test.abActivityEndedAtIso || "").trim() || test.endedAtIso, test.endedAt);
   if (startedAt === "—" && endedAt === "—") {
     return "—";
   }

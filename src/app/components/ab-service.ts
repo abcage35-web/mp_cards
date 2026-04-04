@@ -82,6 +82,8 @@ export interface TestCard {
   startedAtIso: string;
   endedAt: string;
   endedAtIso: string;
+  abActivityStartedAtIso?: string;
+  abActivityEndedAtIso?: string;
   metrics: Array<{
     checkName: string;
     label: string;
@@ -598,7 +600,7 @@ function abBuildComputedTestCard(sourceRow: any, resultsByTest: Map<string, any[
     type: (abCellText(sourceRow, "D") || "").trim(), campaignExternalId,
     cabinet: abResolveCabinet(testTitle), startedAt: abFormatSourceDateTime(abCellRaw(sourceRow, "M")),
     startedAtIso: startedAtIso || "", endedAt: abFormatSourceDateTime(abCellRaw(sourceRow, "O")),
-    endedAtIso: endedAtIso || "", metrics, finalStatusRaw: mb.overallDecisionRaw,
+    endedAtIso: endedAtIso || "", abActivityStartedAtIso: startedAtIso || "", abActivityEndedAtIso: endedAtIso || "", metrics, finalStatusRaw: mb.overallDecisionRaw,
     finalStatusKind: abNormalizeStatus(mb.overallDecisionRaw),
     summaryChecks: { testCtr: mb.ctrDecisionRaw, testPrice: mb.priceDecisionRaw, testCtrCr1: mb.ctrCr1DecisionRaw, overall: mb.overallDecisionRaw },
     variants, priceDeviationCount: abFormatInt(abCountPriceTransitions(mb.priceBefore, mb.priceDuring, mb.priceAfter)),

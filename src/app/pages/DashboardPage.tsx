@@ -254,20 +254,28 @@ export function DashboardPage() {
   const productSnapshotInflightRef = useRef(new Set<string>());
   const xwayDialogRequestIdRef = useRef(0);
 
-  const applyXwayChecksToModel = useCallback((testId: string, checks: SummaryChecks | null) => {
+  const applyXwayChecksToModel = useCallback((testId: string, checks: SummaryChecks | null, payload: XwayPayload | null = null) => {
     startTransition(() => {
       setModel((current) => {
         if (!current) return current;
         let changed = false;
         const nextTests = current.tests.map((test) => {
           if (test.testId !== testId) return test;
-          if (areSummaryChecksEqual(test.xwaySummaryChecks || null, checks)) {
+          const nextActivityStartedAtIso = String(payload?.test?.startedAt || "").trim() || test.abActivityStartedAtIso || test.startedAtIso;
+          const nextActivityEndedAtIso = String(payload?.test?.endedAt || "").trim() || test.abActivityEndedAtIso || test.endedAtIso;
+          const sameChecks = areSummaryChecksEqual(test.xwaySummaryChecks || null, checks);
+          const sameActivityPeriod =
+            String(test.abActivityStartedAtIso || test.startedAtIso || "") === String(nextActivityStartedAtIso || "")
+            && String(test.abActivityEndedAtIso || test.endedAtIso || "") === String(nextActivityEndedAtIso || "");
+          if (sameChecks && sameActivityPeriod) {
             return test;
           }
           changed = true;
           return {
             ...test,
             xwaySummaryChecks: checks || null,
+            abActivityStartedAtIso: nextActivityStartedAtIso,
+            abActivityEndedAtIso: nextActivityEndedAtIso,
           };
         });
         return changed ? { ...current, tests: nextTests } : current;
@@ -401,7 +409,7 @@ export function DashboardPage() {
         if (!item) return;
         const result = await resolveXwayForTest(item.test, { force: options.force });
         if (result.status === "ready") {
-          applyXwayChecksToModel(item.test.testId, result.checks);
+          applyXwayChecksToModel(item.test.testId, result.checks, result.payload);
           updateXwayStatus(item.test.testId, "ready");
         } else {
           applyXwayChecksToModel(item.test.testId, null);
@@ -585,7 +593,7 @@ export function DashboardPage() {
     updateXwayStatus(test.testId, "loading");
     const result = await resolveXwayForTest(test, { force: true });
     if (result.status === "ready") {
-      applyXwayChecksToModel(test.testId, result.checks);
+      applyXwayChecksToModel(test.testId, result.checks, result.payload);
       updateXwayStatus(test.testId, "ready");
       if (xwayDialogState.open && xwayDialogState.test?.testId === test.testId) {
         setXwayDialogState({
@@ -638,7 +646,7 @@ export function DashboardPage() {
     if (xwayDialogRequestIdRef.current !== requestId) return;
 
     if (result.status === "ready") {
-      applyXwayChecksToModel(test.testId, result.checks);
+      applyXwayChecksToModel(test.testId, result.checks, result.payload);
       updateXwayStatus(test.testId, "ready");
       setXwayDialogState({
         open: true,

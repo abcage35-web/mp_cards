@@ -591,8 +591,8 @@ export async function onRequestGet(context) {
       test: {
         id: Number(testInfo?.id) || 0,
         name: String(testInfo?.name || "").trim(),
-        startedAt: startedAtIso,
-        endedAt: endedAtIso,
+        startedAt: String(testInfo?.started_at || "").trim(),
+        endedAt: String(testInfo?.finished_at || "").trim(),
         avgCtr: Number.isFinite(Number(testInfo?.avg_ctr)) ? Number(testInfo.avg_ctr) / 100 : null,
         progress: Number(testInfo?.progress) || 0,
         launchStatus: String(testInfo?.launch_status || "").trim(),

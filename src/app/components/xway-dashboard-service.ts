@@ -335,6 +335,8 @@ function buildBaseTest(item: XwayAbApiItem, mainImageUrl: string, sheetPrice: Xw
     startedAtIso: String(item.startedAt || "").trim(),
     endedAt: formatDateLabel(String(item.finishedAt || "")),
     endedAtIso: String(item.finishedAt || "").trim(),
+    abActivityStartedAtIso: String(item.startedAt || "").trim(),
+    abActivityEndedAtIso: String(item.finishedAt || "").trim(),
     metrics: [],
     finalStatusRaw: "?",
     finalStatusKind: "unknown",
@@ -848,6 +850,8 @@ export function buildXwayDashboardPatch(test: XwayDashboardTest, payload: XwayPa
   return {
     summaryChecks: checks,
     xwaySummaryChecks: checks,
+    abActivityStartedAtIso: String(payload?.test?.startedAt || "").trim() || test.abActivityStartedAtIso || test.startedAtIso,
+    abActivityEndedAtIso: String(payload?.test?.endedAt || "").trim() || test.abActivityEndedAtIso || test.endedAtIso,
     finalStatusRaw,
     finalStatusKind,
     variants,
