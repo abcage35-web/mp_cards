@@ -38,7 +38,7 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
   const selectedCabinetLabel = abResolveCabinetFilterLabel(filters.cabinet || "");
   const cabinetOptions = [
     { value: "all", label: "Все кабинеты" },
-    ...(selectedCabinetLabel && selectedCabinetLabel !== "Все кабинеты" && !cabinets.includes(filters.cabinet)
+    ...(filters.cabinet !== "all" && selectedCabinetLabel && selectedCabinetLabel !== "Все кабинеты" && !cabinets.includes(filters.cabinet)
       ? [{ value: filters.cabinet, label: selectedCabinetLabel }]
       : []),
     ...cabinets.map(c => ({ value: c, label: c })),
