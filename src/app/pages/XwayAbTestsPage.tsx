@@ -486,9 +486,9 @@ export function XwayAbTestsPage() {
   }, [filteredTests]);
 
   useEffect(() => {
-    if (!model || !filteredXwaySignature) return;
+    if (!filteredXwaySignature) return;
     void hydrateXwayForTests(filteredTestsRef.current, { force: true, reset: true });
-  }, [filteredXwaySignature, hydrateXwayForTests, model]);
+  }, [filteredXwaySignature, hydrateXwayForTests]);
 
   const handleRefreshFilteredXway = useCallback(async () => {
     await hydrateXwayForTests(filteredTestsRef.current, { force: true, reset: true });
