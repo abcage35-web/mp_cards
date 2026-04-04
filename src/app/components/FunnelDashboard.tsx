@@ -2,7 +2,7 @@ import { useState } from "react";
 import { RefreshCw, BarChart2, PieChart as PieChartIcon } from "lucide-react";
 import {
   type TestCard, type FunnelCard, type Filters,
-  abBuildAggregateFunnelCard, abBuildCabinetFunnelCards, abGetFunnelStageStyle, abFormatInt,
+  abBuildAggregateFunnelCard, abBuildCabinetFunnelCards, abBuildGroupedCabinetFunnelCards, abGetFunnelStageStyle, abFormatInt,
 } from "./ab-service";
 
 type ChartMode = "bars" | "pies";
@@ -18,13 +18,16 @@ interface Props {
 
 export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwayStatusByTestId, onRefreshXway }: Props) {
   const [chartMode, setChartMode] = useState<ChartMode>("pies");
+  const [groupByIp, setGroupByIp] = useState(false);
 
   if (!filteredTests.length) return null;
   const cabinetOrder = Array.from(new Set(filteredTests.map(i => i?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
   const exportAggregateCard = abBuildAggregateFunnelCard(filteredTests, "export");
   const exportFunnelCards = [
     ...(exportAggregateCard ? [exportAggregateCard] : []),
-    ...abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "export"),
+    ...(groupByIp
+      ? abBuildGroupedCabinetFunnelCards(filteredTests, cabinetOrder, "export")
+      : abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "export")),
   ];
   if (!exportFunnelCards.length) return null;
 
@@ -47,7 +50,9 @@ export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwaySta
   const xwayFunnelCards = hasXwayChecks
     ? [
         ...(xwayAggregateCard ? [xwayAggregateCard] : []),
-        ...abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway"),
+        ...(groupByIp
+          ? abBuildGroupedCabinetFunnelCards(filteredTests, cabinetOrder, "xway")
+          : abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway")),
       ]
     : null;
   const xwayStatusText = xwayTotal === 0
@@ -73,6 +78,30 @@ export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwaySta
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
+            <button
+              onClick={() => setGroupByIp(false)}
+              className={`h-8 px-3 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
+                !groupByIp
+                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
+                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              title="Показывать по кабинетам"
+            >
+              По кабинетам
+            </button>
+            <button
+              onClick={() => setGroupByIp(true)}
+              className={`h-8 px-3 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
+                groupByIp
+                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
+                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              title="Группировать по ИП"
+            >
+              По ИП
+            </button>
+          </div>
           {/* Chart mode toggle */}
           <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
             <button

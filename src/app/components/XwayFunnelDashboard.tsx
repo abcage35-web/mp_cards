@@ -4,6 +4,7 @@ import { RefreshCw, BarChart2, PieChart as PieChartIcon } from "lucide-react";
 import {
   abBuildAggregateFunnelCard,
   abBuildCabinetFunnelCards,
+  abBuildGroupedCabinetFunnelCards,
   abFormatInt,
   abGetFunnelStageStyle,
   type Filters,
@@ -29,6 +30,7 @@ export function XwayFunnelDashboard({
   onRefreshXway,
 }: Props) {
   const [chartMode, setChartMode] = useState<ChartMode>("pies");
+  const [groupByIp, setGroupByIp] = useState(false);
 
   if (!filteredTests.length) return null;
 
@@ -38,7 +40,9 @@ export function XwayFunnelDashboard({
   const aggregateCard = abBuildAggregateFunnelCard(filteredTests, "xway");
   const funnelCards = [
     ...(aggregateCard ? [aggregateCard] : []),
-    ...abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway"),
+    ...(groupByIp
+      ? abBuildGroupedCabinetFunnelCards(filteredTests, cabinetOrder, "xway")
+      : abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway")),
   ];
   const xwayTrackedTests = filteredTests.filter((item) => String(item?.testId || "").trim());
   const xwayProgress = xwayTrackedTests.reduce(
@@ -78,6 +82,31 @@ export function XwayFunnelDashboard({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
+            <button
+              onClick={() => setGroupByIp(false)}
+              className={`h-8 px-3 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
+                !groupByIp
+                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
+                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              title="Показывать по кабинетам"
+            >
+              По кабинетам
+            </button>
+            <button
+              onClick={() => setGroupByIp(true)}
+              className={`h-8 px-3 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
+                groupByIp
+                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
+                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              title="Группировать по ИП"
+            >
+              По ИП
+            </button>
+          </div>
+
           <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
             <button
               onClick={() => setChartMode("bars")}

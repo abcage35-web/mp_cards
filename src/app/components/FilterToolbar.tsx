@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   type Filters, type DashboardModel, type TestCard,
   AB_TEST_LIMIT_OPTIONS, abFormatInt, abFormatMonthLabel,
-  abGetMonthSelectionLabel, abGetAvailableMonthKeys,
+  abGetMonthSelectionLabel, abGetAvailableMonthKeys, abResolveCabinetFilterLabel,
 } from "./ab-service";
 
 interface Props {
@@ -35,7 +35,14 @@ export function FilterToolbar({ model, filteredTests, filters, onChange, onReset
     ? `${activeStageSourceMap[filters.stageSource || "export"] || "Выгрузка"} · ${activeStageLabelMap[filters.stage] || filters.stage}`
     : "";
 
-  const cabinetOptions = [{ value: "all", label: "Все кабинеты" }, ...cabinets.map(c => ({ value: c, label: c }))];
+  const selectedCabinetLabel = abResolveCabinetFilterLabel(filters.cabinet || "");
+  const cabinetOptions = [
+    { value: "all", label: "Все кабинеты" },
+    ...(selectedCabinetLabel && selectedCabinetLabel !== "Все кабинеты" && !cabinets.includes(filters.cabinet)
+      ? [{ value: filters.cabinet, label: selectedCabinetLabel }]
+      : []),
+    ...cabinets.map(c => ({ value: c, label: c })),
+  ];
   const verdictOptions = [
     { value: "all", label: "Все исходы" },
     { value: "good", label: "Хорошо" },

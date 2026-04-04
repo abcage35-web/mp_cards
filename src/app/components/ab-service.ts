@@ -29,6 +29,19 @@ export const AB_FUNNEL_STAGE_STYLES: Record<string, { colorFrom: string; colorTo
   overall: { colorFrom: "#10B981", colorTo: "#34D399" },
 };
 
+export const AB_CABINET_GROUPS = [
+  {
+    key: "group:pasha",
+    label: "ИП Паша",
+    cabinets: ["ИП Карпачев П. А.", "Качественные товары"],
+  },
+  {
+    key: "group:stas",
+    label: "ИП Стас",
+    cabinets: ["Качественные товары abcAge", "ИП Сытин С. О."],
+  },
+] as const;
+
 // ── Types ──
 export interface Variant {
   index: number;
@@ -866,6 +879,23 @@ function abBuildFunnelCard(
   };
 }
 
+function abGetCabinetGroup(rawValue: string) {
+  const value = String(rawValue || "").trim();
+  if (!value) return null;
+  return AB_CABINET_GROUPS.find((group) => group.key === value || group.label === value) || null;
+}
+
+export function abResolveCabinetFilterLabel(rawValue: string) {
+  const value = String(rawValue || "").trim();
+  if (!value) return "";
+  return abGetCabinetGroup(value)?.label || value;
+}
+
+export function abExpandCabinetFilter(rawValue: string): string[] | null {
+  const group = abGetCabinetGroup(rawValue);
+  return group ? [...group.cabinets] : null;
+}
+
 export function abBuildAggregateFunnelCard(tests: TestCard[], sourceKey = "export", label = "Все кабинеты"): FunnelCard | null {
   return abBuildFunnelCard(label, Array.isArray(tests) ? tests : [], sourceKey, "all", true);
 }
@@ -878,6 +908,31 @@ export function abBuildCabinetFunnelCards(tests: TestCard[], cabinetOrder: strin
     .filter(Boolean) as FunnelCard[];
 }
 
+export function abBuildGroupedCabinetFunnelCards(tests: TestCard[], cabinetOrder: string[] = [], sourceKey = "export"): FunnelCard[] {
+  const list = Array.isArray(tests) ? tests : [];
+  const cards: FunnelCard[] = [];
+  const groupedCabinets = new Set<string>();
+
+  for (const group of AB_CABINET_GROUPS) {
+    const groupTests = list.filter((test) => group.cabinets.includes(String(test?.cabinet || "").trim()));
+    group.cabinets.forEach((cabinet) => groupedCabinets.add(cabinet));
+    const card = abBuildFunnelCard(group.label, groupTests, sourceKey, group.key, false);
+    if (card) cards.push(card);
+  }
+
+  const cabinets = (cabinetOrder.length
+    ? cabinetOrder
+    : Array.from(new Set(list.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru")))
+    .filter((cabinet) => !groupedCabinets.has(String(cabinet || "").trim()));
+
+  return [
+    ...cards,
+    ...cabinets
+      .map((cabinet) => abBuildFunnelCard(cabinet, list.filter((item) => item?.cabinet === cabinet), sourceKey, cabinet, false))
+      .filter(Boolean) as FunnelCard[],
+  ];
+}
+
 export function abFilterTests(model: DashboardModel, filters: Filters): TestCard[] {
   const tests = model?.tests || [];
   const search = (filters.search || "").trim().toLowerCase();
@@ -888,8 +943,15 @@ export function abFilterTests(model: DashboardModel, filters: Filters): TestCard
   const dateFrom = (filters.dateFrom || "").trim();
   const dateTo = (filters.dateTo || "").trim();
   const monthKeys = (Array.isArray(filters.monthKeys) ? filters.monthKeys : []).filter(v => /^\d{4}-\d{2}$/.test(v));
+  const expandedCabinetFilter = cabinet !== "all" ? abExpandCabinetFilter(cabinet) : null;
   return tests.filter(test => {
-    if (cabinet !== "all" && test.cabinet !== cabinet) return false;
+    if (cabinet !== "all") {
+      if (expandedCabinetFilter) {
+        if (!expandedCabinetFilter.includes(String(test.cabinet || "").trim())) return false;
+      } else if (test.cabinet !== cabinet) {
+        return false;
+      }
+    }
     if (verdict !== "all" && test.finalStatusKind !== verdict) return false;
     if (stage !== "all" && !abStageMatches(test, stage, stageSource)) return false;
     const testDate = abGetTestFilterDate(test);
