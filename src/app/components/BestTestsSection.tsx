@@ -504,17 +504,21 @@ function BestTestCard({ test, rank, mode }: { test: TestCard; rank: number; mode
             </div>
           </div>
 
-          <h3
-            className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-slate-900 dark:text-white"
-            style={{ fontWeight: 900, lineHeight: 1.15 }}
-            title={title}
-          >
-            {title}
-          </h3>
+          {!isCompact ? (
+            <>
+              <h3
+                className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-slate-900 dark:text-white"
+                style={{ fontWeight: 900, lineHeight: 1.15 }}
+                title={title}
+              >
+                {title}
+              </h3>
 
-          <p className={`text-slate-500 dark:text-slate-400 ${isCompact ? "text-[11px]" : "text-[10px]"}`} style={{ fontWeight: 600 }}>
-            Тест {test.testId} · {abTestActivityPeriod}
-          </p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
+                Тест {test.testId} · {abTestActivityPeriod}
+              </p>
+            </>
+          ) : null}
 
           <div className="flex flex-wrap gap-1.5">
             <MetaPill label="Артикул" value={test.article || "—"} />
