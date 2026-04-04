@@ -104,11 +104,6 @@ function formatBlockDate(isoRaw: string, fallbackRaw = "") {
   return fallback || "—";
 }
 
-function getVariantDateLabel(variant: Variant | null, fallbackRaw = "") {
-  if (!variant) return fallbackRaw || "—";
-  return formatBlockDate(variant.installedAtIso, `${variant.installedAtDate || "—"}${variant.installedAtTime ? ` (${variant.installedAtTime})` : ""}`);
-}
-
 function getVisibleComparisonRows(test: TestCard) {
   return BEST_RK_METRICS
     .map((label) => getComparisonRow(test, label))
@@ -228,24 +223,16 @@ function DateBadge({ label, value, accent = false }: { label: string; value: str
 
 function CompactMetricTable({
   title,
-  beforeDate,
-  afterDate,
   rows,
 }: {
   title: string;
-  beforeDate: string;
-  afterDate: string;
   rows: MetricRow[];
 }) {
   return (
     <section className="overflow-hidden rounded-[18px] border border-slate-800 bg-slate-900">
-      <div className="flex flex-col gap-2 border-b border-slate-800 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="border-b border-slate-800 px-3 py-2.5">
         <div className="text-[13px] text-white" style={{ fontWeight: 900 }}>
           {title}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <DateBadge label="До" value={beforeDate} />
-          <DateBadge label="После" value={afterDate} accent />
         </div>
       </div>
 
@@ -309,8 +296,6 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   const baselineVariant = getBaselineVariant(test);
   const bestVariant = getBestVariant(test) || baselineVariant;
   const rkCtrCr1Row = getComparisonRow(test, "CTR*CR1");
-  const beforeAbDate = getVariantDateLabel(baselineVariant, formatBlockDate(test.startedAtIso, test.startedAt));
-  const afterAbDate = getVariantDateLabel(bestVariant, formatBlockDate(test.endedAtIso, test.endedAt));
   const beforeRkDate = formatBlockDate(test.startedAtIso, test.startedAt);
   const afterRkDate = formatBlockDate(test.endedAtIso, test.endedAt);
 
@@ -396,13 +381,15 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
             <MetaPill label="Артикул" value={test.article || "—"} />
             <MetaPill label="Тип" value={test.type || "—"} />
             <MetaPill label="Кабинет" value={test.cabinet || "—"} />
+            <DateBadge label="До" value={beforeRkDate} />
+            <DateBadge label="После" value={afterRkDate} accent />
           </div>
         </div>
       </header>
 
       <div className="grid gap-2 p-2.5">
-        <CompactMetricTable title="AB-тест" beforeDate={beforeAbDate} afterDate={afterAbDate} rows={abRows} />
-        <CompactMetricTable title="РК" beforeDate={beforeRkDate} afterDate={afterRkDate} rows={rkRows} />
+        <CompactMetricTable title="AB-тест" rows={abRows} />
+        <CompactMetricTable title="РК" rows={rkRows} />
       </div>
     </article>
   );
