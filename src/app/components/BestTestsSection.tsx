@@ -381,7 +381,10 @@ function CompactMetricTable({
 
 function buildValueNode(value: string) {
   return (
-    <span className="font-mono text-[10px] text-slate-800 dark:text-slate-100" style={{ fontWeight: 800 }}>
+    <span
+      className="tabular-nums text-[10px] text-slate-800 dark:text-slate-100"
+      style={{ fontWeight: 800, fontFamily: "Inter, system-ui, sans-serif", fontVariantNumeric: "tabular-nums lining-nums" }}
+    >
       {value || "—"}
     </span>
   );
