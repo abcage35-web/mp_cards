@@ -131,6 +131,8 @@ export interface FunnelCard {
   source: string;
   priceMissingCount: number;
   stages: FunnelStage[];
+  filterCabinet?: string;
+  isAggregate?: boolean;
 }
 
 export interface DashboardModel {
@@ -785,28 +787,51 @@ export function abStageMatches(test: TestCard, stageKey: string, sourceKey = "ex
   return abIsGoodStatus(abGetSummaryStageRaw(checks, stageKey));
 }
 
-export function abBuildCabinetFunnelCards(tests: TestCard[], cabinetOrder: string[] = [], sourceKey = "export"): FunnelCard[] {
+function abBuildFunnelCard(
+  cardLabel: string,
+  tests: TestCard[],
+  sourceKey = "export",
+  filterCabinet = "all",
+  isAggregate = false,
+): FunnelCard | null {
   const list = Array.isArray(tests) ? tests : [];
-  const cabinets = cabinetOrder.length ? cabinetOrder : Array.from(new Set(list.map(i => i?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
-  return cabinets.map(cabinet => {
-    const cabinetTests = list.filter(i => i?.cabinet === cabinet);
-    const total = cabinetTests.length;
-    if (!total) return null;
-    const priceMissingCount = cabinetTests.filter(i => {
-      const raw = abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price");
-      return !raw || raw === "?";
-    }).length;
-    const ctrPassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctr"))).length;
-    const pricePassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price"))).length;
-    const ctrCr1Passed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctrcr1"))).length;
-    const overallPassed = cabinetTests.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "overall"))).length;
-    return { cabinet, total, source: sourceKey, priceMissingCount, stages: [
+  const total = list.length;
+  if (!total) return null;
+  const priceMissingCount = list.filter(i => {
+    const raw = abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price");
+    return !raw || raw === "?";
+  }).length;
+  const ctrPassed = list.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctr"))).length;
+  const pricePassed = list.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "price"))).length;
+  const ctrCr1Passed = list.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "ctrcr1"))).length;
+  const overallPassed = list.filter(i => abIsGoodStatus(abGetSummaryStageRaw(abGetSummaryChecksBySource(i, sourceKey), "overall"))).length;
+
+  return {
+    cabinet: cardLabel,
+    total,
+    source: sourceKey,
+    priceMissingCount,
+    filterCabinet,
+    isAggregate,
+    stages: [
       { key: "ctr", label: "CTR", count: ctrPassed },
       { key: "price", label: "Цена", count: pricePassed },
       { key: "ctrcr1", label: "CTR x CR1", count: ctrCr1Passed },
       { key: "overall", label: "Итог", count: overallPassed },
-    ]};
-  }).filter(Boolean) as FunnelCard[];
+    ],
+  };
+}
+
+export function abBuildAggregateFunnelCard(tests: TestCard[], sourceKey = "export", label = "Все кабинеты"): FunnelCard | null {
+  return abBuildFunnelCard(label, Array.isArray(tests) ? tests : [], sourceKey, "all", true);
+}
+
+export function abBuildCabinetFunnelCards(tests: TestCard[], cabinetOrder: string[] = [], sourceKey = "export"): FunnelCard[] {
+  const list = Array.isArray(tests) ? tests : [];
+  const cabinets = cabinetOrder.length ? cabinetOrder : Array.from(new Set(list.map(i => i?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+  return cabinets
+    .map(cabinet => abBuildFunnelCard(cabinet, list.filter(i => i?.cabinet === cabinet), sourceKey, cabinet, false))
+    .filter(Boolean) as FunnelCard[];
 }
 
 export function abFilterTests(model: DashboardModel, filters: Filters): TestCard[] {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { RefreshCw, BarChart2, PieChart as PieChartIcon } from "lucide-react";
 
 import {
+  abBuildAggregateFunnelCard,
   abBuildCabinetFunnelCards,
   abFormatInt,
   abGetFunnelStageStyle,
@@ -34,7 +35,11 @@ export function XwayFunnelDashboard({
   const cabinetOrder = Array.from(new Set(filteredTests.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, "ru"),
   );
-  const funnelCards = abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway");
+  const aggregateCard = abBuildAggregateFunnelCard(filteredTests, "xway");
+  const funnelCards = [
+    ...(aggregateCard ? [aggregateCard] : []),
+    ...abBuildCabinetFunnelCards(filteredTests, cabinetOrder, "xway"),
+  ];
   const xwayTrackedTests = filteredTests.filter((item) => String(item?.testId || "").trim());
   const xwayProgress = xwayTrackedTests.reduce(
     (acc, test) => {
@@ -126,7 +131,7 @@ export function XwayFunnelDashboard({
                 mode={chartMode}
               />
             ))
-          : cabinetOrder.map((cabinet) => <PendingFunnelCard key={cabinet} cabinet={cabinet} mode={chartMode} />)}
+          : ["Все кабинеты", ...cabinetOrder].map((cabinet) => <PendingFunnelCard key={cabinet} cabinet={cabinet} mode={chartMode} />)}
       </div>
     </div>
   );
@@ -217,9 +222,15 @@ function FunnelCardChart({
 }) {
   const finalCount = card.stages[card.stages.length - 1]?.count || 0;
   const finalPercent = card.total > 0 ? Math.round((finalCount / card.total) * 100) : 0;
+  const filterCabinet = card.filterCabinet || card.cabinet;
+  const isAggregate = Boolean(card.isAggregate);
 
   return (
-    <div className="border border-slate-200/80 dark:border-slate-700/80 rounded-xl bg-gradient-to-br from-white via-white to-slate-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/50 p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div className={`border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow ${
+      isAggregate
+        ? "border-sky-200/80 dark:border-sky-700/60 bg-gradient-to-br from-sky-50/70 via-white to-slate-50/50 dark:from-sky-950/30 dark:via-slate-900 dark:to-slate-800/60"
+        : "border-slate-200/80 dark:border-slate-700/80 bg-gradient-to-br from-white via-white to-slate-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/50"
+    }`}>
       <div className="flex items-start justify-between gap-2 mb-4">
         <div>
           <h4 className="text-[16px] text-slate-800 dark:text-slate-100" style={{ fontWeight: 700 }}>
@@ -252,14 +263,14 @@ function FunnelCardChart({
             const style = abGetFunnelStageStyle(stage.key);
             const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
             const isActive =
-              filters.cabinet === card.cabinet
+              (filters.cabinet || "all") === filterCabinet
               && filters.stage === stage.key
               && (filters.stageSource || "export") === "xway";
 
             return (
               <button
                 key={stage.key}
-                onClick={() => onStageFilter(card.cabinet, stage.key, "xway")}
+                onClick={() => onStageFilter(filterCabinet, stage.key, "xway")}
                 className={`w-full text-left rounded-lg px-1 py-0.5 border transition-all cursor-pointer ${
                   isActive
                     ? "border-sky-300/60 bg-sky-50/40 dark:bg-sky-900/20 dark:border-sky-700/60 shadow-sm"
@@ -299,14 +310,14 @@ function FunnelCardChart({
             const style = abGetFunnelStageStyle(stage.key);
             const percent = card.total > 0 ? Math.round((stage.count / card.total) * 100) : 0;
             const isActive =
-              filters.cabinet === card.cabinet
+              (filters.cabinet || "all") === filterCabinet
               && filters.stage === stage.key
               && (filters.stageSource || "export") === "xway";
 
             return (
               <button
                 key={stage.key}
-                onClick={() => onStageFilter(card.cabinet, stage.key, "xway")}
+                onClick={() => onStageFilter(filterCabinet, stage.key, "xway")}
                 className={`rounded-lg p-2 border transition-all cursor-pointer ${
                   isActive
                     ? "border-sky-300/60 bg-sky-50/40 dark:bg-sky-900/20 dark:border-sky-700/60 shadow-sm"
