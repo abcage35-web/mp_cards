@@ -522,9 +522,9 @@ function BestTestCard({ test, rank, mode }: { test: TestCard; rank: number; mode
       <div className={`grid ${isCompact ? "gap-1 p-1.5" : "gap-1.5 p-2"}`}>
         {isCompact ? (
           <>
-            <CompactMetricTable rows={compactAbRows} dense />
-            <CompactMetricTable rows={compactRkMainRows} showHeader={false} dense />
-            <CompactMetricTable rows={compactRkSupportRows} showHeader={false} dense />
+            <CompactMetricTable rows={compactAbRows} />
+            <CompactMetricTable rows={compactRkMainRows} showHeader={false} />
+            <CompactMetricTable rows={compactRkSupportRows} showHeader={false} />
           </>
         ) : (
           <>
@@ -621,7 +621,7 @@ export function BestTestsSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-2.5 ${viewMode === "compact" ? "lg:grid-cols-2 xl:grid-cols-3" : "lg:grid-cols-2 2xl:grid-cols-3"}`}>
         {tests.map((test, index) => (
           <BestTestCard key={test.testId || `${test.article}-${index}`} test={test} rank={index + 1} mode={viewMode} />
         ))}
