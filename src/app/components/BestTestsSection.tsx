@@ -319,7 +319,7 @@ function CompactMetricTable({
             {rows.map((row) => (
               <tr key={row.key} className={row.highlight ? "bg-emerald-50/60 dark:bg-emerald-500/8" : ""}>
                 <td
-                  className={`whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 text-[10px] ${
+                  className={`whitespace-nowrap border-b border-r border-slate-200 px-2 py-1 text-[10px] dark:border-slate-800 ${
                     row.highlight
                       ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/18 dark:text-emerald-200"
                       : "bg-slate-50 text-slate-700 dark:bg-slate-800/55 dark:text-slate-200"
@@ -329,24 +329,24 @@ function CompactMetricTable({
                   {row.label}
                 </td>
                 <td
-                  className={`border-b border-r border-slate-200 px-1.5 py-1 text-center ${
-                    row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:border-slate-800 dark:text-slate-100"
+                  className={`border-b border-r border-slate-200 px-1.5 py-1 text-center dark:border-slate-800 ${
+                    row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:text-slate-100"
                   }`}
                 >
                   {row.before}
                 </td>
                 {showDuring ? (
                   <td
-                    className={`border-b border-r border-slate-200 px-1.5 py-1 text-center ${
-                      row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:border-slate-800 dark:text-slate-100"
+                    className={`border-b border-r border-slate-200 px-1.5 py-1 text-center dark:border-slate-800 ${
+                      row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:text-slate-100"
                     }`}
                   >
                     {row.during || <span className="text-[10px] text-slate-400 dark:text-slate-500">—</span>}
                   </td>
                 ) : null}
                 <td
-                  className={`border-b border-r border-slate-200 px-1.5 py-1 text-center ${
-                    row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:border-slate-800 dark:text-slate-100"
+                  className={`border-b border-r border-slate-200 px-1.5 py-1 text-center dark:border-slate-800 ${
+                    row.highlight ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-500/6 dark:text-emerald-100" : "text-slate-800 dark:text-slate-100"
                   }`}
                 >
                   {row.after}
