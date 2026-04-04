@@ -30,7 +30,7 @@ export function XwayFunnelDashboard({
   onRefreshXway,
 }: Props) {
   const [chartMode, setChartMode] = useState<ChartMode>("pies");
-  const [groupByIp, setGroupByIp] = useState(false);
+  const [groupByIp, setGroupByIp] = useState(true);
 
   if (!filteredTests.length) return null;
 
@@ -84,18 +84,6 @@ export function XwayFunnelDashboard({
         <div className="flex items-center gap-2 flex-wrap">
           <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
             <button
-              onClick={() => setGroupByIp(false)}
-              className={`h-7 px-2.5 rounded-md inline-flex items-center justify-center cursor-pointer text-[12px] transition-all ${
-                !groupByIp
-                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
-                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              }`}
-              style={{ fontWeight: 600 }}
-              title="Показывать по кабинетам"
-            >
-              По кабинетам
-            </button>
-            <button
               onClick={() => setGroupByIp(true)}
               className={`h-7 px-2.5 rounded-md inline-flex items-center justify-center cursor-pointer text-[12px] transition-all ${
                 groupByIp
@@ -107,20 +95,21 @@ export function XwayFunnelDashboard({
             >
               По ИП
             </button>
-          </div>
-
-          <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
             <button
-              onClick={() => setChartMode("bars")}
-              className={`w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
-                chartMode === "bars"
+              onClick={() => setGroupByIp(false)}
+              className={`h-7 px-2.5 rounded-md inline-flex items-center justify-center cursor-pointer text-[12px] transition-all ${
+                !groupByIp
                   ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
                   : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
               }`}
-              title="Полосы"
+              style={{ fontWeight: 600 }}
+              title="Показывать по кабинетам"
             >
-              <BarChart2 className="w-3.5 h-3.5" />
+              По кабинетам
             </button>
+          </div>
+
+          <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80">
             <button
               onClick={() => setChartMode("pies")}
               className={`w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
@@ -131,6 +120,17 @@ export function XwayFunnelDashboard({
               title="Круговые диаграммы"
             >
               <PieChartIcon className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setChartMode("bars")}
+              className={`w-7 h-7 rounded-md inline-flex items-center justify-center cursor-pointer transition-all ${
+                chartMode === "bars"
+                  ? "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 shadow-sm"
+                  : "border border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              }`}
+              title="Полосы"
+            >
+              <BarChart2 className="w-3.5 h-3.5" />
             </button>
           </div>
 
