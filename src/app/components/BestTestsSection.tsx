@@ -386,7 +386,6 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
       highlight: String(row.label || "").trim() === "CTR*CR1",
     };
   });
-  const showRkDuring = rkRows.some((row) => row.key === "Показы" || row.key === "Ставка");
 
   return (
     <article className="overflow-hidden rounded-[22px] border border-slate-800 bg-slate-950 shadow-[0_18px_48px_-28px_rgba(15,23,42,0.7)]">
@@ -430,7 +429,7 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
 
       <div className="grid gap-1.5 p-2">
         <CompactMetricTable title="AB-тест" rows={abRows} />
-        <CompactMetricTable title="РК" rows={rkRows} showDuring={showRkDuring} />
+        <CompactMetricTable title="РК" rows={rkRows} />
       </div>
     </article>
   );
