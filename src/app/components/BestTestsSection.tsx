@@ -419,7 +419,7 @@ function BestTestCard({ test, rank, mode }: { test: TestCard; rank: number; mode
       key: "cover",
       label: "Обложка",
       before: <CoverPreview variant={baselineVariant} fallbackLabel={`Тест ${test.testId} до`} />,
-      after: <CoverPreview variant={bestVariant} fallbackLabel={`Тест ${test.testId} после`} badge="Лучшая" />,
+      after: <CoverPreview variant={bestVariant} fallbackLabel={`Тест ${test.testId} после`} />,
       growthNode: <span className="text-[10px] text-slate-500">—</span>,
     },
     {
