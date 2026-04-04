@@ -104,6 +104,15 @@ function formatBlockDate(isoRaw: string, fallbackRaw = "") {
   return fallback || "—";
 }
 
+function shiftIsoDateTime(isoRaw: string, days: number) {
+  const iso = String(isoRaw || "").trim();
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
 function getVisibleComparisonRows(test: TestCard) {
   return BEST_RK_METRICS
     .map((label) => getComparisonRow(test, label))
@@ -296,8 +305,8 @@ function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   const baselineVariant = getBaselineVariant(test);
   const bestVariant = getBestVariant(test) || baselineVariant;
   const rkCtrCr1Row = getComparisonRow(test, "CTR*CR1");
-  const beforeRkDate = formatBlockDate(test.startedAtIso, test.startedAt);
-  const afterRkDate = formatBlockDate(test.endedAtIso, test.endedAt);
+  const beforeRkDate = formatBlockDate(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
+  const afterRkDate = formatBlockDate(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
 
   const abRows: MetricRow[] = [
     {
