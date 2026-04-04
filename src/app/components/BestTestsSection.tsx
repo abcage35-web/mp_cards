@@ -1,10 +1,22 @@
-import { ExternalLink, Sparkles, Trophy } from "lucide-react";
+import type { ReactNode } from "react";
+import { ExternalLink, Trophy } from "lucide-react";
 
-import { abFormatCompactPeriodDateTime, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
+import { abFormatCompactPeriodDateTime, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
 
 interface Props {
   tests: TestCard[];
   emptyMessage?: string;
+}
+
+interface MetricRow {
+  key: string;
+  label: string;
+  before: ReactNode;
+  after: ReactNode;
+  growthText?: string;
+  growthKind?: string;
+  growthNode?: ReactNode;
+  highlight?: boolean;
 }
 
 const BEST_RK_METRICS = ["Цена", "Откл. цены", "CTR", "CR1", "CTR*CR1"];
@@ -58,6 +70,10 @@ function isCompletedTest(test: TestCard) {
   return Boolean(String(test.endedAtIso || "").trim());
 }
 
+function isSuccessfulCleanTest(test: TestCard) {
+  return abNormalizeStatus(String(test.summaryChecks?.overall || "").trim()) === "good";
+}
+
 function sortTimestampDesc(a: TestCard, b: TestCard) {
   const aMs = a.endedAtIso ? new Date(a.endedAtIso).getTime() : a.startedAtIso ? new Date(a.startedAtIso).getTime() : 0;
   const bMs = b.endedAtIso ? new Date(b.endedAtIso).getTime() : b.startedAtIso ? new Date(b.startedAtIso).getTime() : 0;
@@ -83,9 +99,7 @@ function getBestVariant(test: TestCard) {
 
 function formatBlockDate(isoRaw: string, fallbackRaw = "") {
   const iso = String(isoRaw || "").trim();
-  if (iso) {
-    return abFormatCompactPeriodDateTime(iso);
-  }
+  if (iso) return abFormatCompactPeriodDateTime(iso);
   const fallback = String(fallbackRaw || "").trim();
   return fallback || "—";
 }
@@ -99,6 +113,19 @@ function getVisibleComparisonRows(test: TestCard) {
   return BEST_RK_METRICS
     .map((label) => getComparisonRow(test, label))
     .filter(Boolean) as ComparisonRow[];
+}
+
+function getRkGrowth(row: ComparisonRow) {
+  const current = String(row.deltaText || "").trim();
+  if (current && current !== "—") {
+    return { text: current, kind: row.deltaKind || "unknown" };
+  }
+  const before = parseDisplayNumber(row.before);
+  const after = parseDisplayNumber(row.after);
+  return {
+    text: formatSignedPercentDelta(before, after),
+    kind: resolveDeltaKind(before, after),
+  };
 }
 
 function CoverPreview({
@@ -116,7 +143,7 @@ function CoverPreview({
     <div className="flex items-center justify-center">
       <div className="relative">
         {badge ? (
-          <span className="absolute -left-2 -top-2 z-10 inline-flex h-6 items-center rounded-full border border-emerald-400/40 bg-emerald-500 px-2 text-[10px] text-white shadow-[0_10px_24px_rgba(16,185,129,0.3)]" style={{ fontWeight: 800 }}>
+          <span className="absolute -left-1.5 -top-1.5 z-10 inline-flex h-5 items-center rounded-full border border-emerald-400/40 bg-emerald-500 px-1.5 text-[9px] text-white" style={{ fontWeight: 800 }}>
             {badge}
           </span>
         ) : null}
@@ -125,13 +152,13 @@ function CoverPreview({
             href={imageUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="block overflow-hidden rounded-[18px] border border-slate-700 bg-slate-900 shadow-[0_16px_32px_rgba(2,6,23,0.28)]"
+            className="block overflow-hidden rounded-[14px] border border-slate-700 bg-slate-900"
           >
-            <img src={imageUrl} alt={fallbackLabel} loading="lazy" decoding="async" className="block w-[112px] aspect-[3/4] object-cover" />
+            <img src={imageUrl} alt={fallbackLabel} loading="lazy" decoding="async" className="block w-[70px] aspect-[3/4] object-cover" />
           </a>
         ) : (
-          <div className="flex w-[112px] aspect-[3/4] items-center justify-center rounded-[18px] border border-dashed border-slate-700 bg-slate-900 px-3 text-center text-[11px] text-slate-500" style={{ fontWeight: 600 }}>
-            Нет обложки
+          <div className="flex w-[70px] aspect-[3/4] items-center justify-center rounded-[14px] border border-dashed border-slate-700 bg-slate-900 px-2 text-center text-[9px] text-slate-500" style={{ fontWeight: 700 }}>
+            Нет
           </div>
         )}
       </div>
@@ -141,8 +168,8 @@ function CoverPreview({
 
 function MetaPill({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex h-8 items-center rounded-full border border-slate-200/80 bg-slate-50/90 px-3 text-[12px] text-slate-600 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300" style={{ fontWeight: 700 }}>
-      {label}: <span className="ml-1 text-slate-900 dark:text-slate-100">{value || "—"}</span>
+    <span className="inline-flex h-6 items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-2 text-[10px] text-slate-300" style={{ fontWeight: 700 }}>
+      {label}: <span className="ml-1 text-slate-100">{value || "—"}</span>
     </span>
   );
 }
@@ -155,28 +182,125 @@ function LinkChip({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 text-[12px] text-slate-700 transition-colors hover:border-teal-300 hover:bg-teal-50 dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-teal-700 dark:hover:bg-teal-950/30"
+      className="inline-flex h-7 items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2 text-[10px] text-slate-200 transition-colors hover:border-teal-500/60 hover:bg-teal-950/30"
       style={{ fontWeight: 700 }}
     >
-      <ExternalLink className="h-3.5 w-3.5" />
+      <ExternalLink className="h-3 w-3" />
       {label}
     </a>
   );
 }
 
-function DeltaBadge({ kind, text }: { kind: string; text: string }) {
-  if (!text) return <span className="text-[11px] text-slate-500">—</span>;
+function DeltaBadge({ kind, text }: { kind?: string; text?: string }) {
+  const value = String(text || "").trim();
+  if (!value) {
+    return <span className="text-[11px] text-slate-500">—</span>;
+  }
 
   const palette =
     kind === "good"
-      ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+      ? "border-emerald-500/40 bg-emerald-500/12 text-emerald-300"
       : kind === "bad"
-        ? "border-rose-500/40 bg-rose-500/15 text-rose-300"
-        : "border-slate-600 bg-slate-800/70 text-slate-300";
+        ? "border-rose-500/40 bg-rose-500/12 text-rose-300"
+        : "border-slate-600 bg-slate-800 text-slate-300";
 
   return (
-    <span className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] ${palette}`} style={{ fontWeight: 800 }}>
-      {text}
+    <span className={`inline-flex h-6 items-center rounded-full border px-2 text-[10px] ${palette}`} style={{ fontWeight: 800 }}>
+      {value}
+    </span>
+  );
+}
+
+function DateBadge({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[10px] ${
+        accent
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+          : "border-slate-700 bg-slate-950/80 text-slate-300"
+      }`}
+      style={{ fontWeight: 800 }}
+    >
+      {label}: {value}
+    </span>
+  );
+}
+
+function CompactMetricTable({
+  title,
+  beforeDate,
+  afterDate,
+  rows,
+}: {
+  title: string;
+  beforeDate: string;
+  afterDate: string;
+  rows: MetricRow[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-[18px] border border-slate-800 bg-slate-900">
+      <div className="flex flex-col gap-2 border-b border-slate-800 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-[13px] text-white" style={{ fontWeight: 900 }}>
+          {title}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <DateBadge label="До" value={beforeDate} />
+          <DateBadge label="После" value={afterDate} accent />
+        </div>
+      </div>
+
+      <div className="overflow-hidden">
+        <table className="w-full table-fixed border-collapse">
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "24%" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="border-b border-r border-slate-800 bg-slate-800/75 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-300" style={{ fontWeight: 800 }}>
+                Метрика
+              </th>
+              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+                До
+              </th>
+              <th className="border-b border-r border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+                После
+              </th>
+              <th className="border-b border-slate-800 bg-slate-950/70 px-3 py-2 text-center text-[11px] text-slate-100" style={{ fontWeight: 800 }}>
+                Прирост
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className={row.highlight ? "bg-slate-950/60" : ""}>
+                <td className={`border-b border-r border-slate-800 px-3 py-2 text-[11px] ${row.highlight ? "bg-slate-800/85 text-white" : "bg-slate-800/55 text-slate-200"}`} style={{ fontWeight: 800 }}>
+                  {row.label}
+                </td>
+                <td className="border-b border-r border-slate-800 px-2 py-2 text-center text-slate-100">
+                  {row.before}
+                </td>
+                <td className="border-b border-r border-slate-800 px-2 py-2 text-center text-slate-100">
+                  {row.after}
+                </td>
+                <td className="border-b border-slate-800 px-2 py-2 text-center">
+                  {row.growthNode || <DeltaBadge kind={row.growthKind} text={row.growthText} />}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function buildValueNode(value: string) {
+  return (
+    <span className="font-mono text-[12px] text-slate-100" style={{ fontWeight: 800 }}>
+      {value || "—"}
     </span>
   );
 }
@@ -184,200 +308,101 @@ function DeltaBadge({ kind, text }: { kind: string; text: string }) {
 function BestTestCard({ test, rank }: { test: TestCard; rank: number }) {
   const baselineVariant = getBaselineVariant(test);
   const bestVariant = getBestVariant(test) || baselineVariant;
-  const abCtrDeltaText = formatSignedPercentDelta(baselineVariant?.ctrValue ?? null, bestVariant?.ctrValue ?? null);
-  const abCtrDeltaKind = resolveDeltaKind(baselineVariant?.ctrValue ?? null, bestVariant?.ctrValue ?? null);
   const rkCtrCr1Row = getComparisonRow(test, "CTR*CR1");
-  const rkRows = getVisibleComparisonRows(test);
   const beforeAbDate = getVariantDateLabel(baselineVariant, formatBlockDate(test.startedAtIso, test.startedAt));
   const afterAbDate = getVariantDateLabel(bestVariant, formatBlockDate(test.endedAtIso, test.endedAt));
   const beforeRkDate = formatBlockDate(test.startedAtIso, test.startedAt);
   const afterRkDate = formatBlockDate(test.endedAtIso, test.endedAt);
 
+  const abRows: MetricRow[] = [
+    {
+      key: "cover",
+      label: "Обложка",
+      before: <CoverPreview variant={baselineVariant} fallbackLabel={`Тест ${test.testId} до`} />,
+      after: <CoverPreview variant={bestVariant} fallbackLabel={`Тест ${test.testId} после`} badge="Лучшая" />,
+      growthNode: <span className="text-[11px] text-slate-500">—</span>,
+    },
+    {
+      key: "views",
+      label: "Показы",
+      before: buildValueNode(baselineVariant?.views || "—"),
+      after: buildValueNode(bestVariant?.views || "—"),
+      growthText: formatSignedPercentDelta(baselineVariant?.viewsValue ?? null, bestVariant?.viewsValue ?? null),
+      growthKind: resolveDeltaKind(baselineVariant?.viewsValue ?? null, bestVariant?.viewsValue ?? null),
+    },
+    {
+      key: "clicks",
+      label: "Клики",
+      before: buildValueNode(baselineVariant?.clicks || "—"),
+      after: buildValueNode(bestVariant?.clicks || "—"),
+      growthText: formatSignedPercentDelta(baselineVariant?.clicksValue ?? null, bestVariant?.clicksValue ?? null),
+      growthKind: resolveDeltaKind(baselineVariant?.clicksValue ?? null, bestVariant?.clicksValue ?? null),
+    },
+    {
+      key: "ctr",
+      label: "CTR",
+      before: buildValueNode(baselineVariant?.ctr || "—"),
+      after: buildValueNode(bestVariant?.ctr || "—"),
+      growthText: formatSignedPercentDelta(baselineVariant?.ctrValue ?? null, bestVariant?.ctrValue ?? null),
+      growthKind: resolveDeltaKind(baselineVariant?.ctrValue ?? null, bestVariant?.ctrValue ?? null),
+      highlight: true,
+    },
+  ];
+
+  const rkRows: MetricRow[] = getVisibleComparisonRows(test).map((row) => {
+    const growth = getRkGrowth(row);
+    return {
+      key: row.label,
+      label: row.label,
+      before: buildValueNode(row.before || "—"),
+      after: buildValueNode(row.after || "—"),
+      growthText: growth.text,
+      growthKind: growth.kind,
+      highlight: String(row.label || "").trim() === "CTR*CR1",
+    };
+  });
+
   return (
-    <article className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_16px_48px_-28px_rgba(15,23,42,0.45)] dark:border-slate-700/80 dark:bg-slate-900">
-      <header className="border-b border-slate-200/80 bg-gradient-to-r from-slate-50 to-white px-5 py-4 dark:border-slate-800 dark:from-slate-900 dark:to-slate-950">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex h-10 min-w-10 items-center justify-center rounded-2xl bg-slate-900 px-3 text-[14px] text-white shadow-[0_16px_32px_rgba(15,23,42,0.24)] dark:bg-slate-100 dark:text-slate-900" style={{ fontWeight: 900 }}>
-                #{rank}
-              </span>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/70 bg-amber-50 px-3 py-1 text-[12px] text-amber-800 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-300" style={{ fontWeight: 800 }}>
-                <Trophy className="h-3.5 w-3.5" />
-                CTR*CR1 после {rkCtrCr1Row?.after || "—"}
+    <article className="overflow-hidden rounded-[24px] border border-slate-800 bg-slate-950 shadow-[0_18px_48px_-28px_rgba(15,23,42,0.7)]">
+      <header className="border-b border-slate-800 bg-slate-900/85 px-3 py-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-xl bg-slate-100 px-2 text-[11px] text-slate-900" style={{ fontWeight: 900 }}>
+                  #{rank}
+                </span>
+                <div className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300" style={{ fontWeight: 800 }}>
+                  <Trophy className="h-3 w-3" />
+                  CTR*CR1 {rkCtrCr1Row?.after || "—"}
+                </div>
               </div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-teal-300/60 bg-teal-50 px-3 py-1 text-[12px] text-teal-800 dark:border-teal-700/60 dark:bg-teal-950/30 dark:text-teal-300" style={{ fontWeight: 800 }}>
-                <Sparkles className="h-3.5 w-3.5" />
-                Завершён
-              </div>
+
+              <h3 className="mt-2 line-clamp-2 text-[14px] text-white" style={{ fontWeight: 900, lineHeight: 1.15 }}>
+                {test.title || test.productName || `Тест ${test.testId}`}
+              </h3>
+              <p className="mt-1 text-[11px] text-slate-400" style={{ fontWeight: 600 }}>
+                Тест {test.testId} · {beforeRkDate} — {afterRkDate}
+              </p>
             </div>
 
-            <h3 className="mt-3 text-[22px] text-slate-900 dark:text-slate-50" style={{ fontWeight: 900, lineHeight: 1.1 }}>
-              {test.title || test.productName || `Тест ${test.testId}`}
-            </h3>
-            <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
-              Тест {test.testId} · Период: {formatBlockDate(test.startedAtIso, test.startedAt)} — {formatBlockDate(test.endedAtIso, test.endedAt)}
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <MetaPill label="Артикул" value={test.article || "—"} />
-              <MetaPill label="Тип РК" value={test.type || "—"} />
-              <MetaPill label="Кабинет" value={test.cabinet || "—"} />
+            <div className="flex shrink-0 flex-wrap items-center gap-1">
+              <LinkChip href={test.xwayUrl} label="XWAY" />
+              <LinkChip href={test.wbUrl} label="WB" />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <LinkChip href={test.xwayUrl} label="XWAY" />
-            <LinkChip href={test.wbUrl} label="WB" />
+          <div className="flex flex-wrap gap-1.5">
+            <MetaPill label="Артикул" value={test.article || "—"} />
+            <MetaPill label="Тип" value={test.type || "—"} />
+            <MetaPill label="Кабинет" value={test.cabinet || "—"} />
           </div>
         </div>
       </header>
 
-      <div className="space-y-4 bg-slate-950 px-4 py-4 md:px-5 md:py-5">
-        <section className="overflow-hidden rounded-[24px] border border-slate-800 bg-slate-900 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
-          <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="text-[16px] text-white" style={{ fontWeight: 900 }}>
-              AB-тест
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[12px]">
-              <span className="inline-flex h-8 items-center rounded-full border border-slate-700 bg-slate-950/80 px-3 text-slate-300" style={{ fontWeight: 700 }}>
-                До: {beforeAbDate}
-              </span>
-              <span className="inline-flex h-8 items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 text-emerald-300" style={{ fontWeight: 700 }}>
-                После: {afterAbDate}
-              </span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse">
-              <thead>
-                <tr>
-                  <th className="border-b border-r border-slate-800 bg-slate-800/70 px-4 py-3 text-left text-[12px] uppercase tracking-[0.12em] text-slate-300" style={{ fontWeight: 800 }}>
-                    Метрика
-                  </th>
-                  <th className="border-b border-r border-slate-800 bg-slate-950/60 px-4 py-3 text-center text-[13px] text-slate-100" style={{ fontWeight: 900 }}>
-                    <div>До</div>
-                    <div className="mt-1 text-[11px] text-slate-400" style={{ fontWeight: 700 }}>{beforeAbDate}</div>
-                  </th>
-                  <th className="border-b border-slate-800 bg-slate-950/60 px-4 py-3 text-center text-[13px] text-emerald-300" style={{ fontWeight: 900 }}>
-                    <div>После</div>
-                    <div className="mt-1 text-[11px] text-slate-400" style={{ fontWeight: 700 }}>{afterAbDate}</div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="border-b border-r border-slate-800 bg-slate-800/55 px-4 py-4 text-[13px] text-slate-200" style={{ fontWeight: 800 }}>
-                    Обложка
-                  </td>
-                  <td className="border-b border-r border-slate-800 px-4 py-4">
-                    <CoverPreview variant={baselineVariant} fallbackLabel={`Тест ${test.testId} до`} />
-                  </td>
-                  <td className="border-b border-slate-800 px-4 py-4">
-                    <CoverPreview variant={bestVariant} fallbackLabel={`Тест ${test.testId} после`} badge="Лучшая" />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border-b border-r border-slate-800 bg-slate-800/55 px-4 py-3 text-[13px] text-slate-200" style={{ fontWeight: 800 }}>
-                    Показы
-                  </td>
-                  <td className="border-b border-r border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                    {baselineVariant?.views || "—"}
-                  </td>
-                  <td className="border-b border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                    {bestVariant?.views || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border-b border-r border-slate-800 bg-slate-800/55 px-4 py-3 text-[13px] text-slate-200" style={{ fontWeight: 800 }}>
-                    Клики
-                  </td>
-                  <td className="border-b border-r border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                    {baselineVariant?.clicks || "—"}
-                  </td>
-                  <td className="border-b border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                    {bestVariant?.clicks || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border-r border-slate-800 bg-slate-800/55 px-4 py-3 text-[13px] text-slate-200" style={{ fontWeight: 800 }}>
-                    CTR
-                  </td>
-                  <td className="border-r border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                    {baselineVariant?.ctr || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                        {bestVariant?.ctr || "—"}
-                      </span>
-                      <DeltaBadge kind={abCtrDeltaKind} text={abCtrDeltaText} />
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="overflow-hidden rounded-[24px] border border-slate-800 bg-slate-900 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
-          <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="text-[16px] text-white" style={{ fontWeight: 900 }}>
-              РК
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[12px]">
-              <span className="inline-flex h-8 items-center rounded-full border border-slate-700 bg-slate-950/80 px-3 text-slate-300" style={{ fontWeight: 700 }}>
-                До: {beforeRkDate}
-              </span>
-              <span className="inline-flex h-8 items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-3 text-sky-300" style={{ fontWeight: 700 }}>
-                После: {afterRkDate}
-              </span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse">
-              <thead>
-                <tr>
-                  <th className="border-b border-r border-slate-800 bg-slate-800/70 px-4 py-3 text-left text-[12px] uppercase tracking-[0.12em] text-slate-300" style={{ fontWeight: 800 }}>
-                    Метрика
-                  </th>
-                  <th className="border-b border-r border-slate-800 bg-slate-950/60 px-4 py-3 text-center text-[13px] text-slate-100" style={{ fontWeight: 900 }}>
-                    До
-                  </th>
-                  <th className="border-b border-r border-slate-800 bg-slate-950/60 px-4 py-3 text-center text-[13px] text-slate-100" style={{ fontWeight: 900 }}>
-                    После
-                  </th>
-                  <th className="border-b border-slate-800 bg-slate-950/60 px-4 py-3 text-center text-[13px] text-slate-100" style={{ fontWeight: 900 }}>
-                    Прирост
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rkRows.map((row) => {
-                  const isKeyMetric = String(row.label || "").trim() === "CTR*CR1";
-                  return (
-                    <tr key={`${test.testId}-${row.label}`} className={isKeyMetric ? "bg-slate-950/70" : ""}>
-                      <td className={`border-b border-r border-slate-800 px-4 py-3 text-[13px] ${isKeyMetric ? "bg-slate-800/75 text-white" : "bg-slate-800/55 text-slate-200"}`} style={{ fontWeight: 800 }}>
-                        {row.label}
-                      </td>
-                      <td className="border-b border-r border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                        {row.before || "—"}
-                      </td>
-                      <td className="border-b border-r border-slate-800 px-4 py-3 text-center font-mono text-[15px] text-slate-100" style={{ fontWeight: 800 }}>
-                        {row.after || "—"}
-                      </td>
-                      <td className="border-b border-slate-800 px-4 py-3 text-center">
-                        <DeltaBadge kind={row.deltaKind || "unknown"} text={row.deltaText || ""} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      <div className="grid gap-2 p-2.5">
+        <CompactMetricTable title="AB-тест" beforeDate={beforeAbDate} afterDate={afterAbDate} rows={abRows} />
+        <CompactMetricTable title="РК" beforeDate={beforeRkDate} afterDate={afterRkDate} rows={rkRows} />
       </div>
     </article>
   );
@@ -387,7 +412,7 @@ export function getBestCompletedTests<T extends TestCard>(testsRaw: T[]) {
   const tests = Array.isArray(testsRaw) ? testsRaw : [];
 
   return [...tests]
-    .filter((test) => isCompletedTest(test) && Number.isFinite(getAfterCtrCr1Score(test)))
+    .filter((test) => isCompletedTest(test) && isSuccessfulCleanTest(test) && Number.isFinite(getAfterCtrCr1Score(test)))
     .sort((a, b) => {
       const scoreDiff = Number(getAfterCtrCr1Score(b)) - Number(getAfterCtrCr1Score(a));
       if (scoreDiff !== 0) return scoreDiff;
@@ -397,7 +422,7 @@ export function getBestCompletedTests<T extends TestCard>(testsRaw: T[]) {
 
 export function BestTestsSection({
   tests,
-  emptyMessage = "Нет завершённых тестов с рассчитанным CTR*CR1 после под выбранные фильтры.",
+  emptyMessage = "Нет завершённых успешных чистых тестов с рассчитанным CTR*CR1 после под выбранные фильтры.",
 }: Props) {
   if (!tests.length) {
     return (
@@ -408,26 +433,28 @@ export function BestTestsSection({
   }
 
   return (
-    <section className="space-y-4">
-      <div className="rounded-2xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
+    <section className="space-y-3">
+      <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-[22px] text-slate-900 dark:text-slate-50" style={{ fontWeight: 900, lineHeight: 1.1 }}>
+            <h2 className="text-[20px] text-slate-900 dark:text-slate-50" style={{ fontWeight: 900, lineHeight: 1.1 }}>
               Лучшие
             </h2>
-            <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
-              Завершённые тесты, отсортированные по `CTR*CR1 после` по убыванию.
+            <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
+              Только успешные по воронке чистых тестов, сортировка по `CTR*CR1 после` по убыванию.
             </p>
           </div>
-          <div className="inline-flex h-10 items-center rounded-2xl border border-slate-200/80 bg-slate-50 px-4 text-[13px] text-slate-700 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200" style={{ fontWeight: 800 }}>
+          <div className="inline-flex h-9 items-center rounded-2xl border border-slate-200/80 bg-slate-50 px-3 text-[12px] text-slate-700 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200" style={{ fontWeight: 800 }}>
             Найдено: {tests.length}
           </div>
         </div>
       </div>
 
-      {tests.map((test, index) => (
-        <BestTestCard key={test.testId || `${test.article}-${index}`} test={test} rank={index + 1} />
-      ))}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {tests.map((test, index) => (
+          <BestTestCard key={test.testId || `${test.article}-${index}`} test={test} rank={index + 1} />
+        ))}
+      </div>
     </section>
   );
 }
