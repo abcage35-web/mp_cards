@@ -25,13 +25,44 @@ interface XwayDetailsDialogProps {
 function formatIsoDate(isoDateRaw: string | undefined) {
   const value = String(isoDateRaw || "").trim();
   if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
+  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
   }).format(date);
+}
+
+function shiftIsoDateTime(isoRaw: string | undefined, days: number) {
+  const value = String(isoRaw || "").trim();
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatDateRangeLabel(fromRaw: string | undefined, toRaw: string | undefined) {
+  const from = formatIsoDate(fromRaw);
+  const to = formatIsoDate(toRaw);
+  if (from === "—" && to === "—") return "—";
+  if (from === to || to === "—") return from;
+  if (from === "—") return to;
+  return `${from} — ${to}`;
+}
+
+function ColumnHead({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 leading-tight">
+      <span>{title}</span>
+      {subtitle ? (
+        <span className="text-[9px] normal-case tracking-normal text-slate-400 dark:text-slate-500" style={{ fontWeight: 600 }}>
+          {subtitle}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function formatXwayMetricValue(valueRaw: number | null | undefined, kind: string | undefined) {
@@ -94,11 +125,12 @@ function getExportComparisonRows(test: TestCard | null) {
   });
 }
 
-function TotalsCard({ title, totals }: { title: string; totals: XwayTotals | undefined }) {
+function TotalsCard({ title, subtitle, totals }: { title: string; subtitle?: string; totals: XwayTotals | undefined }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-700/80 dark:bg-slate-900/70">
       <h4 className="mb-2 text-[13px] text-slate-900 dark:text-slate-100" style={{ fontWeight: 700 }}>
         {title}
+        {subtitle ? <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">{subtitle}</span> : null}
       </h4>
       <div className="space-y-1.5 text-[13px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 500 }}>
         <div>
@@ -128,10 +160,12 @@ function MetricsTable({
   rows,
   useRawExportRows = false,
   emptyMessage,
+  periodLabels,
 }: {
   rows: Array<XwayMetricRow | TestCard["comparisonRows"][number]>;
   useRawExportRows?: boolean;
   emptyMessage: string;
+  periodLabels?: { before?: string; during?: string; after?: string };
 }) {
   if (!rows.length) {
     return (
@@ -146,15 +180,36 @@ function MetricsTable({
       <table className="w-full min-w-[560px] border-collapse">
         <thead>
           <tr>
-            {["Метрика", "До", "Во время", "После", "Прирост"].map((head) => (
-              <th
-                key={head}
-                className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                style={{ fontWeight: 700 }}
-              >
-                {head}
-              </th>
-            ))}
+            <th
+              className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              style={{ fontWeight: 700 }}
+            >
+              Метрика
+            </th>
+            <th
+              className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              style={{ fontWeight: 700 }}
+            >
+              <ColumnHead title="До" subtitle={periodLabels?.before} />
+            </th>
+            <th
+              className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              style={{ fontWeight: 700 }}
+            >
+              <ColumnHead title="Во время" subtitle={periodLabels?.during} />
+            </th>
+            <th
+              className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              style={{ fontWeight: 700 }}
+            >
+              <ColumnHead title="После" subtitle={periodLabels?.after} />
+            </th>
+            <th
+              className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+              style={{ fontWeight: 700 }}
+            >
+              Прирост
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -216,11 +271,12 @@ function MetricsTable({
   );
 }
 
-function CampaignList({ title, items }: { title: string; items: Array<{ id?: number; name?: string }> }) {
+function CampaignList({ title, subtitle, items }: { title: string; subtitle?: string; items: Array<{ id?: number; name?: string }> }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-700/80 dark:bg-slate-900/70">
       <h4 className="mb-2 text-[13px] text-slate-900 dark:text-slate-100" style={{ fontWeight: 700 }}>
         {title}
+        {subtitle ? <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">{subtitle}</span> : null}
       </h4>
       {items.length ? (
         <ul className="space-y-1 text-[13px] text-slate-600 dark:text-slate-300" style={{ fontWeight: 500 }}>
@@ -260,10 +316,11 @@ export function XwayDetailsDialog({
   const xwayChecks = payload ? buildXwaySummaryChecksFromPayload(test, payload) : test.xwaySummaryChecks || null;
   const campaignType = String(payload?.campaignType || test.type || "").trim() || "—";
   const campaignExternalId = String(payload?.campaignExternalId || test.campaignExternalId || "").trim();
-  const beforeDate = formatIsoDate(payload?.range?.before);
-  const duringFromDate = formatIsoDate(payload?.range?.during?.from);
-  const duringToDate = formatIsoDate(payload?.range?.during?.to);
-  const afterDate = formatIsoDate(payload?.range?.after);
+  const beforeDate = formatIsoDate(payload?.range?.before || shiftIsoDateTime(test.startedAtIso, -1));
+  const duringFromDate = formatIsoDate(payload?.range?.during?.from || test.startedAtIso);
+  const duringToDate = formatIsoDate(payload?.range?.during?.to || test.endedAtIso);
+  const duringDate = formatDateRangeLabel(payload?.range?.during?.from || test.startedAtIso, payload?.range?.during?.to || test.endedAtIso);
+  const afterDate = formatIsoDate(payload?.range?.after || shiftIsoDateTime(test.endedAtIso, 1));
   const xwayRows = Array.isArray(payload?.metrics) ? payload.metrics : [];
   const campaignsBefore = Array.isArray(payload?.matchedCampaigns?.before) ? payload?.matchedCampaigns?.before : [];
   const campaignsAfter = Array.isArray(payload?.matchedCampaigns?.after) ? payload?.matchedCampaigns?.after : [];
@@ -345,7 +402,7 @@ export function XwayDetailsDialog({
                     <div className="text-[13px] text-slate-900 dark:text-slate-100" style={{ fontWeight: 700 }}>
                       Из выгрузки
                     </div>
-                    <MetricsTable rows={exportRows} useRawExportRows emptyMessage="Нет метрик в выгрузке." />
+                    <MetricsTable rows={exportRows} useRawExportRows emptyMessage="Нет метрик в выгрузке." periodLabels={{ before: beforeDate, during: duringDate, after: afterDate }} />
                   </div>
                 </div>
               </div>
@@ -354,9 +411,9 @@ export function XwayDetailsDialog({
             {status === "ready" && payload ? (
               <div className="space-y-5">
                 <div className="grid gap-4 xl:grid-cols-3">
-                  <TotalsCard title="До" totals={payload.totals?.before} />
-                  <TotalsCard title="Во время" totals={payload.totals?.during} />
-                  <TotalsCard title="После" totals={payload.totals?.after} />
+                  <TotalsCard title="До" subtitle={beforeDate} totals={payload.totals?.before} />
+                  <TotalsCard title="Во время" subtitle={duringDate} totals={payload.totals?.during} />
+                  <TotalsCard title="После" subtitle={afterDate} totals={payload.totals?.after} />
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -382,19 +439,19 @@ export function XwayDetailsDialog({
                     <div className="text-[13px] text-slate-900 dark:text-slate-100" style={{ fontWeight: 700 }}>
                       Из выгрузки
                     </div>
-                    <MetricsTable rows={exportRows} useRawExportRows emptyMessage="Нет метрик в выгрузке." />
+                    <MetricsTable rows={exportRows} useRawExportRows emptyMessage="Нет метрик в выгрузке." periodLabels={{ before: beforeDate, during: duringDate, after: afterDate }} />
                   </div>
                   <div className="space-y-3">
                     <div className="text-[13px] text-slate-900 dark:text-slate-100" style={{ fontWeight: 700 }}>
                       Из XWAY
                     </div>
-                    <MetricsTable rows={xwayRows} emptyMessage="Нет метрик для выбранного типа РК." />
+                    <MetricsTable rows={xwayRows} emptyMessage="Нет метрик для выбранного типа РК." periodLabels={{ before: beforeDate, during: duringDate, after: afterDate }} />
                   </div>
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <CampaignList title="Кампании до" items={campaignsBefore} />
-                  <CampaignList title="Кампании после" items={campaignsAfter} />
+                  <CampaignList title="Кампании до" subtitle={beforeDate} items={campaignsBefore} />
+                  <CampaignList title="Кампании после" subtitle={afterDate} items={campaignsAfter} />
                 </div>
               </div>
             ) : null}

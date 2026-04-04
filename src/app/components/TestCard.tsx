@@ -23,6 +23,53 @@ function shouldShowCampaignType(typeRaw: string | null | undefined) {
   return !/^MAIN[\s_-]?IMAGE$/i.test(value);
 }
 
+function formatDateOnly(isoRaw: string | null | undefined, fallbackRaw = "") {
+  const iso = String(isoRaw || "").trim();
+  if (iso) {
+    const date = new Date(iso);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      }).format(date);
+    }
+  }
+  const fallback = String(fallbackRaw || "").trim();
+  return fallback || "—";
+}
+
+function shiftIsoDateTime(isoRaw: string | null | undefined, days: number) {
+  const iso = String(isoRaw || "").trim();
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
+function buildPeriodLabel(startIso: string | null | undefined, endIso: string | null | undefined, startFallback = "", endFallback = "") {
+  const start = formatDateOnly(startIso, startFallback);
+  const end = formatDateOnly(endIso, endFallback);
+  if (start === "—" && end === "—") return "—";
+  if (start === end || end === "—") return start;
+  if (start === "—") return end;
+  return `${start} — ${end}`;
+}
+
+function ColumnHead({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 leading-tight">
+      <span>{title}</span>
+      {subtitle ? (
+        <span className="text-[9px] normal-case tracking-normal text-slate-400 dark:text-slate-500" style={{ fontWeight: 600 }}>
+          {subtitle}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function TestCardComponent({
   test,
   xwayStatus,
@@ -34,6 +81,9 @@ export function TestCardComponent({
   const [showReport, setShowReport] = useState(false);
   const matrixWidthPx = AB_MATRIX_METRIC_COL_WIDTH + test.variants.length * AB_MATRIX_VARIANT_COL_WIDTH;
   const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} — ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
+  const rkBeforeDate = formatDateOnly(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
+  const rkDuringDate = buildPeriodLabel(test.startedAtIso, test.endedAtIso, test.startedAt, test.endedAt);
+  const rkAfterDate = formatDateOnly(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
   const xwayChecksFlow = test.xwaySummaryChecks
     ? [
         { label: "CTR", raw: test.xwaySummaryChecks.testCtr },
@@ -235,20 +285,20 @@ export function TestCardComponent({
 
         {/* Right: comparison metrics - no external title, info inside table, matching height */}
         <div className="overflow-auto rounded-lg border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 self-stretch">
-          <table className="w-full border-collapse min-w-[360px] h-full">
+          <table className="w-full border-collapse min-w-[460px] h-full">
             <thead>
               <tr>
                 <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-left text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
                   Метрика
                 </th>
                 <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-center text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
-                  До
+                  <ColumnHead title="До" subtitle={rkBeforeDate} />
                 </th>
                 <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-center text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
-                  Во время
+                  <ColumnHead title="Во время" subtitle={rkDuringDate} />
                 </th>
                 <th className="border-b border-r border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-center text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
-                  После
+                  <ColumnHead title="После" subtitle={rkAfterDate} />
                 </th>
                 <th className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-center text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider" style={{ fontWeight: 700 }}>
                   <div className="flex items-center justify-center gap-1.5">
