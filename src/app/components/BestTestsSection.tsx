@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ExternalLink, Trophy } from "lucide-react";
 
 import { abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
@@ -21,6 +21,7 @@ interface MetricRow {
 }
 
 type BestViewMode = "full" | "compact";
+type BestPoolMode = "selected" | "hidden" | "all";
 
 const BEST_RK_METRICS = ["Цена", "Откл. цены", "Ставка", "Показы", "CTR", "CR1", "CTR*CR1"];
 const BEST_TABLE_METRIC_COL = "18%";
@@ -161,6 +162,17 @@ function getVisibleComparisonRows(test: TestCard) {
     .filter(Boolean) as ComparisonRow[];
 }
 
+function getBestTestKey(test: TestCard) {
+  const testId = String(test.testId || "").trim();
+  if (testId) return `test:${testId}`;
+
+  return [
+    String(test.article || "").trim(),
+    String(test.startedAtIso || test.startedAt || "").trim(),
+    String(test.title || test.productName || "").trim(),
+  ].join("::");
+}
+
 function getRkGrowth(row: ComparisonRow) {
   const current = String(row.deltaText || "").trim();
   if (current && current !== "—") {
@@ -281,6 +293,29 @@ function DateBadge({ label, value, accent = false }: { label: string; value: str
     >
       {label}: {value}
     </span>
+  );
+}
+
+function VisibilityChip({
+  hidden,
+  onClick,
+}: {
+  hidden: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-7 items-center rounded-xl border px-2 text-[10px] transition-colors ${
+        hidden
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:border-emerald-500/60 dark:hover:bg-emerald-500/18"
+          : "border-slate-200 bg-white text-slate-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-rose-500/50 dark:hover:bg-rose-500/12 dark:hover:text-rose-300"
+      }`}
+      style={{ fontWeight: 800 }}
+    >
+      {hidden ? "Показать" : "Скрыть"}
+    </button>
   );
 }
 
@@ -421,7 +456,19 @@ function buildComparisonMetricRow(test: TestCard, label: string, options: { high
   };
 }
 
-function BestTestCard({ test, rank, mode }: { test: TestCard; rank: number; mode: BestViewMode }) {
+function BestTestCard({
+  test,
+  rank,
+  mode,
+  hidden,
+  onToggleHidden,
+}: {
+  test: TestCard;
+  rank: number;
+  mode: BestViewMode;
+  hidden: boolean;
+  onToggleHidden: () => void;
+}) {
   const isCompact = mode === "compact";
   const coverSizePx = isCompact ? 80 : 92;
   const baselineVariant = getBaselineVariant(test);
@@ -511,9 +558,10 @@ function BestTestCard({ test, rank, mode }: { test: TestCard; rank: number; mode
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center gap-1">
-              <LinkChip href={abTestUrl} label="AB-тест" />
-              <LinkChip href={rkUrl} label="РК" />
-              <LinkChip href={test.wbUrl} label="WB" />
+              {!isCompact ? <LinkChip href={abTestUrl} label="AB-тест" /> : null}
+              {!isCompact ? <LinkChip href={rkUrl} label="РК" /> : null}
+              {!isCompact ? <LinkChip href={test.wbUrl} label="WB" /> : null}
+              <VisibilityChip hidden={hidden} onClick={onToggleHidden} />
             </div>
           </div>
 
@@ -589,6 +637,13 @@ export function BestTestsSection({
   emptyMessage = "Нет завершённых успешных чистых тестов с рассчитанным приростом CTR*CR1 под выбранные фильтры.",
 }: Props) {
   const [viewMode, setViewMode] = useState<BestViewMode>("full");
+  const [poolMode, setPoolMode] = useState<BestPoolMode>("selected");
+  const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    const actualKeys = new Set(tests.map((test) => getBestTestKey(test)));
+    setHiddenKeys((prev) => prev.filter((key) => actualKeys.has(key)));
+  }, [tests]);
 
   if (!tests.length) {
     return (
@@ -597,6 +652,34 @@ export function BestTestsSection({
       </div>
     );
   }
+
+  const hiddenKeySet = new Set(hiddenKeys);
+  const displayedTests =
+    poolMode === "hidden"
+      ? tests.filter((test) => hiddenKeySet.has(getBestTestKey(test)))
+      : poolMode === "all"
+        ? tests
+        : tests.filter((test) => !hiddenKeySet.has(getBestTestKey(test)));
+
+  const toggleHidden = (test: TestCard) => {
+    const key = getBestTestKey(test);
+    setHiddenKeys((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((item) => item !== key);
+      }
+      return [...prev, key];
+    });
+  };
+
+  const resetHidden = () => {
+    setHiddenKeys([]);
+    setPoolMode("selected");
+  };
+
+  const emptyPoolMessage =
+    poolMode === "hidden"
+      ? "Скрытых тестов пока нет."
+      : "В текущем пуле ничего не осталось. Сбросьте скрытые или переключите фильтр.";
 
   return (
     <section className="space-y-3">
@@ -638,18 +721,80 @@ export function BestTestsSection({
               </button>
             </div>
 
+            <div className="inline-flex rounded-2xl border border-slate-200/80 bg-slate-50 p-0.5 dark:border-slate-700/80 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setPoolMode("selected")}
+                className={`inline-flex h-8 items-center rounded-[14px] px-3 text-[12px] transition-colors ${
+                  poolMode === "selected"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                }`}
+                style={{ fontWeight: 800 }}
+              >
+                Выбранные
+              </button>
+              <button
+                type="button"
+                onClick={() => setPoolMode("hidden")}
+                className={`inline-flex h-8 items-center rounded-[14px] px-3 text-[12px] transition-colors ${
+                  poolMode === "hidden"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                }`}
+                style={{ fontWeight: 800 }}
+              >
+                Скрытые
+              </button>
+              <button
+                type="button"
+                onClick={() => setPoolMode("all")}
+                className={`inline-flex h-8 items-center rounded-[14px] px-3 text-[12px] transition-colors ${
+                  poolMode === "all"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
+                }`}
+                style={{ fontWeight: 800 }}
+              >
+                Все
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={resetHidden}
+              disabled={!hiddenKeys.length}
+              className="inline-flex h-9 items-center rounded-2xl border border-slate-200/80 bg-slate-50 px-3 text-[12px] text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100 disabled:cursor-default disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700"
+              style={{ fontWeight: 800 }}
+            >
+              Сбросить скрытые
+            </button>
+
             <div className="inline-flex h-9 items-center rounded-2xl border border-slate-200/80 bg-slate-50 px-3 text-[12px] text-slate-700 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200" style={{ fontWeight: 800 }}>
-              Найдено: {tests.length}
+              Найдено: {displayedTests.length}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 xl:grid-cols-3">
-        {tests.map((test, index) => (
-          <BestTestCard key={test.testId || `${test.article}-${index}`} test={test} rank={index + 1} mode={viewMode} />
-        ))}
-      </div>
+      {displayedTests.length ? (
+        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 xl:grid-cols-3">
+          {displayedTests.map((test, index) => (
+            <BestTestCard
+              key={getBestTestKey(test)}
+              test={test}
+              rank={index + 1}
+              mode={viewMode}
+              hidden={hiddenKeySet.has(getBestTestKey(test))}
+              onToggleHidden={() => toggleHidden(test)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200/80 bg-white px-6 py-8 text-center text-[14px] text-slate-500 shadow-sm dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-400" style={{ fontWeight: 600 }}>
+          {emptyPoolMessage}
+        </div>
+      )}
     </section>
   );
 }
