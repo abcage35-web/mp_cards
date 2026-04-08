@@ -24,8 +24,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function uniqueParticipantIds(ids: ParticipantId[]) {
-  return ids.filter((id, index) => PARTICIPANTS.some((participant) => participant.id === id) && ids.indexOf(id) === index);
+function uniqueParticipantIds(ids?: ParticipantId[] | null) {
+  const values = Array.isArray(ids) ? ids : [];
+  return values.filter(
+    (id, index) =>
+      PARTICIPANTS.some((participant) => participant.id === id) &&
+      values.indexOf(id) === index,
+  );
 }
 
 function makeTaskId() {
@@ -36,8 +41,17 @@ function makeSeriesId() {
   return `series-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getTaskSeriesId(task: Pick<PlannerTask, "id" | "seriesId">) {
+function getTaskSeriesId(task: Pick<PlannerTask, "id"> & Partial<Pick<PlannerTask, "seriesId">>) {
   return task.seriesId || task.id;
+}
+
+function getTaskFallbackAssignees(task: Pick<PlannerTask, "assignee"> & Partial<Pick<PlannerTask, "seriesAssignees">>) {
+  const seriesAssignees = uniqueParticipantIds(task.seriesAssignees);
+  if (seriesAssignees.length > 0) {
+    return seriesAssignees;
+  }
+
+  return task.assignee ? [task.assignee] : [];
 }
 
 function shouldScheduleTask(input: PlannerTaskInput) {
@@ -124,11 +138,7 @@ export function getTaskSeriesTasks(tasks: PlannerTask[], taskId: string) {
 }
 
 export function getTaskSeriesAssignees(task: PlannerTask) {
-  if (task.seriesAssignees.length > 0) {
-    return uniqueParticipantIds(task.seriesAssignees);
-  }
-
-  return task.assignee ? [task.assignee] : [];
+  return getTaskFallbackAssignees(task);
 }
 
 export function sortPlannerTasks(tasks: PlannerTask[]) {
@@ -250,7 +260,8 @@ export function moveTaskToContainer(
       {
         ...task,
         updatedAt: nowIso,
-        seriesAssignees: uniqueParticipantIds(task.seriesAssignees),
+        seriesId: getTaskSeriesId(task),
+        seriesAssignees: getTaskFallbackAssignees(task),
       },
       nextSpec,
     );
