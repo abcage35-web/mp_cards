@@ -137,7 +137,7 @@ export function CalendarDayCell({
   return (
     <div
       ref={dayRef}
-      className={cn("relative", showTray && "z-30 pb-[72px]")}
+      className={cn("relative flex flex-col", showTray && "z-30")}
     >
       <div
         className={cn(
@@ -185,8 +185,8 @@ export function CalendarDayCell({
         </div>
       </div>
       {showTray ? (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-30 flex justify-center">
-          <div className="pointer-events-none inline-flex w-full flex-wrap items-center justify-center gap-1.5 rounded-[20px] border border-white/80 bg-white/88 px-2 py-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.26)] backdrop-blur-[10px]">
+        <div className="mt-2 rounded-[24px] border border-white/80 bg-white/80 p-3 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.38)] backdrop-blur-sm">
+          <div className="pointer-events-none inline-flex w-full flex-wrap items-center justify-center gap-1.5">
             {groupsWithTasks.map(({ group, tasks: groupedTasks }) => (
               <CalendarGroupChip
                 key={`overlay-${participantId}-${dateKey}-${group.id}`}
