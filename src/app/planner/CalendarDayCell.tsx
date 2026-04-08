@@ -1,6 +1,6 @@
 import { format, isSameMonth } from "date-fns";
-import { useRef } from "react";
-import { useDragLayer, useDrop } from "react-dnd";
+import { memo, useMemo, useRef } from "react";
+import { useDrop } from "react-dnd";
 
 import { cn } from "@/app/components/ui/utils";
 import { TASK_GROUPS, WEEKDAY_LABELS } from "@/app/planner/constants";
@@ -8,13 +8,11 @@ import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
 import {
   formatHours,
   getContainerId,
-  getDailyHours,
   getDateKey,
-  getTasksForContainer,
   isDateToday,
 } from "@/app/planner/planner-utils";
 import { TaskGroupSection } from "@/app/planner/TaskGroupSection";
-import type { ContainerSpec, PlannerTask, TaskProgressStatus } from "@/app/planner/types";
+import type { ContainerSpec, PlannerTask, TaskGroupId, TaskProgressStatus } from "@/app/planner/types";
 
 function CalendarGroupChip({
   dateKey,
@@ -81,27 +79,38 @@ function CalendarGroupChip({
 interface CalendarDayCellProps {
   date: Date;
   currentMonth: Date;
-  tasks: PlannerTask[];
+  groupEntries: {
+    groupId: TaskGroupId;
+    tasks: PlannerTask[];
+  }[];
+  dayHours: number;
   participantId: NonNullable<PlannerTask["assignee"]>;
+  minimal?: boolean;
   workHoursPerDay: number;
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
+  onDragActivityChange?: (active: boolean) => void;
   onToggleTaskProgressStatus: (taskId: string, nextProgressStatus: TaskProgressStatus) => void;
   onOpenTask: (task: PlannerTask) => void;
 }
 
-export function CalendarDayCell({
+function CalendarDayCellComponent({
   date,
   currentMonth,
-  tasks,
+  groupEntries,
+  dayHours,
   participantId,
+  minimal = false,
   workHoursPerDay,
   onMoveTask,
+  onDragActivityChange,
   onToggleTaskProgressStatus,
   onOpenTask,
 }: CalendarDayCellProps) {
   const isCurrentMonth = isSameMonth(date, currentMonth);
   const dateKey = getDateKey(date);
-  const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
+  const weekdayIndex = (date.getDay() + 6) % 7;
+  const weekdayLabel = WEEKDAY_LABELS[weekdayIndex];
+  const isWeekend = weekdayIndex >= 5;
   const dayRef = useRef<HTMLDivElement | null>(null);
   const [{ isOverDay }, dayDrop] = useDrop<DragTaskItem, void, { isOverDay: boolean }>(
     () => ({
@@ -118,26 +127,41 @@ export function CalendarDayCell({
 
   if (!isCurrentMonth) {
     return (
-      <div
-        aria-hidden="true"
-        className="min-h-[168px] rounded-[24px] border border-transparent bg-transparent"
-      />
+      <div className={cn("min-h-[168px] p-2.5", isWeekend ? "bg-rose-50/35" : "bg-slate-50/80")}>
+        <div className="flex items-center justify-between gap-2 opacity-70">
+          <span
+            className={cn(
+              "inline-flex size-8 items-center justify-center rounded-full text-sm font-semibold",
+              isWeekend ? "bg-rose-100/90 text-rose-300" : "bg-slate-200/90 text-slate-400",
+            )}
+          >
+            {format(date, "d")}
+          </span>
+          <div className="text-right">
+            <div className={cn("text-[10px] tracking-[0.18em]", isWeekend ? "text-rose-300" : "text-slate-300")}>
+              {weekdayLabel}
+            </div>
+            <div className="text-[10px] font-medium text-slate-300">вне месяца</div>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const dayHours = getDailyHours(tasks, participantId, dateKey);
-  const weekdayLabel = WEEKDAY_LABELS[(date.getDay() + 6) % 7];
   const isOverbooked = dayHours > workHoursPerDay;
-  const groupsWithTasks = TASK_GROUPS.map((group) => ({
-    group,
-    tasks: getTasksForContainer(tasks, {
-      kind: "calendar",
-      assignee: participantId,
-      date: dateKey,
-      group: group.id,
-    }),
-  }));
-  const showTray = isAnyDragging && isOverDay;
+  const groupsWithTasks = useMemo(
+    () =>
+      groupEntries.map(({ groupId, tasks: groupedTasks }) => ({
+        group: TASK_GROUPS.find((group) => group.id === groupId) || TASK_GROUPS[TASK_GROUPS.length - 1],
+        tasks: groupedTasks,
+      })),
+    [groupEntries],
+  );
+  const visibleGroupsWithTasks = useMemo(
+    () => groupsWithTasks.filter(({ tasks: groupedTasks }) => groupedTasks.length > 0),
+    [groupsWithTasks],
+  );
+  const showTray = isOverDay;
 
   return (
     <div
@@ -146,27 +170,31 @@ export function CalendarDayCell({
     >
       <div
         className={cn(
-          "min-h-[168px] rounded-[24px] border bg-white/80 p-3 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors",
-          isDateToday(date) ? "border-primary/60 bg-primary/6" : "border-white/70",
+          "min-h-[168px] p-2.5 transition-colors",
+          isWeekend ? "bg-rose-50/45" : "bg-white",
         )}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <span
             className={cn(
               "inline-flex size-8 items-center justify-center rounded-full text-sm font-semibold",
-              isDateToday(date) ? "bg-primary text-white shadow-lg" : "bg-slate-100 text-slate-700",
+              isDateToday(date)
+                ? "bg-rose-500 text-white shadow-lg"
+                : isWeekend
+                  ? "bg-rose-100 text-rose-500"
+                  : "bg-slate-100 text-slate-700",
             )}
           >
             {format(date, "d")}
           </span>
           <div className="text-right">
-            <div className="text-[10px] tracking-[0.18em] text-slate-400">
+            <div className={cn("text-[10px] tracking-[0.18em]", isWeekend ? "text-rose-400" : "text-slate-400")}>
               {weekdayLabel}
             </div>
             <div
               className={cn(
                 "text-[10px] font-medium",
-                isOverbooked ? "text-rose-600" : "text-slate-500",
+                isOverbooked ? "text-rose-600" : isWeekend ? "text-rose-500" : "text-slate-500",
               )}
             >
               {formatHours(dayHours)} / {formatHours(workHoursPerDay)}
@@ -174,7 +202,7 @@ export function CalendarDayCell({
           </div>
         </div>
         <div className="space-y-1.5">
-          {groupsWithTasks.map(({ group, tasks: groupedTasks }) => (
+          {visibleGroupsWithTasks.map(({ group, tasks: groupedTasks }) => (
             <TaskGroupSection
               key={`${participantId}-${dateKey}-${group.id}`}
               title={group.shortLabel}
@@ -187,12 +215,14 @@ export function CalendarDayCell({
                 group: group.id,
               }}
               compact
+              minimal={minimal}
               variant="calendar"
               onMoveTask={onMoveTask}
+              onDragActivityChange={onDragActivityChange}
               onToggleTaskProgressStatus={onToggleTaskProgressStatus}
               onOpenTask={onOpenTask}
-            />
-          ))}
+              />
+            ))}
         </div>
       </div>
       {showTray ? (
@@ -214,3 +244,19 @@ export function CalendarDayCell({
     </div>
   );
 }
+
+export const CalendarDayCell = memo(
+  CalendarDayCellComponent,
+  (prevProps, nextProps) =>
+    prevProps.date === nextProps.date &&
+    prevProps.currentMonth === nextProps.currentMonth &&
+    prevProps.groupEntries === nextProps.groupEntries &&
+    prevProps.dayHours === nextProps.dayHours &&
+    prevProps.participantId === nextProps.participantId &&
+    prevProps.minimal === nextProps.minimal &&
+    prevProps.workHoursPerDay === nextProps.workHoursPerDay &&
+    prevProps.onMoveTask === nextProps.onMoveTask &&
+    prevProps.onDragActivityChange === nextProps.onDragActivityChange &&
+    prevProps.onToggleTaskProgressStatus === nextProps.onToggleTaskProgressStatus &&
+    prevProps.onOpenTask === nextProps.onOpenTask,
+);

@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { useDragLayer, useDrop } from "react-dnd";
+import { memo, useRef } from "react";
+import { useDrop } from "react-dnd";
 import { ChevronDown, Plus } from "lucide-react";
 
 import { Badge } from "@/app/components/ui/badge";
@@ -16,12 +16,14 @@ interface TaskGroupSectionProps {
   tasks: PlannerTask[];
   containerSpec: ContainerSpec;
   compact?: boolean;
+  minimal?: boolean;
   variant?: "bank" | "calendar";
   collapsible?: boolean;
   collapsed?: boolean;
   onToggleCollapsed?: (groupId: PlannerTask["group"]) => void;
   onCreateTask?: (groupId: PlannerTask["group"]) => void;
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
+  onDragActivityChange?: (active: boolean) => void;
   onToggleTaskProgressStatus: (taskId: string, nextProgressStatus: TaskProgressStatus) => void;
   onOpenTask: (task: PlannerTask) => void;
 }
@@ -30,25 +32,26 @@ function getGroupMeta(groupId: PlannerTask["group"]) {
   return TASK_GROUPS.find((group) => group.id === groupId) || TASK_GROUPS[TASK_GROUPS.length - 1];
 }
 
-export function TaskGroupSection({
+function TaskGroupSectionComponent({
   title,
   groupId,
   tasks,
   containerSpec,
   compact = false,
+  minimal = false,
   variant = "bank",
   collapsible = false,
   collapsed = false,
   onToggleCollapsed,
   onCreateTask,
   onMoveTask,
+  onDragActivityChange,
   onToggleTaskProgressStatus,
   onOpenTask,
 }: TaskGroupSectionProps) {
   const groupMeta = getGroupMeta(groupId);
   const containerId = getContainerId(containerSpec);
   const ref = useRef<HTMLDivElement | null>(null);
-  const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
 
   const [{ isOver, canDrop }, drop] = useDrop<DragTaskItem, { handled: true } | undefined, { isOver: boolean; canDrop: boolean }>(
     () => ({
@@ -78,7 +81,7 @@ export function TaskGroupSection({
   }
 
   const showContent = !collapsed;
-  const showCollapsedDropzone = collapsed && isAnyDragging && variant === "bank";
+  const showCollapsedDropzone = collapsed && variant === "bank";
 
   return (
     <div
@@ -151,8 +154,10 @@ export function TaskGroupSection({
               index={index}
               containerSpec={containerSpec}
               compact={compact}
+              minimal={minimal}
               variant={variant}
               onMoveTask={onMoveTask}
+              onDragActivityChange={onDragActivityChange}
               onToggleTaskProgressStatus={onToggleTaskProgressStatus}
               onOpenTask={onOpenTask}
             />
@@ -168,3 +173,23 @@ export function TaskGroupSection({
     </div>
   );
 }
+
+export const TaskGroupSection = memo(
+  TaskGroupSectionComponent,
+  (prevProps, nextProps) =>
+    prevProps.title === nextProps.title &&
+    prevProps.groupId === nextProps.groupId &&
+    prevProps.tasks === nextProps.tasks &&
+    prevProps.compact === nextProps.compact &&
+    prevProps.minimal === nextProps.minimal &&
+    prevProps.variant === nextProps.variant &&
+    prevProps.collapsible === nextProps.collapsible &&
+    prevProps.collapsed === nextProps.collapsed &&
+    prevProps.onToggleCollapsed === nextProps.onToggleCollapsed &&
+    prevProps.onCreateTask === nextProps.onCreateTask &&
+    prevProps.onMoveTask === nextProps.onMoveTask &&
+    prevProps.onDragActivityChange === nextProps.onDragActivityChange &&
+    prevProps.onToggleTaskProgressStatus === nextProps.onToggleTaskProgressStatus &&
+    prevProps.onOpenTask === nextProps.onOpenTask &&
+    getContainerId(prevProps.containerSpec) === getContainerId(nextProps.containerSpec),
+);

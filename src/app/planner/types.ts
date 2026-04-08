@@ -1,22 +1,48 @@
-export type TaskGroupId = "planned" | "new" | "project" | "meeting" | "undefined";
+export type TaskGroupId =
+  | "planned"
+  | "new"
+  | "project"
+  | "planned-meeting"
+  | "new-meeting"
+  | "off-hours"
+  | "undefined";
 
 export type ParticipantId = "sasha-nekrasov" | "sasha-manokhin" | "anton-bober";
 
 export type TaskStatus = "bank" | "calendar";
 export type TaskProgressStatus = "cancelled" | "in-progress" | "done";
+export type TaskMutationScope = "series" | "instance";
 export type TaskRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 export type TaskRecurrenceUntilMode = "forever" | "until";
+
+export interface ParticipantWorkSchedule {
+  startTime: string;
+  endTime: string;
+}
+
+export interface TaskRecurrenceWeekdayTiming {
+  startTime: string | null;
+  hours: number;
+}
 
 export interface TaskRecurrence {
   frequency: TaskRecurrenceFrequency;
   interval: number;
   weekdays: number[];
+  weekdayTimings: Partial<Record<number, TaskRecurrenceWeekdayTiming>>;
+  fromDate: string;
   untilMode: TaskRecurrenceUntilMode;
   untilDate: string;
+  exclusions: string[];
 }
 
 export interface PlannerSettings {
   workHoursPerDay: number;
+  groupOrder: TaskGroupId[];
+  calendarDisplayMode: "day" | "time";
+  hideWeekends: boolean;
+  interleaveWeeksByParticipant: boolean;
+  participantWorkSchedules: Record<ParticipantId, ParticipantWorkSchedule>;
 }
 
 export interface PlannerTask {
@@ -30,6 +56,7 @@ export interface PlannerTask {
   description: string;
   link: string;
   hours: number;
+  startTime: string | null;
   group: TaskGroupId;
   assignee: ParticipantId | null;
   date: string | null;
@@ -59,6 +86,7 @@ export interface PlannerTaskInput {
   description: string;
   link: string;
   hours: number;
+  startTime: string | null;
   group: TaskGroupId;
   assignees: ParticipantId[];
   date: string | null;
@@ -71,6 +99,7 @@ export interface TaskFormValues {
   description: string;
   link: string;
   hours: string;
+  startTime: string;
   group: TaskGroupId;
   assignees: ParticipantId[];
   date: string;

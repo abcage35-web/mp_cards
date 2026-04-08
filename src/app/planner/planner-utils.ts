@@ -4,30 +4,39 @@ import {
   differenceInCalendarMonths,
   differenceInCalendarWeeks,
   endOfMonth,
+  endOfYear,
   endOfWeek,
   format,
   isSameDay,
   parseISO,
   startOfMonth,
+  startOfYear,
   startOfWeek,
 } from "date-fns";
 import { ru } from "date-fns/locale";
 
 import {
+  DEFAULT_PARTICIPANT_WORK_SCHEDULES,
+  DEFAULT_TASK_GROUP_ORDER,
   DEFAULT_TASK_RECURRENCE,
   DEFAULT_WORK_HOURS_PER_DAY,
   PARTICIPANTS,
+  TASK_GROUPS,
   WEEKDAY_LABELS,
 } from "./constants";
 import type {
   ContainerSpec,
   ParticipantId,
+  ParticipantWorkSchedule,
   PlannerState,
   PlannerSettings,
   PlannerTask,
   PlannerTaskInput,
+  TaskMutationScope,
+  TaskGroupId,
   TaskProgressStatus,
   TaskRecurrence,
+  TaskRecurrenceWeekdayTiming,
   TaskFormValues,
 } from "./types";
 
@@ -42,6 +51,72 @@ function uniqueParticipantIds(ids?: ParticipantId[] | null) {
       PARTICIPANTS.some((participant) => participant.id === id) &&
       values.indexOf(id) === index,
   );
+}
+
+export function normalizeTaskGroupId(groupId?: string | null): TaskGroupId {
+  if (groupId === "meeting") {
+    return "planned-meeting";
+  }
+
+  return (TASK_GROUPS.find((group) => group.id === groupId)?.id || "undefined") as TaskGroupId;
+}
+
+export function normalizeTaskGroupOrder(groupOrder?: TaskGroupId[] | null) {
+  const rawOrder = Array.isArray(groupOrder) ? groupOrder : [];
+  const normalized = rawOrder
+    .map((groupId) => normalizeTaskGroupId(groupId))
+    .filter((groupId, index, values) => values.indexOf(groupId) === index);
+
+  return [
+    ...normalized,
+    ...DEFAULT_TASK_GROUP_ORDER.filter((groupId) => !normalized.includes(groupId)),
+  ];
+}
+
+export function normalizeTaskStartTime(startTime?: string | null) {
+  if (!startTime) {
+    return null;
+  }
+
+  const value = String(startTime).trim();
+  return /^([01]\d|2[0-3]):(00|30)$/.test(value) ? value : null;
+}
+
+export function timeToMinutes(startTime?: string | null) {
+  const normalized = normalizeTaskStartTime(startTime);
+  if (!normalized) {
+    return null;
+  }
+
+  const [hours, minutes] = normalized.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+export function minutesToTime(totalMinutes: number) {
+  const clamped = Math.max(0, Math.min(23 * 60 + 30, Math.round(totalMinutes / 30) * 30));
+  const hours = Math.floor(clamped / 60);
+  const minutes = clamped % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+export function formatTaskStartTime(startTime?: string | null) {
+  const normalized = normalizeTaskStartTime(startTime);
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized;
+}
+
+export function getOrderedTaskGroups(groupOrder?: TaskGroupId[] | null) {
+  const normalizedOrder = normalizeTaskGroupOrder(groupOrder);
+  return normalizedOrder
+    .map((groupId) => TASK_GROUPS.find((group) => group.id === groupId))
+    .filter((group): group is (typeof TASK_GROUPS)[number] => Boolean(group));
+}
+
+export function shouldSyncTaskTimeAcrossFamily(_groupId: TaskGroupId) {
+  return true;
 }
 
 function makeTaskId() {
@@ -80,6 +155,97 @@ function uniqueWeekdays(weekdays?: number[] | null) {
   );
 }
 
+function normalizeRecurrenceWeekdayTimings(
+  weekdayTimings?: Partial<Record<number, Partial<TaskRecurrenceWeekdayTiming> | null>> | null,
+  weekdays?: number[] | null,
+) {
+  const selectedWeekdays = uniqueWeekdays(weekdays);
+  const sourceTimings =
+    weekdayTimings && typeof weekdayTimings === "object" ? weekdayTimings : {};
+
+  return selectedWeekdays.reduce<Partial<Record<number, TaskRecurrenceWeekdayTiming>>>(
+    (accumulator, weekdayIndex) => {
+      const rawTiming = sourceTimings[weekdayIndex];
+      if (!rawTiming || typeof rawTiming !== "object") {
+        return accumulator;
+      }
+
+      const hoursValue = Number(rawTiming.hours);
+      accumulator[weekdayIndex] = {
+        startTime: normalizeTaskStartTime(rawTiming.startTime) || null,
+        hours: Number.isFinite(hoursValue)
+          ? Math.max(0, Math.min(24, Math.round(hoursValue * 10) / 10))
+          : 0,
+      };
+
+      return accumulator;
+    },
+    {},
+  );
+}
+
+function isLegacyDefaultWorkSchedule(schedule?: ParticipantWorkSchedule | null) {
+  return schedule?.startTime === "09:00" && schedule?.endTime === "17:00";
+}
+
+function shouldUpgradeLegacyDefaultWorkSettings(
+  workSchedules: Record<ParticipantId, ParticipantWorkSchedule>,
+  workHoursPerDay?: number | null,
+) {
+  const allLegacy = PARTICIPANTS.every((participant) =>
+    isLegacyDefaultWorkSchedule(workSchedules[participant.id]),
+  );
+
+  if (!allLegacy) {
+    return false;
+  }
+
+  return workHoursPerDay === undefined || workHoursPerDay === null || workHoursPerDay === 8 || workHoursPerDay === 9;
+}
+
+function normalizeRecurrenceExclusions(exclusions?: string[] | null) {
+  const values = Array.isArray(exclusions) ? exclusions : [];
+
+  return values.filter(
+    (value, index, array) =>
+      typeof value === "string" &&
+      /^\d{4}-\d{2}-\d{2}::[a-z-]+$/.test(value) &&
+      array.indexOf(value) === index,
+  );
+}
+
+export function makeRecurrenceExclusionKey(
+  dateKey?: string | null,
+  assignee?: ParticipantId | null,
+) {
+  return dateKey && assignee ? `${dateKey}::${assignee}` : null;
+}
+
+function hasRecurrenceExclusion(
+  recurrence: TaskRecurrence,
+  dateKey?: string | null,
+  assignee?: ParticipantId | null,
+) {
+  const key = makeRecurrenceExclusionKey(dateKey, assignee);
+  return key ? recurrence.exclusions.includes(key) : false;
+}
+
+function appendRecurrenceExclusion(
+  recurrence: TaskRecurrence,
+  dateKey?: string | null,
+  assignee?: ParticipantId | null,
+) {
+  const key = makeRecurrenceExclusionKey(dateKey, assignee);
+  if (!key || recurrence.exclusions.includes(key)) {
+    return recurrence;
+  }
+
+  return {
+    ...recurrence,
+    exclusions: [...recurrence.exclusions, key],
+  };
+}
+
 function getWeekdayIndexFromDate(dateKey?: string | null) {
   if (!dateKey) {
     return null;
@@ -95,22 +261,58 @@ export function normalizeTaskRecurrence(
 ): TaskRecurrence {
   const frequency = recurrence?.frequency || DEFAULT_TASK_RECURRENCE.frequency;
   const interval = Math.max(1, Math.min(52, Math.round(Number(recurrence?.interval) || 1)));
-  const anchorWeekday = getWeekdayIndexFromDate(anchorDate);
+  const fromDate = recurrence?.fromDate || anchorDate || "";
+  const anchorWeekday = getWeekdayIndexFromDate(fromDate || anchorDate);
   const weekdays = uniqueWeekdays(recurrence?.weekdays);
+  const normalizedWeekdays =
+    frequency === "weekly"
+      ? weekdays.length > 0
+        ? weekdays
+        : anchorWeekday !== null
+          ? [anchorWeekday]
+          : []
+      : weekdays;
 
   return {
     frequency,
     interval,
-    weekdays:
+    weekdays: normalizedWeekdays,
+    weekdayTimings:
       frequency === "weekly"
-        ? weekdays.length > 0
-          ? weekdays
-          : anchorWeekday !== null
-            ? [anchorWeekday]
-            : []
-        : weekdays,
+        ? normalizeRecurrenceWeekdayTimings(recurrence?.weekdayTimings, normalizedWeekdays)
+        : {},
+    fromDate,
     untilMode: recurrence?.untilMode === "until" ? "until" : "forever",
     untilDate: recurrence?.untilDate || "",
+    exclusions: normalizeRecurrenceExclusions(recurrence?.exclusions),
+  };
+}
+
+export function getRecurrenceWeekdayTiming(
+  recurrence: TaskRecurrence,
+  weekdayIndex?: number | null,
+) {
+  if (recurrence.frequency !== "weekly" || weekdayIndex === null || weekdayIndex === undefined) {
+    return null;
+  }
+
+  return recurrence.weekdayTimings[weekdayIndex] || null;
+}
+
+function resolveRecurringOccurrenceTiming(
+  recurrence: TaskRecurrence,
+  occurrenceDate: string,
+  fallbackStartTime: string | null,
+  fallbackHours: number,
+) {
+  const weekdayTiming = getRecurrenceWeekdayTiming(
+    recurrence,
+    getWeekdayIndexFromDate(occurrenceDate),
+  );
+
+  return {
+    startTime: weekdayTiming ? weekdayTiming.startTime : fallbackStartTime,
+    hours: weekdayTiming ? weekdayTiming.hours : fallbackHours,
   };
 }
 
@@ -126,10 +328,6 @@ function isRecurringTask(recurrence: TaskRecurrence) {
 
 function getTaskRecurrenceGroupId(task: Partial<Pick<PlannerTask, "recurrenceGroupId">>) {
   return task.recurrenceGroupId || null;
-}
-
-function getLinkedTaskIds(tasks: PlannerTask[], taskId: string) {
-  return new Set(getTaskLinkedTasks(tasks, taskId).map((task) => task.id));
 }
 
 function describeWeeklyRecurrence(weekdays: number[]) {
@@ -174,6 +372,42 @@ export function normalizeWorkHoursPerDay(value: number) {
   return Math.max(1, Math.min(24, Math.round(value * 10) / 10));
 }
 
+export function normalizeParticipantWorkSchedules(
+  workSchedules?: Partial<Record<ParticipantId, Partial<ParticipantWorkSchedule> | null>> | null,
+) {
+  const normalizedSchedules = PARTICIPANTS.reduce<Record<ParticipantId, ParticipantWorkSchedule>>((accumulator, participant) => {
+    const fallback = DEFAULT_PARTICIPANT_WORK_SCHEDULES[participant.id];
+    const rawSchedule = workSchedules?.[participant.id];
+    const normalizedStart = normalizeTaskStartTime(rawSchedule?.startTime) || fallback.startTime;
+    const normalizedEnd = normalizeTaskStartTime(rawSchedule?.endTime) || fallback.endTime;
+    const startMinutes = timeToMinutes(normalizedStart);
+    const endMinutes = timeToMinutes(normalizedEnd);
+
+    accumulator[participant.id] =
+      startMinutes !== null && endMinutes !== null && endMinutes > startMinutes
+        ? {
+            startTime: normalizedStart,
+            endTime: normalizedEnd,
+          }
+        : fallback;
+
+    return accumulator;
+  }, {} as Record<ParticipantId, ParticipantWorkSchedule>);
+
+  return normalizedSchedules;
+}
+
+export function getParticipantWorkHoursPerDay(schedule?: ParticipantWorkSchedule | null) {
+  const startMinutes = timeToMinutes(schedule?.startTime);
+  const endMinutes = timeToMinutes(schedule?.endTime);
+
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return DEFAULT_WORK_HOURS_PER_DAY;
+  }
+
+  return Math.round(((endMinutes - startMinutes) / 60) * 10) / 10;
+}
+
 export function getTaskProgressStatus(
   task: Pick<PlannerTask, "progressStatus"> & Partial<Pick<PlannerTask, "id">>,
 ) {
@@ -185,17 +419,18 @@ function getRecurringDates(
   recurrence: TaskRecurrence,
   currentMonth: Date,
 ) {
-  if (!anchorDateKey) {
+  const startDateKey = recurrence.fromDate || anchorDateKey;
+  if (!startDateKey) {
     return [];
   }
 
-  const anchorDate = parseISO(anchorDateKey);
+  const anchorDate = parseISO(startDateKey);
   if (Number.isNaN(anchorDate.getTime())) {
     return [];
   }
 
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(currentMonth);
+  const monthStart = startOfYear(currentMonth);
+  const monthEnd = endOfYear(currentMonth);
   const untilDate =
     recurrence.untilMode === "until" && recurrence.untilDate
       ? parseISO(recurrence.untilDate)
@@ -241,22 +476,37 @@ function moveRecurrenceToDate(
   recurrence: TaskRecurrence,
   targetDateKey?: string,
 ) {
-  if (recurrence.frequency !== "weekly" || !targetDateKey) {
+  if (!targetDateKey) {
     return recurrence;
+  }
+
+  if (recurrence.frequency !== "weekly") {
+    return {
+      ...recurrence,
+      fromDate: targetDateKey,
+    };
   }
 
   const weekdayIndex = getWeekdayIndexFromDate(targetDateKey);
   if (weekdayIndex === null) {
-    return recurrence;
+    return {
+      ...recurrence,
+      fromDate: targetDateKey,
+    };
   }
 
   if (recurrence.weekdays.length > 1 && recurrence.weekdays.includes(weekdayIndex)) {
-    return recurrence;
+    return {
+      ...recurrence,
+      fromDate: targetDateKey,
+    };
   }
 
   return {
     ...recurrence,
+    fromDate: targetDateKey,
     weekdays: [weekdayIndex],
+    weekdayTimings: normalizeRecurrenceWeekdayTimings(recurrence.weekdayTimings, [weekdayIndex]),
   };
 }
 
@@ -269,14 +519,35 @@ export function createEmptyPlannerState(): PlannerState {
     updatedAt: nowIso,
     settings: {
       workHoursPerDay: DEFAULT_WORK_HOURS_PER_DAY,
+      groupOrder: DEFAULT_TASK_GROUP_ORDER,
+      calendarDisplayMode: "day",
+      hideWeekends: false,
+      interleaveWeeksByParticipant: false,
+      participantWorkSchedules: normalizeParticipantWorkSchedules(),
     },
     tasks: [],
   };
 }
 
 export function getPlannerSettings(state: PlannerState | null): PlannerSettings {
+  const workHoursPerDay = normalizeWorkHoursPerDay(
+    state?.settings?.workHoursPerDay ?? DEFAULT_WORK_HOURS_PER_DAY,
+  );
+  const participantWorkSchedules = normalizeParticipantWorkSchedules(state?.settings?.participantWorkSchedules);
+  const shouldUpgradeLegacyDefaults = shouldUpgradeLegacyDefaultWorkSettings(
+    participantWorkSchedules,
+    state?.settings?.workHoursPerDay ?? null,
+  );
+
   return {
-    workHoursPerDay: normalizeWorkHoursPerDay(state?.settings?.workHoursPerDay ?? DEFAULT_WORK_HOURS_PER_DAY),
+    workHoursPerDay: shouldUpgradeLegacyDefaults ? DEFAULT_WORK_HOURS_PER_DAY : workHoursPerDay,
+    groupOrder: normalizeTaskGroupOrder(state?.settings?.groupOrder),
+    calendarDisplayMode: state?.settings?.calendarDisplayMode === "time" ? "time" : "day",
+    hideWeekends: state?.settings?.hideWeekends === true,
+    interleaveWeeksByParticipant: state?.settings?.interleaveWeeksByParticipant === true,
+    participantWorkSchedules: shouldUpgradeLegacyDefaults
+      ? { ...DEFAULT_PARTICIPANT_WORK_SCHEDULES }
+      : participantWorkSchedules,
   };
 }
 
@@ -364,6 +635,118 @@ export function getTaskLinkedTasks(
 
   return sortPlannerTasks(tasks).filter(
     (task) => getTaskRecurrenceGroupId(task) === recurrenceGroupId,
+  );
+}
+
+function areParticipantListsEqual(left: ParticipantId[], right: ParticipantId[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((participantId, index) => participantId === right[index]);
+}
+
+function synchronizeSeriesAssignees(tasks: PlannerTask[]) {
+  const seriesAssigneesBySeriesId = new Map<string, ParticipantId[]>();
+
+  sortPlannerTasks(tasks).forEach((task) => {
+    const seriesId = getTaskSeriesId(task);
+    const currentAssignees = seriesAssigneesBySeriesId.get(seriesId) || [];
+    const sourceAssignees =
+      task.status === "calendar" && task.assignee
+        ? [task.assignee]
+        : getTaskFallbackAssignees(task);
+
+    sourceAssignees.forEach((participantId) => {
+      if (!currentAssignees.includes(participantId)) {
+        currentAssignees.push(participantId);
+      }
+    });
+
+    seriesAssigneesBySeriesId.set(seriesId, currentAssignees);
+  });
+
+  return tasks.map((task) => {
+    const nextSeriesAssignees =
+      seriesAssigneesBySeriesId.get(getTaskSeriesId(task)) || getTaskFallbackAssignees(task);
+
+    if (areParticipantListsEqual(getTaskFallbackAssignees(task), nextSeriesAssignees)) {
+      return task;
+    }
+
+    return {
+      ...task,
+      seriesAssignees: nextSeriesAssignees,
+    };
+  });
+}
+
+export function shouldPromptTaskScope(tasks: PlannerTask[], taskId: string) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask || sourceTask.status !== "calendar" || !sourceTask.assignee || !sourceTask.date) {
+    return false;
+  }
+
+  return getTaskLinkedTasks(tasks, taskId).length > 1;
+}
+
+export function detachTaskInstance(tasks: PlannerTask[], taskId: string) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (
+    !sourceTask ||
+    sourceTask.status !== "calendar" ||
+    !sourceTask.assignee ||
+    !sourceTask.date
+  ) {
+    return tasks;
+  }
+
+  const linkedTasks = getTaskLinkedTasks(tasks, taskId);
+  if (linkedTasks.length <= 1) {
+    return tasks;
+  }
+
+  const linkedTaskIds = new Set(linkedTasks.map((task) => task.id));
+  const sourceSeriesId = getTaskSeriesId(sourceTask);
+  const detachedSeriesId = makeSeriesId();
+  const nowIso = new Date().toISOString();
+
+  return synchronizeSeriesAssignees(
+    normalizeTaskOrders(
+      tasks.map((task) => {
+        if (task.id === taskId) {
+          return {
+            ...task,
+            seriesId: detachedSeriesId,
+            seriesAssignees: [sourceTask.assignee],
+            recurrenceGroupId: null,
+            recurrence: DEFAULT_TASK_RECURRENCE,
+            updatedAt: nowIso,
+          };
+        }
+
+        if (!linkedTaskIds.has(task.id)) {
+          return task;
+        }
+
+        const nextRecurrence = appendRecurrenceExclusion(
+          getTaskRecurrence(task),
+          sourceTask.date,
+          sourceTask.assignee,
+        );
+        const nextSeriesAssignees =
+          getTaskSeriesId(task) === sourceSeriesId
+            ? getTaskFallbackAssignees(task).filter((participantId) => participantId !== sourceTask.assignee)
+            : getTaskFallbackAssignees(task);
+
+        return {
+          ...task,
+          recurrence: nextRecurrence,
+          seriesAssignees: nextSeriesAssignees,
+          updatedAt: nowIso,
+        };
+      }),
+    ),
   );
 }
 
@@ -510,6 +893,55 @@ function buildContainerMap(tasks: PlannerTask[]) {
   return grouped;
 }
 
+function moveSingleTaskInsideContainer(
+  tasks: PlannerTask[],
+  taskId: string,
+  targetSpec: ContainerSpec,
+  targetIndex: number,
+) {
+  const targetContainerId = getContainerId(targetSpec);
+  const currentList = getTasksForContainer(tasks, targetSpec);
+  const sourceIndex = currentList.findIndex((task) => task.id === taskId);
+
+  if (sourceIndex === -1) {
+    return tasks;
+  }
+
+  const nextList = [...currentList];
+  const [movedTask] = nextList.splice(sourceIndex, 1);
+  const insertIndex = clamp(targetIndex, 0, nextList.length);
+  nextList.splice(insertIndex, 0, movedTask);
+
+  let hasChanges = false;
+  const nextOrderById = new Map<string, number>();
+  nextList.forEach((task, index) => {
+    nextOrderById.set(task.id, index);
+    if (task.order !== index) {
+      hasChanges = true;
+    }
+  });
+
+  if (!hasChanges) {
+    return tasks;
+  }
+
+  return tasks.map((task) => {
+    if (getTaskContainerId(task) !== targetContainerId) {
+      return task;
+    }
+
+    const nextOrder = nextOrderById.get(task.id);
+    if (nextOrder === undefined || nextOrder === task.order) {
+      return task;
+    }
+
+    return {
+      ...task,
+      order: nextOrder,
+    };
+  });
+}
+
 export function moveTaskToContainer(
   tasks: PlannerTask[],
   taskId: string,
@@ -532,6 +964,17 @@ export function moveTaskToContainer(
     : seriesTasks.length > 0
       ? seriesTasks
       : [sourceTask];
+  const sourceContainerId = getTaskContainerId(sourceTask);
+  const targetContainerId = getContainerId(targetSpec);
+
+  if (
+    !movedRecurrenceGroupId &&
+    tasksToMove.length === 1 &&
+    sourceContainerId === targetContainerId
+  ) {
+    return moveSingleTaskInsideContainer(tasks, taskId, targetSpec, targetIndex);
+  }
+
   const linkedTaskIds = new Set(tasksToMove.map((task) => task.id));
   const remainingTasks = tasks
     .filter((task) => !linkedTaskIds.has(task.id))
@@ -591,7 +1034,9 @@ export function moveTaskToContainer(
         previousSeriesIdByDate.get(occurrenceDate) ||
         (occurrenceIndex === 0 ? movedSeriesId : makeSeriesId());
 
-      calendarAssignees.forEach((assignee, index) => {
+      calendarAssignees
+        .filter((assignee) => !hasRecurrenceExclusion(recurrence, occurrenceDate, assignee))
+        .forEach((assignee, index) => {
         const previousSibling =
           tasksToMove.find(
             (task) =>
@@ -601,6 +1046,12 @@ export function moveTaskToContainer(
           ) ||
           (occurrenceIndex === 0 && index === 0 ? sourceTask : null);
         const baseTask = previousSibling || sourceTask;
+        const occurrenceTiming = resolveRecurringOccurrenceTiming(
+          recurrence,
+          occurrenceDate,
+          baseTask.startTime,
+          baseTask.hours,
+        );
         const movedTask = patchTaskWithContainer(
           {
             ...baseTask,
@@ -616,6 +1067,8 @@ export function moveTaskToContainer(
             recurrenceGroupId,
             recurrence,
             progressStatus: getTaskProgressStatus(baseTask),
+            startTime: occurrenceTiming.startTime,
+            hours: occurrenceTiming.hours,
           },
           {
             kind: "calendar",
@@ -628,7 +1081,7 @@ export function moveTaskToContainer(
         const list = movedTasksByContainer.get(containerId) || [];
         list.push(movedTask);
         movedTasksByContainer.set(containerId, list);
-      });
+        });
     });
   }
 
@@ -642,26 +1095,37 @@ export function moveTaskToContainer(
     containerMap.set(containerId, currentList);
   }
 
-  return normalizeTaskOrders(Array.from(containerMap.values()).flat());
+  return synchronizeSeriesAssignees(normalizeTaskOrders(Array.from(containerMap.values()).flat()));
 }
 
-export function deletePlannerTask(tasks: PlannerTask[], taskId: string) {
+export function deletePlannerTask(
+  tasks: PlannerTask[],
+  taskId: string,
+  scope: TaskMutationScope = "series",
+) {
   const sourceTask = tasks.find((task) => task.id === taskId);
   if (!sourceTask) {
     return tasks;
+  }
+
+  if (scope === "instance") {
+    const detachedTasks = detachTaskInstance(tasks, taskId);
+    return synchronizeSeriesAssignees(
+      normalizeTaskOrders(detachedTasks.filter((task) => task.id !== taskId)),
+    );
   }
 
   const deletingRecurrenceGroupId = getTaskRecurrenceGroupId(sourceTask);
   const tasksToDelete = getTaskLinkedTasks(tasks, taskId);
   const deletingTaskIds = new Set(tasksToDelete.map((task) => task.id));
 
-  return normalizeTaskOrders(
+  return synchronizeSeriesAssignees(normalizeTaskOrders(
     tasks.filter((task) =>
       deletingRecurrenceGroupId
         ? getTaskRecurrenceGroupId(task) !== deletingRecurrenceGroupId
         : !deletingTaskIds.has(task.id),
     ),
-  );
+  ));
 }
 
 export function updateTaskSeriesProgressStatus(
@@ -675,15 +1139,9 @@ export function updateTaskSeriesProgressStatus(
   }
 
   const nowIso = new Date().toISOString();
-  const updatingRecurrenceGroupId = getTaskRecurrenceGroupId(sourceTask);
-  const updatingTaskIds = getLinkedTaskIds(tasks, taskId);
 
   return tasks.map((task) => {
-    const shouldUpdate = updatingRecurrenceGroupId
-      ? getTaskRecurrenceGroupId(task) === updatingRecurrenceGroupId
-      : updatingTaskIds.has(task.id);
-
-    return shouldUpdate
+    return task.id === taskId
       ? {
           ...task,
           seriesId: getTaskSeriesId(task),
@@ -750,13 +1208,14 @@ export function clonePlannerTask(
 export function buildTaskInput(values: TaskFormValues): PlannerTaskInput {
   const hoursValue = Number(values.hours);
   const assignees = uniqueParticipantIds(values.assignees);
-  const date = values.date || null;
+  const date = values.recurrence.fromDate || values.date || null;
 
   return {
     title: values.title.trim(),
     description: values.description.trim(),
     link: values.link.trim(),
     hours: Number.isFinite(hoursValue) ? Math.max(0, Math.round(hoursValue * 10) / 10) : 0,
+    startTime: normalizeTaskStartTime(values.startTime),
     group: values.group,
     assignees,
     date,
@@ -795,6 +1254,7 @@ export function upsertPlannerTask(
   const scheduleToCalendars = shouldScheduleTask(input);
   const seriesAssignees = uniqueParticipantIds(input.assignees);
   const assignees = seriesAssignees;
+  const syncTimeAcrossFamily = shouldSyncTaskTimeAcrossFamily(input.group);
   const recurrenceGroupId =
     previousRecurrenceGroupId ||
     (isRecurringTask(recurrence) || assignees.length > 1 ? makeRecurrenceGroupId() : null);
@@ -811,6 +1271,7 @@ export function upsertPlannerTask(
       description: input.description,
       link: input.link,
       hours: input.hours,
+      startTime: input.startTime,
       group: input.group,
       assignee: seriesAssignees.length === 1 ? seriesAssignees[0] : null,
       date: input.date,
@@ -825,13 +1286,15 @@ export function upsertPlannerTask(
       previousPrimaryTask &&
       getTaskContainerId(previousPrimaryTask) === getTaskContainerId(nextTask);
 
-    return normalizeTaskOrders([
-      ...withoutPreviousSeries,
-      {
-        ...nextTask,
-        order: sameContainer && previousPrimaryTask ? previousPrimaryTask.order : targetTasks.length,
-      },
-    ]);
+    return synchronizeSeriesAssignees(
+      normalizeTaskOrders([
+        ...withoutPreviousSeries,
+        {
+          ...nextTask,
+          order: sameContainer && previousPrimaryTask ? previousPrimaryTask.order : targetTasks.length,
+        },
+      ]),
+    );
   }
 
   const occurrenceDates =
@@ -859,7 +1322,9 @@ export function upsertPlannerTask(
             : makeSeriesId()
           : previousSeriesId;
 
-    return assignees.map((assignee, index) => {
+    return assignees
+      .filter((assignee) => !hasRecurrenceExclusion(recurrence, occurrenceDate, assignee))
+      .map((assignee, index) => {
       const previousSibling =
         previousSeriesTasks.find(
           (task) =>
@@ -868,6 +1333,24 @@ export function upsertPlannerTask(
             (task.date || null) === occurrenceDate,
         ) || (occurrenceDates.length === 1 && index === 0 ? previousTask : null);
       const createdAt = previousSibling?.createdAt || nowIso;
+      const occurrenceTiming = resolveRecurringOccurrenceTiming(
+        recurrence,
+        occurrenceDate,
+        input.startTime,
+        input.hours,
+      );
+      const shouldPreserveIndividualTime =
+        !syncTimeAcrossFamily &&
+        previousTask?.status === "calendar" &&
+        previousSibling?.status === "calendar";
+      const nextHours =
+        shouldPreserveIndividualTime && previousSibling
+          ? previousSibling.hours
+          : occurrenceTiming.hours;
+      const nextStartTime =
+        shouldPreserveIndividualTime && previousSibling
+          ? previousSibling.startTime
+          : occurrenceTiming.startTime;
       const nextTask: PlannerTask = {
         id: previousSibling?.id || makeTaskId(),
         seriesId: occurrenceSeriesId,
@@ -878,7 +1361,8 @@ export function upsertPlannerTask(
         title: input.title,
         description: input.description,
         link: input.link,
-        hours: input.hours,
+        hours: nextHours,
+        startTime: nextStartTime,
         group: input.group,
         assignee,
         date: occurrenceDate,
@@ -903,10 +1387,10 @@ export function upsertPlannerTask(
         order:
           sameContainer && previousSibling ? previousSibling.order : targetTasks.length + index,
       };
-    });
+      });
   });
 
-  return normalizeTaskOrders([...withoutPreviousSeries, ...createdTasks]);
+  return synchronizeSeriesAssignees(normalizeTaskOrders([...withoutPreviousSeries, ...createdTasks]));
 }
 
 export function isDateToday(date: Date) {
@@ -915,8 +1399,8 @@ export function isDateToday(date: Date) {
 
 export function getMonthInputRange(currentMonth: Date) {
   return {
-    min: format(startOfMonth(currentMonth), "yyyy-MM-dd"),
-    max: format(endOfMonth(currentMonth), "yyyy-MM-dd"),
+    min: format(startOfYear(currentMonth), "yyyy-MM-dd"),
+    max: format(endOfYear(currentMonth), "yyyy-MM-dd"),
   };
 }
 
@@ -931,7 +1415,7 @@ export function isDateWithinCurrentMonth(dateValue: string, currentMonth: Date) 
   }
 
   const date = parseISO(dateValue);
-  return format(date, "yyyy-MM") === format(currentMonth, "yyyy-MM");
+  return format(date, "yyyy") === format(currentMonth, "yyyy");
 }
 
 export function createTaskFormValues(task?: PlannerTask): TaskFormValues {
@@ -941,11 +1425,15 @@ export function createTaskFormValues(task?: PlannerTask): TaskFormValues {
       description: "",
       link: "",
       hours: "1",
+      startTime: "",
       group: "undefined",
       assignees: [],
       date: "",
       status: "bank",
-      recurrence: DEFAULT_TASK_RECURRENCE,
+      recurrence: {
+        ...DEFAULT_TASK_RECURRENCE,
+        weekdayTimings: {},
+      },
     };
   }
 
@@ -954,12 +1442,194 @@ export function createTaskFormValues(task?: PlannerTask): TaskFormValues {
     description: task.description,
     link: task.link,
     hours: String(task.hours || 0),
+    startTime: task.startTime || "",
     group: task.group,
     assignees: getTaskSeriesAssignees(task),
-    date: task.date || "",
+    date: task.date || task.recurrence?.fromDate || "",
     status: task.status,
     recurrence: getTaskRecurrence(task),
   };
+}
+
+function updateLinkedTaskFamily(
+  tasks: PlannerTask[],
+  taskId: string,
+  updater: (task: PlannerTask, nowIso: string) => PlannerTask,
+) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return tasks;
+  }
+
+  const linkedTasks = getTaskLinkedTasks(tasks, taskId);
+  const linkedTaskIds = new Set(linkedTasks.map((task) => task.id));
+  if (linkedTaskIds.size === 0) {
+    return tasks;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  return tasks.map((task) => {
+    if (!linkedTaskIds.has(task.id)) {
+      return task;
+    }
+
+    return updater(
+      {
+        ...task,
+        seriesId: getTaskSeriesId(task),
+        seriesAssignees: getTaskFallbackAssignees(task),
+        recurrence: getTaskRecurrence(task),
+      },
+      nowIso,
+    );
+  });
+}
+
+export function moveTaskToTimelineSlot(
+  tasks: PlannerTask[],
+  taskId: string,
+  participantId: ParticipantId,
+  dateKey: string,
+  startTime: string,
+  currentMonth: Date,
+  scope: TaskMutationScope = "series",
+) {
+  const scopedTasks = scope === "instance" ? detachTaskInstance(tasks, taskId) : tasks;
+  const sourceTask = scopedTasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return scopedTasks;
+  }
+
+  const targetSpec: ContainerSpec = {
+    kind: "calendar",
+    assignee: participantId,
+    date: dateKey,
+    group: sourceTask.group,
+  };
+  const sourceContainerId = getTaskContainerId(sourceTask);
+  const targetContainerId = getContainerId(targetSpec);
+  const movedTasks =
+    sourceContainerId === targetContainerId
+      ? scopedTasks
+      : moveTaskToContainer(
+          scopedTasks,
+          taskId,
+          targetSpec,
+          getTasksForContainer(scopedTasks, targetSpec).length,
+          currentMonth,
+        );
+  const normalizedStartTime = normalizeTaskStartTime(startTime) || startTime;
+  const normalizedHours =
+    sourceTask.hours > 0 ? Math.max(0.5, Math.round(sourceTask.hours * 2) / 2) : 1;
+
+  if (sourceTask.status === "bank" || shouldSyncTaskTimeAcrossFamily(sourceTask.group)) {
+    return updateLinkedTaskFamily(movedTasks, taskId, (task, nowIso) => ({
+      ...task,
+      startTime: normalizedStartTime,
+      hours: task.hours > 0 ? Math.max(0.5, Math.round(task.hours * 2) / 2) : normalizedHours,
+      updatedAt: nowIso,
+    }));
+  }
+
+  const nowIso = new Date().toISOString();
+  return movedTasks.map((task) =>
+    task.id === taskId
+      ? {
+          ...task,
+          startTime: normalizedStartTime,
+          hours: normalizedHours,
+          updatedAt: nowIso,
+        }
+      : task,
+  );
+}
+
+export function moveTaskToUntimedZone(
+  tasks: PlannerTask[],
+  taskId: string,
+  participantId: ParticipantId,
+  dateKey: string,
+  currentMonth: Date,
+  scope: TaskMutationScope = "series",
+) {
+  const scopedTasks = scope === "instance" ? detachTaskInstance(tasks, taskId) : tasks;
+  const sourceTask = scopedTasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return scopedTasks;
+  }
+
+  const targetSpec: ContainerSpec = {
+    kind: "calendar",
+    assignee: participantId,
+    date: dateKey,
+    group: sourceTask.group,
+  };
+  const sourceContainerId = getTaskContainerId(sourceTask);
+  const targetContainerId = getContainerId(targetSpec);
+  const movedTasks =
+    sourceContainerId === targetContainerId
+      ? scopedTasks
+      : moveTaskToContainer(
+          scopedTasks,
+          taskId,
+          targetSpec,
+          getTasksForContainer(scopedTasks, targetSpec).length,
+          currentMonth,
+        );
+
+  if (sourceTask.status === "bank" || shouldSyncTaskTimeAcrossFamily(sourceTask.group)) {
+    return updateLinkedTaskFamily(movedTasks, taskId, (task, nowIso) => ({
+      ...task,
+      startTime: null,
+      updatedAt: nowIso,
+    }));
+  }
+
+  const nowIso = new Date().toISOString();
+  return movedTasks.map((task) =>
+    task.id === taskId
+      ? {
+          ...task,
+          startTime: null,
+          updatedAt: nowIso,
+        }
+      : task,
+  );
+}
+
+export function resizeTaskTimelineDuration(
+  tasks: PlannerTask[],
+  taskId: string,
+  nextHours: number,
+  scope: TaskMutationScope = "series",
+) {
+  const scopedTasks = scope === "instance" ? detachTaskInstance(tasks, taskId) : tasks;
+  const sourceTask = scopedTasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return scopedTasks;
+  }
+
+  const normalizedHours = Math.max(0.5, Math.min(12, Math.round(nextHours * 2) / 2));
+
+  if (shouldSyncTaskTimeAcrossFamily(sourceTask.group)) {
+    return updateLinkedTaskFamily(scopedTasks, taskId, (task, nowIso) => ({
+      ...task,
+      hours: normalizedHours,
+      updatedAt: nowIso,
+    }));
+  }
+
+  const nowIso = new Date().toISOString();
+  return scopedTasks.map((task) =>
+    task.id === taskId
+      ? {
+          ...task,
+          hours: normalizedHours,
+          updatedAt: nowIso,
+        }
+      : task,
+  );
 }
 
 export function getTaskHoursForParticipant(tasks: PlannerTask[], participantId: ParticipantId) {

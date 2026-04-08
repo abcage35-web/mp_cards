@@ -7,11 +7,41 @@ const STATE_FILE = resolve(STORAGE_DIR, "planner-state.json");
 const TEMP_STATE_FILE = resolve(STORAGE_DIR, "planner-state.json.tmp");
 const LOG_FILE = resolve(STORAGE_DIR, "planner-state-log.ndjson");
 
-const TASK_GROUPS = new Set(["planned", "new", "project", "meeting", "undefined"]);
+const TASK_GROUPS = new Set(["planned", "new", "project", "planned-meeting", "new-meeting", "off-hours", "undefined"]);
+const DEFAULT_GROUP_ORDER = ["planned", "new", "project", "planned-meeting", "new-meeting", "off-hours", "undefined"];
 const PARTICIPANTS = new Set(["sasha-nekrasov", "sasha-manokhin", "anton-bober"]);
+const PARTICIPANT_IDS = ["sasha-nekrasov", "sasha-manokhin", "anton-bober"];
 const TASK_PROGRESS_STATUSES = new Set(["cancelled", "in-progress", "done"]);
 const TASK_RECURRENCE_FREQUENCIES = new Set(["none", "daily", "weekly", "monthly"]);
-const DEFAULT_WORK_HOURS_PER_DAY = 8;
+const DEFAULT_WORK_HOURS_PER_DAY = 9;
+const DEFAULT_PARTICIPANT_WORK_SCHEDULES = {
+  "sasha-nekrasov": {
+    startTime: "09:00",
+    endTime: "18:00",
+  },
+  "sasha-manokhin": {
+    startTime: "09:00",
+    endTime: "18:00",
+  },
+  "anton-bober": {
+    startTime: "09:00",
+    endTime: "18:00",
+  },
+};
+const LEGACY_DEFAULT_PARTICIPANT_WORK_SCHEDULES = {
+  "sasha-nekrasov": {
+    startTime: "09:00",
+    endTime: "17:00",
+  },
+  "sasha-manokhin": {
+    startTime: "09:00",
+    endTime: "17:00",
+  },
+  "anton-bober": {
+    startTime: "09:00",
+    endTime: "17:00",
+  },
+};
 
 const DEFAULT_TASKS = [
   {
@@ -50,7 +80,7 @@ const DEFAULT_TASKS = [
     description: "Сверить статусы по проекту и зафиксировать следующие шаги.",
     link: "",
     hours: 1,
-    group: "meeting",
+    group: "planned-meeting",
     progressStatus: "in-progress",
     assignee: "sasha-nekrasov",
     date: null,
@@ -101,7 +131,25 @@ function toHours(valueRaw) {
 
 function toGroup(valueRaw) {
   const value = toSafeString(valueRaw, 40).toLowerCase();
+  if (value === "meeting") {
+    return "planned-meeting";
+  }
   return TASK_GROUPS.has(value) ? value : "undefined";
+}
+
+function toGroupOrder(valueRaw) {
+  if (!Array.isArray(valueRaw)) {
+    return DEFAULT_GROUP_ORDER.slice();
+  }
+
+  const normalized = valueRaw
+    .map((value) => toGroup(value))
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+
+  return [
+    ...normalized,
+    ...DEFAULT_GROUP_ORDER.filter((groupId) => !normalized.includes(groupId)),
+  ];
 }
 
 function toParticipant(valueRaw) {
@@ -124,6 +172,11 @@ function toDate(valueRaw) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
+function toStartTime(valueRaw) {
+  const value = toSafeString(valueRaw, 10);
+  return /^([01]\d|2[0-3]):(00|30)$/.test(value) ? value : null;
+}
+
 function toStatus(valueRaw) {
   return toSafeString(valueRaw, 20).toLowerCase() === "calendar" ? "calendar" : "bank";
 }
@@ -142,6 +195,53 @@ function toWorkHours(valueRaw) {
   return Math.max(1, Math.min(24, Math.round(value * 10) / 10));
 }
 
+function toCalendarDisplayMode(valueRaw) {
+  return toSafeString(valueRaw, 20).toLowerCase() === "time" ? "time" : "day";
+}
+
+function toBoolean(valueRaw) {
+  return valueRaw === true;
+}
+
+function sanitizeParticipantWorkSchedules(valueRaw) {
+  const raw = valueRaw && typeof valueRaw === "object" ? valueRaw : {};
+
+  return PARTICIPANT_IDS.reduce((accumulator, participantId) => {
+    const fallback = DEFAULT_PARTICIPANT_WORK_SCHEDULES[participantId];
+    const scheduleRaw = raw[participantId] && typeof raw[participantId] === "object" ? raw[participantId] : {};
+    const startTime = toStartTime(scheduleRaw.startTime) || fallback.startTime;
+    const endTime = toStartTime(scheduleRaw.endTime) || fallback.endTime;
+
+    if (startTime >= endTime) {
+      accumulator[participantId] = fallback;
+      return accumulator;
+    }
+
+    accumulator[participantId] = {
+      startTime,
+      endTime,
+    };
+    return accumulator;
+  }, {});
+}
+
+function isLegacyDefaultParticipantSchedule(schedule, participantId) {
+  const legacy = LEGACY_DEFAULT_PARTICIPANT_WORK_SCHEDULES[participantId];
+  return schedule?.startTime === legacy.startTime && schedule?.endTime === legacy.endTime;
+}
+
+function shouldUpgradeLegacyDefaultWorkSettings(workSchedules, workHoursPerDay) {
+  const allLegacy = PARTICIPANT_IDS.every((participantId) =>
+    isLegacyDefaultParticipantSchedule(workSchedules[participantId], participantId),
+  );
+
+  if (!allLegacy) {
+    return false;
+  }
+
+  return workHoursPerDay === undefined || workHoursPerDay === null || workHoursPerDay === 8 || workHoursPerDay === 9;
+}
+
 function toRecurrenceFrequency(valueRaw) {
   const value = toSafeString(valueRaw, 40).toLowerCase();
   return TASK_RECURRENCE_FREQUENCIES.has(value) ? value : "none";
@@ -157,26 +257,70 @@ function toWeekdays(valueRaw) {
     .filter((value, index, values) => Number.isInteger(value) && value >= 0 && value <= 6 && values.indexOf(value) === index);
 }
 
+function toWeekdayTimings(valueRaw, weekdays) {
+  const raw = valueRaw && typeof valueRaw === "object" ? valueRaw : {};
+  const selectedWeekdays = Array.isArray(weekdays) ? weekdays : [];
+
+  return selectedWeekdays.reduce((accumulator, weekday) => {
+    const timingRaw =
+      raw[weekday] && typeof raw[weekday] === "object"
+        ? raw[weekday]
+        : raw[String(weekday)] && typeof raw[String(weekday)] === "object"
+          ? raw[String(weekday)]
+          : null;
+
+    if (!timingRaw) {
+      return accumulator;
+    }
+
+    accumulator[weekday] = {
+      startTime: toStartTime(timingRaw.startTime),
+      hours: toHours(timingRaw.hours),
+    };
+
+    return accumulator;
+  }, {});
+}
+
+function toRecurrenceExclusions(valueRaw) {
+  if (!Array.isArray(valueRaw)) {
+    return [];
+  }
+
+  return valueRaw
+    .map((value) => toSafeString(value, 120))
+    .filter(
+      (value, index, values) =>
+        /^\d{4}-\d{2}-\d{2}::[a-z-]+$/.test(value) &&
+        values.indexOf(value) === index,
+    );
+}
+
 function sanitizeRecurrence(recurrenceRaw, dateValue) {
   const raw = recurrenceRaw && typeof recurrenceRaw === "object" ? recurrenceRaw : {};
   const frequency = toRecurrenceFrequency(raw.frequency);
   const interval = Math.max(1, Math.min(52, Math.round(Number(raw.interval) || 1)));
+  const fromDate = toDate(raw.fromDate) || dateValue || "";
   const weekdays = toWeekdays(raw.weekdays);
-  const weekdayFromDate = dateValue ? (new Date(dateValue).getDay() + 6) % 7 : null;
+  const weekdayFromDate = fromDate ? (new Date(fromDate).getDay() + 6) % 7 : null;
+  const normalizedWeekdays =
+    frequency === "weekly"
+      ? weekdays.length > 0
+        ? weekdays
+        : weekdayFromDate !== null
+          ? [weekdayFromDate]
+          : []
+      : weekdays;
 
   return {
     frequency,
     interval,
-    weekdays:
-      frequency === "weekly"
-        ? weekdays.length > 0
-          ? weekdays
-          : weekdayFromDate !== null
-            ? [weekdayFromDate]
-            : []
-        : weekdays,
+    weekdays: normalizedWeekdays,
+    weekdayTimings: frequency === "weekly" ? toWeekdayTimings(raw.weekdayTimings, normalizedWeekdays) : {},
+    fromDate,
     untilMode: toSafeString(raw.untilMode, 20).toLowerCase() === "until" ? "until" : "forever",
     untilDate: toDate(raw.untilDate) || "",
+    exclusions: toRecurrenceExclusions(raw.exclusions),
   };
 }
 
@@ -200,6 +344,7 @@ function sanitizeTask(taskRaw, index) {
     description: toSafeString(raw.description, 4000),
     link: toSafeString(raw.link, 1000),
     hours: toHours(raw.hours),
+    startTime: toStartTime(raw.startTime),
     group: toGroup(raw.group),
     progressStatus: toProgressStatus(raw.progressStatus),
     assignee,
@@ -315,13 +460,26 @@ function sanitizeState(payloadRaw) {
   const tasks = normalizeOrders(collapseBankSeriesTasks(sanitizedTasks));
   const updatedAt = toIsoOrNow(payload.updatedAt);
   const createdAt = toIsoOrNow(payload.createdAt, updatedAt);
+  const workHoursPerDay = toWorkHours(payload.settings?.workHoursPerDay);
+  const participantWorkSchedules = sanitizeParticipantWorkSchedules(payload.settings?.participantWorkSchedules);
+  const shouldUpgradeLegacyDefaults = shouldUpgradeLegacyDefaultWorkSettings(
+    participantWorkSchedules,
+    payload.settings?.workHoursPerDay,
+  );
 
   return {
     version: 1,
     createdAt,
     updatedAt,
     settings: {
-      workHoursPerDay: toWorkHours(payload.settings?.workHoursPerDay),
+      workHoursPerDay: shouldUpgradeLegacyDefaults ? DEFAULT_WORK_HOURS_PER_DAY : workHoursPerDay,
+      groupOrder: toGroupOrder(payload.settings?.groupOrder),
+      calendarDisplayMode: toCalendarDisplayMode(payload.settings?.calendarDisplayMode),
+      hideWeekends: toBoolean(payload.settings?.hideWeekends),
+      interleaveWeeksByParticipant: toBoolean(payload.settings?.interleaveWeeksByParticipant),
+      participantWorkSchedules: shouldUpgradeLegacyDefaults
+        ? DEFAULT_PARTICIPANT_WORK_SCHEDULES
+        : participantWorkSchedules,
     },
     tasks,
   };
@@ -390,6 +548,7 @@ function buildTaskLogSnapshot(payload, changedTaskId) {
     assignee: changedTask.assignee,
     seriesAssignees: getSeriesAssignees(changedTask),
     date: changedTask.date,
+    startTime: changedTask.startTime,
     recurrence: changedTask.recurrence,
     familySize: familyTasks.length,
   };
