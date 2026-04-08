@@ -177,13 +177,8 @@ export function CalendarDayCell({
         ))}
       </div>
       {isAnyDragging && isOverDay ? (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 top-11 z-20 rounded-[20px] border border-white/70 bg-white/45 p-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.24)] backdrop-blur-[4px]">
-          <div
-            className={cn(
-              "grid content-start gap-1.5",
-              groupsWithTasks.length <= 2 ? "grid-cols-1" : groupsWithTasks.length <= 4 ? "grid-cols-2" : "grid-cols-3",
-            )}
-          >
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
+          <div className="pointer-events-none inline-flex max-w-full flex-wrap items-center justify-center gap-1.5 rounded-[20px] border border-white/75 bg-white/78 px-2 py-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.24)] backdrop-blur-[8px]">
             {groupsWithTasks.map(({ group, tasks: groupedTasks }) => (
               <CalendarGroupChip
                 key={`overlay-${participantId}-${dateKey}-${group.id}`}
