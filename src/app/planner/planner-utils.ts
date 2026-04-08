@@ -32,6 +32,14 @@ function makeTaskId() {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function makeSeriesId() {
+  return `series-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getTaskSeriesId(task: Pick<PlannerTask, "id" | "seriesId">) {
+  return task.seriesId || task.id;
+}
+
 function shouldScheduleTask(input: PlannerTaskInput) {
   return input.assignees.length > 0 && Boolean(input.date);
 }
@@ -105,6 +113,24 @@ export function getTaskContainerId(task: PlannerTask) {
   return getContainerId(getTaskContainerSpec(task));
 }
 
+export function getTaskSeriesTasks(tasks: PlannerTask[], taskId: string) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return [];
+  }
+
+  const seriesId = getTaskSeriesId(sourceTask);
+  return sortPlannerTasks(tasks).filter((task) => getTaskSeriesId(task) === seriesId);
+}
+
+export function getTaskSeriesAssignees(task: PlannerTask) {
+  if (task.seriesAssignees.length > 0) {
+    return uniqueParticipantIds(task.seriesAssignees);
+  }
+
+  return task.assignee ? [task.assignee] : [];
+}
+
 export function sortPlannerTasks(tasks: PlannerTask[]) {
   return [...tasks].sort((left, right) => {
     const orderDiff = left.order - right.order;
@@ -171,7 +197,21 @@ function patchTaskWithContainer(task: PlannerTask, spec: ContainerSpec) {
     ...task,
     status: "bank" as const,
     group: spec.group,
+    date: null,
   };
+}
+
+function buildContainerMap(tasks: PlannerTask[]) {
+  const grouped = new Map<string, PlannerTask[]>();
+
+  for (const task of sortPlannerTasks(tasks)) {
+    const containerId = getTaskContainerId(task);
+    const list = grouped.get(containerId) || [];
+    list.push(task);
+    grouped.set(containerId, list);
+  }
+
+  return grouped;
 }
 
 export function moveTaskToContainer(
@@ -186,53 +226,58 @@ export function moveTaskToContainer(
   }
 
   const nowIso = new Date().toISOString();
-  const sourceContainerId = getTaskContainerId(sourceTask);
-  const movedTask = patchTaskWithContainer(
-    {
-      ...sourceTask,
-      updatedAt: nowIso,
-    },
-    targetSpec,
-  );
-  const targetContainerId = getTaskContainerId(movedTask);
+  const seriesTasks = getTaskSeriesTasks(tasks, taskId);
+  const movedSeriesId = getTaskSeriesId(sourceTask);
+  const tasksToMove = seriesTasks.length > 0 ? seriesTasks : [sourceTask];
+  const remainingTasks = tasks
+    .filter((task) => getTaskSeriesId(task) !== movedSeriesId)
+    .map((task) => ({ ...task }));
+  const containerMap = buildContainerMap(remainingTasks);
+  const movedTasksByContainer = new Map<string, PlannerTask[]>();
 
-  const withoutMovedTask = tasks.filter((task) => task.id !== taskId).map((task) => ({ ...task }));
-  const targetList = getTasksForContainer(withoutMovedTask, getTaskContainerSpec(movedTask));
-  const insertIndex = clamp(targetIndex, 0, targetList.length);
-  const nextTargetList = [...targetList];
-  nextTargetList.splice(insertIndex, 0, movedTask);
+  for (const task of sortPlannerTasks(tasksToMove)) {
+    const nextSpec =
+      targetSpec.kind === "calendar"
+        ? {
+            kind: "calendar" as const,
+            group: targetSpec.group,
+            assignee: task.assignee || targetSpec.assignee,
+            date: targetSpec.date,
+          }
+        : targetSpec;
 
-  const orderMap = new Map<string, number>();
-  nextTargetList.forEach((task, index) => {
-    orderMap.set(task.id, index);
-  });
-
-  if (sourceContainerId !== targetContainerId) {
-    const sourceList = getTasksForContainer(withoutMovedTask, getTaskContainerSpec(sourceTask));
-    sourceList.forEach((task, index) => {
-      orderMap.set(task.id, index);
-    });
+    const movedTask = patchTaskWithContainer(
+      {
+        ...task,
+        updatedAt: nowIso,
+        seriesAssignees: uniqueParticipantIds(task.seriesAssignees),
+      },
+      nextSpec,
+    );
+    const containerId = getTaskContainerId(movedTask);
+    const list = movedTasksByContainer.get(containerId) || [];
+    list.push(movedTask);
+    movedTasksByContainer.set(containerId, list);
   }
 
-  const nextTasks = withoutMovedTask.map((task) =>
-    orderMap.has(task.id)
-      ? {
-          ...task,
-          order: orderMap.get(task.id) ?? task.order,
-        }
-      : task,
-  );
+  for (const [containerId, movedTasks] of movedTasksByContainer.entries()) {
+    const currentList = [...(containerMap.get(containerId) || [])];
+    const insertIndex = clamp(targetIndex, 0, currentList.length);
+    currentList.splice(insertIndex, 0, ...sortPlannerTasks(movedTasks));
+    containerMap.set(containerId, currentList);
+  }
 
-  nextTasks.push({
-    ...movedTask,
-    order: orderMap.get(movedTask.id) ?? movedTask.order,
-  });
-
-  return normalizeTaskOrders(nextTasks);
+  return normalizeTaskOrders(Array.from(containerMap.values()).flat());
 }
 
 export function deletePlannerTask(tasks: PlannerTask[], taskId: string) {
-  return normalizeTaskOrders(tasks.filter((task) => task.id !== taskId));
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return tasks;
+  }
+
+  const deletingSeriesId = getTaskSeriesId(sourceTask);
+  return normalizeTaskOrders(tasks.filter((task) => getTaskSeriesId(task) !== deletingSeriesId));
 }
 
 export function buildTaskInput(values: TaskFormValues): PlannerTaskInput {
@@ -264,21 +309,25 @@ export function upsertPlannerTask(
     return tasks;
   }
 
-  const withoutPreviousTask = editingTaskId
-    ? tasks.filter((task) => task.id !== editingTaskId).map((task) => ({ ...task }))
+  const previousSeriesId = previousTask ? getTaskSeriesId(previousTask) : makeSeriesId();
+  const previousSeriesTasks = previousTask ? getTaskSeriesTasks(tasks, previousTask.id) : [];
+  const withoutPreviousSeries = previousTask
+    ? tasks.filter((task) => getTaskSeriesId(task) !== previousSeriesId).map((task) => ({ ...task }))
     : tasks.map((task) => ({ ...task }));
 
   const scheduleToCalendars = shouldScheduleTask(input);
-  const assignees = scheduleToCalendars
-    ? input.assignees
-    : input.assignees.length > 0
-      ? [input.assignees[0]]
-      : [null];
+  const seriesAssignees = uniqueParticipantIds(input.assignees);
+  const assignees = scheduleToCalendars ? seriesAssignees : [seriesAssignees[0] ?? null];
 
   const createdTasks = assignees.map((assignee, index) => {
-    const createdAt = previousTask && index === 0 ? previousTask.createdAt : nowIso;
+    const previousSibling =
+      previousSeriesTasks.find((task) => task.assignee === assignee) ||
+      (index === 0 ? previousTask : null);
+    const createdAt = previousSibling?.createdAt || nowIso;
     const nextTask: PlannerTask = {
-      id: previousTask && index === 0 ? previousTask.id : makeTaskId(),
+      id: previousSibling?.id || makeTaskId(),
+      seriesId: previousSeriesId,
+      seriesAssignees,
       title: input.title,
       description: input.description,
       link: input.link,
@@ -292,17 +341,18 @@ export function upsertPlannerTask(
       updatedAt: nowIso,
     };
 
-    const targetTasks = getTasksForContainer(withoutPreviousTask, getTaskContainerSpec(nextTask));
+    const targetTasks = getTasksForContainer(withoutPreviousSeries, getTaskContainerSpec(nextTask));
     const sameContainer =
-      previousTask && getTaskContainerId(previousTask) === getTaskContainerId(nextTask) && index === 0;
+      previousSibling &&
+      getTaskContainerId(previousSibling) === getTaskContainerId(nextTask);
 
     return {
       ...nextTask,
-      order: sameContainer ? previousTask.order : targetTasks.length + index,
+      order: sameContainer && previousSibling ? previousSibling.order : targetTasks.length + index,
     };
   });
 
-  return normalizeTaskOrders([...withoutPreviousTask, ...createdTasks]);
+  return normalizeTaskOrders([...withoutPreviousSeries, ...createdTasks]);
 }
 
 export function isDateToday(date: Date) {
@@ -350,7 +400,7 @@ export function createTaskFormValues(task?: PlannerTask): TaskFormValues {
     link: task.link,
     hours: String(task.hours || 0),
     group: task.group,
-    assignees: task.assignee ? [task.assignee] : [],
+    assignees: getTaskSeriesAssignees(task),
     date: task.date || "",
     status: task.status,
   };

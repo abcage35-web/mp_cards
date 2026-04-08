@@ -6,6 +6,8 @@ export type TaskStatus = "bank" | "calendar";
 
 export interface PlannerTask {
   id: string;
+  seriesId: string;
+  seriesAssignees: ParticipantId[];
   title: string;
   description: string;
   link: string;

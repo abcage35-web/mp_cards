@@ -5,6 +5,16 @@ import { format, parseISO } from "date-fns";
 import { CalendarRange, Clock3, Plus, Save, Trash2 } from "lucide-react";
 
 import { Badge } from "@/app/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/app/components/ui/alert-dialog";
 import { Button } from "@/app/components/ui/button";
 import {
   Card,
@@ -47,6 +57,8 @@ import {
   getParticipantName,
   getParticipantNames,
   getScheduledTaskCount,
+  getTaskSeriesAssignees,
+  getTaskSeriesTasks,
   getTaskHoursForParticipant,
   getTasksForContainer,
   isDateWithinCurrentMonth,
@@ -93,6 +105,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
   const [dialogState, setDialogState] = useState<TaskDialogState>({ open: false, mode: "create" });
   const [formValues, setFormValues] = useState<TaskFormValues>(DEFAULT_TASK_FORM_VALUES);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [visibleParticipantIds, setVisibleParticipantIds] = useState<ParticipantId[]>(
     PARTICIPANTS.map((participant) => participant.id),
   );
@@ -115,6 +128,14 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
   const selectedTask = useMemo(
     () => sortedTasks.find((task) => task.id === dialogState.taskId) || null,
     [dialogState.taskId, sortedTasks],
+  );
+  const selectedTaskSeries = useMemo(
+    () => (dialogState.taskId ? getTaskSeriesTasks(sortedTasks, dialogState.taskId) : []),
+    [dialogState.taskId, sortedTasks],
+  );
+  const selectedTaskSeriesAssigneeNames = useMemo(
+    () => (selectedTask ? getParticipantNames(getTaskSeriesAssignees(selectedTask)) : []),
+    [selectedTask],
   );
   const visibleParticipants = useMemo(
     () =>
@@ -269,12 +290,14 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
   const openCreateDialog = useCallback(() => {
     setFormValues(DEFAULT_TASK_FORM_VALUES);
     setFormError(null);
+    setDeleteConfirmOpen(false);
     setDialogState({ open: true, mode: "create" });
   }, []);
 
   const openEditDialog = useCallback((task: PlannerTask) => {
     setFormValues(createTaskFormValues(task));
     setFormError(null);
+    setDeleteConfirmOpen(false);
     setDialogState({ open: true, mode: "edit", taskId: task.id });
   }, []);
 
@@ -282,6 +305,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
     setDialogState((current) => ({ ...current, open }));
     if (!open) {
       setFormError(null);
+      setDeleteConfirmOpen(false);
     }
   }, []);
 
@@ -333,41 +357,36 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
       return;
     }
 
+    setDeleteConfirmOpen(true);
+  }, [dialogState.taskId]);
+
+  const confirmDeleteTask = useCallback(() => {
+    if (!dialogState.taskId) {
+      return;
+    }
+
     const deletingTaskId = dialogState.taskId;
-    const input = { assignees: [], date: null as string | null };
-    const saveSummaryMessage =
-      input.assignees.length > 1 && input.date
-        ? `Задача размещена на ${input.assignees.length} календарях.`
-        : dialogState.mode === "create"
-          ? "Новая задача создана"
-          : "Задача обновлена";
 
     applyTaskMutation(
       (tasks) => deletePlannerTask(tasks, deletingTaskId),
       {
         action: "delete",
-        message: "Задача удалена",
+        message:
+          selectedTaskSeries.length > 1
+            ? "Удалена связанная серия задачи у всех исполнителей"
+            : "Задача удалена",
         taskId: deletingTaskId,
       },
     );
+    setDeleteConfirmOpen(false);
     setDialogState({ open: false, mode: "create" });
-  }, [applyTaskMutation, dialogState.taskId]);
+  }, [applyTaskMutation, dialogState.taskId, selectedTaskSeries.length]);
 
   const handleTaskSave = useCallback(() => {
     const input = buildTaskInput(formValues);
 
     if (!input.title) {
       setFormError("Укажите название задачи.");
-      return;
-    }
-
-    if (false && input.hours <= 0) {
-      setFormError("Укажите время в часах.");
-      return;
-    }
-
-    if (input.assignees.length > 1 && !input.date) {
-      setFormError("Р”Р»СЏ РјРЅРѕР¶РµСЃС‚РІРµРЅРЅРѕРіРѕ РЅР°Р·РЅР°С‡РµРЅРёСЏ СѓРєР°Р¶РёС‚Рµ РґР°С‚Сѓ.");
       return;
     }
 
@@ -386,13 +405,15 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
       return;
     }
 
+    setFormError(null);
+
     const editingTaskId = dialogState.taskId;
     const saveMessage =
       input.assignees.length > 1 && input.date
-        ? `Р—Р°РґР°С‡Р° СЂР°Р·РјРµС‰РµРЅР° РЅР° ${input.assignees.length} РєР°Р»РµРЅРґР°СЂСЏС….`
+        ? `Задача размещена на ${input.assignees.length} календарях.`
         : dialogState.mode === "create"
-          ? "РќРѕРІР°СЏ Р·Р°РґР°С‡Р° СЃРѕР·РґР°РЅР°"
-          : "Р—Р°РґР°С‡Р° РѕР±РЅРѕРІР»РµРЅР°";
+          ? "Новая задача создана"
+          : "Задача обновлена";
     applyTaskMutation(
       (tasks) => upsertPlannerTask(tasks, input, editingTaskId),
       {
@@ -890,7 +911,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
                   Контроль заполнения
                 </p>
                 <div className="mt-3 space-y-2 text-sm text-slate-600">
-                  <p>Название и время обязательны всегда.</p>
+                  <p>Название обязательно всегда. Остальные поля можно заполнить позже.</p>
                   <p>Для размещения в календарях нужны исполнители и дата текущего месяца.</p>
                   <p>Группу можно менять позже drag-and-drop внутри банка и календаря.</p>
                 </div>
@@ -941,6 +962,29 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent className="border-white/80 bg-white/95 shadow-[0_40px_100px_-45px_rgba(15,23,42,0.65)]">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {selectedTaskSeries.length > 1 ? "Удалить связанную серию задач?" : "Удалить задачу?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="leading-6 text-slate-600">
+                {selectedTaskSeries.length > 1
+                  ? `Будут удалены все связанные копии задачи у исполнителей: ${selectedTaskSeriesAssigneeNames.join(", ")}. Это действие нельзя отменить.`
+                  : "Задача будет удалена без возможности восстановления."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="rounded-2xl">Отмена</AlertDialogCancel>
+              <AlertDialogAction
+                className="rounded-2xl bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500"
+                onClick={confirmDeleteTask}
+              >
+                Удалить
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </section>
     </DndProvider>
   );

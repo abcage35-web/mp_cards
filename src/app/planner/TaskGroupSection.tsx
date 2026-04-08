@@ -46,7 +46,7 @@ export function TaskGroupSection({
   const ref = useRef<HTMLDivElement | null>(null);
   const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
 
-  const [{ isOver, canDrop }, drop] = useDrop<DragTaskItem>(
+  const [{ isOver, canDrop }, drop] = useDrop<DragTaskItem, { handled: true } | undefined, { isOver: boolean; canDrop: boolean }>(
     () => ({
       accept: TASK_ITEM_TYPE,
       drop: (item, monitor) => {

@@ -103,6 +103,16 @@ function toParticipant(valueRaw) {
   return PARTICIPANTS.has(value) ? value : null;
 }
 
+function toParticipantList(valueRaw) {
+  if (!Array.isArray(valueRaw)) {
+    return [];
+  }
+
+  return valueRaw
+    .map((value) => toParticipant(value))
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+}
+
 function toDate(valueRaw) {
   const value = toSafeString(valueRaw, 20);
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
@@ -118,9 +128,13 @@ function sanitizeTask(taskRaw, index) {
   const status = toStatus(raw.status);
   const assignee = toParticipant(raw.assignee);
   const date = toDate(raw.date);
+  const seriesId = toSafeString(raw.seriesId, 120) || toSafeString(raw.id, 120) || `series-${Date.now()}-${index}`;
+  const seriesAssignees = toParticipantList(raw.seriesAssignees);
 
   return {
     id: toSafeString(raw.id, 120) || `task-${Date.now()}-${index}`,
+    seriesId,
+    seriesAssignees: seriesAssignees.length > 0 ? seriesAssignees : assignee ? [assignee] : [],
     title: toSafeString(raw.title, 180),
     description: toSafeString(raw.description, 4000),
     link: toSafeString(raw.link, 1000),

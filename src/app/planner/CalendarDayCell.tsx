@@ -40,7 +40,7 @@ function CalendarGroupChip({
   };
   const containerId = getContainerId(containerSpec);
 
-  const [{ isOver, canDrop }, drop] = useDrop<DragTaskItem>(
+  const [{ isOver, canDrop }, drop] = useDrop<DragTaskItem, { handled: true } | undefined, { isOver: boolean; canDrop: boolean }>(
     () => ({
       accept: TASK_ITEM_TYPE,
       drop: (item, monitor) => {
@@ -100,7 +100,7 @@ export function CalendarDayCell({
   const dateKey = getDateKey(date);
   const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
   const dayRef = useRef<HTMLDivElement | null>(null);
-  const [{ isOverDay }, dayDrop] = useDrop<DragTaskItem>(
+  const [{ isOverDay }, dayDrop] = useDrop<DragTaskItem, void, { isOverDay: boolean }>(
     () => ({
       accept: TASK_ITEM_TYPE,
       hover: () => undefined,
