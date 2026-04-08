@@ -12,11 +12,16 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/app/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { TASK_GROUPS, TASK_PROGRESS_STATUSES } from "@/app/planner/constants";
 import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
 import {
-  cycleTaskProgressStatus,
   getTaskProgressStatus,
   formatHours,
   getContainerId,
@@ -193,22 +198,60 @@ export function TaskCard({
               {task.title}
             </p>
             <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleTaskProgressStatus(task.id, cycleTaskProgressStatus(progressMeta.id));
-                }}
-                className={cn(
-                  "inline-flex items-center justify-center rounded-full border transition-colors",
-                  progressMeta.chipClass,
-                  compact ? "size-5" : "size-6",
-                )}
-                title={`${progressMeta.label}. Нажмите, чтобы переключить статус`}
-                aria-label={`${progressMeta.label}. Нажмите, чтобы переключить статус`}
-              >
-                <ProgressIcon className={compact ? "size-3" : "size-3.5"} />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    className={cn(
+                      "inline-flex items-center justify-center rounded-full border transition-colors",
+                      progressMeta.chipClass,
+                      compact ? "size-5" : "size-6",
+                    )}
+                    title={`${progressMeta.label}. Нажмите, чтобы выбрать статус`}
+                    aria-label={`${progressMeta.label}. Нажмите, чтобы выбрать статус`}
+                  >
+                    <ProgressIcon className={compact ? "size-3" : "size-3.5"} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-44 rounded-2xl border-white/80 bg-white/95 p-1.5 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {TASK_PROGRESS_STATUSES.map((status) => {
+                    const statusMeta = getTaskProgressMeta(status.id);
+                    const StatusIcon = statusMeta.icon;
+                    const isActive = status.id === progressMeta.id;
+
+                    return (
+                      <DropdownMenuItem
+                        key={status.id}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          onToggleTaskProgressStatus(task.id, status.id);
+                        }}
+                        className={cn(
+                          "rounded-xl px-2.5 py-2 text-xs font-medium text-slate-700",
+                          isActive && "bg-slate-100 text-slate-950",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-flex size-5 items-center justify-center rounded-full border",
+                            statusMeta.chipClass,
+                          )}
+                        >
+                          <StatusIcon className="size-3" />
+                        </span>
+                        <span>{status.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Badge
                 variant="outline"
                 className="shrink-0 border-white/80 bg-white/70 text-[10px] text-slate-700"
