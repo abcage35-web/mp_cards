@@ -96,6 +96,7 @@ export function CalendarDayCell({
 }: CalendarDayCellProps) {
   const isCurrentMonth = isSameMonth(date, currentMonth);
   const dateKey = getDateKey(date);
+  const weekdayIndex = (date.getDay() + 6) % 7;
   const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
   const dayRef = useRef<HTMLDivElement | null>(null);
   const [{ isOverDay }, dayDrop] = useDrop<DragTaskItem>(
@@ -130,12 +131,18 @@ export function CalendarDayCell({
       group: group.id,
     }),
   }));
+  const trayPositionClass =
+    weekdayIndex >= 3
+      ? "right-full mr-2 items-end"
+      : "left-full ml-2 items-start";
+
   return (
     <div
       ref={dayRef}
       className={cn(
-        "relative min-h-[168px] overflow-hidden rounded-[24px] border bg-white/80 p-3 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors",
+        "relative min-h-[168px] rounded-[24px] border bg-white/80 p-3 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors",
         isDateToday(date) ? "border-primary/60 bg-primary/6" : "border-white/70",
+        isAnyDragging && isOverDay && "z-30",
       )}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -177,8 +184,13 @@ export function CalendarDayCell({
         ))}
       </div>
       {isAnyDragging && isOverDay ? (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
-          <div className="pointer-events-none inline-flex max-w-full flex-wrap items-center justify-center gap-1.5 rounded-[20px] border border-white/75 bg-white/78 px-2 py-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.24)] backdrop-blur-[8px]">
+        <div
+          className={cn(
+            "pointer-events-none absolute top-2 z-30 flex w-[212px] flex-col",
+            trayPositionClass,
+          )}
+        >
+          <div className="pointer-events-none inline-flex w-full flex-wrap items-center gap-1.5 rounded-[20px] border border-white/80 bg-white/88 px-2 py-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.26)] backdrop-blur-[10px]">
             {groupsWithTasks.map(({ group, tasks: groupedTasks }) => (
               <CalendarGroupChip
                 key={`overlay-${participantId}-${dateKey}-${group.id}`}
