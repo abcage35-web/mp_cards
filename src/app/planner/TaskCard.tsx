@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import {
@@ -89,6 +89,12 @@ export function TaskCard({
   const containerId = getContainerId(containerSpec);
   const taskAssignees = getTaskSeriesAssignees(task);
   const assigneeLabels = getShortParticipantNames(taskAssignees);
+  const assigneeLine = assigneeLabels.join(" · ");
+  const assigneeViewportRef = useRef<HTMLSpanElement | null>(null);
+  const assigneeContentRef = useRef<HTMLSpanElement | null>(null);
+  const [isAssigneeOverflowing, setIsAssigneeOverflowing] = useState(false);
+  const shouldShowDate = Boolean(task.date) && variant !== "calendar";
+  const marqueeDuration = Math.max(8, assigneeLine.length * 0.32);
 
   const [{ isDragging }, drag, preview] = useDrag(
     () => ({
@@ -153,6 +159,36 @@ export function TaskCard({
     drop(ref);
   }, [drag, drop]);
 
+  useEffect(() => {
+    const viewport = assigneeViewportRef.current;
+    const content = assigneeContentRef.current;
+
+    if (!viewport || !content || !assigneeLine) {
+      setIsAssigneeOverflowing(false);
+      return;
+    }
+
+    const updateOverflow = () => {
+      setIsAssigneeOverflowing(content.scrollWidth > viewport.clientWidth + 4);
+    };
+
+    updateOverflow();
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateOverflow) : null;
+
+    if (resizeObserver) {
+      resizeObserver.observe(viewport);
+      resizeObserver.observe(content);
+    }
+
+    window.addEventListener("resize", updateOverflow);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateOverflow);
+    };
+  }, [assigneeLine]);
+
   return (
     <div
       ref={ref}
@@ -173,6 +209,18 @@ export function TaskCard({
         isDragging && "opacity-35",
       )}
     >
+      <style>
+        {`
+          @keyframes planner-assignee-marquee {
+            0% {
+              transform: translateX(0);
+            }
+            100% {
+              transform: translateX(calc(-50% - 0.75rem));
+            }
+          }
+        `}
+      </style>
       <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90", groupMeta.surfaceClass)} />
       <div className="relative flex items-start gap-2">
         <div
@@ -270,17 +318,36 @@ export function TaskCard({
               {task.description}
             </p>
           ) : null}
-          <div className={cn("flex flex-wrap items-center gap-1.5", compact ? "mt-1.5" : "mt-2")}>
-            {assigneeLabels.map((label) => (
+          <div className={cn("flex min-w-0 items-center gap-1.5 overflow-hidden", compact ? "mt-1.5" : "mt-2")}>
+            {assigneeLine ? (
               <span
-                key={`${task.id}-${label}`}
-                className="inline-flex items-center gap-1 rounded-full border border-white/80 bg-white/75 px-2 py-0.5 text-[10px] text-slate-700"
+                className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-full border border-white/80 bg-white/75 px-2 py-0.5 text-[10px] text-slate-700"
+                title={assigneeLabels.join(", ")}
               >
-                <UserRound className="size-3" />
-                {label}
+                <UserRound className="size-3 shrink-0" />
+                <span
+                  ref={assigneeViewportRef}
+                  className="relative block min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+                >
+                  {isAssigneeOverflowing ? (
+                    <span
+                      className="flex w-max items-center gap-6 whitespace-nowrap"
+                      style={{
+                        animation: `planner-assignee-marquee ${marqueeDuration}s linear infinite`,
+                      }}
+                    >
+                      <span ref={assigneeContentRef}>{assigneeLine}</span>
+                      <span aria-hidden>{assigneeLine}</span>
+                    </span>
+                  ) : (
+                    <span ref={assigneeContentRef} className="block truncate">
+                      {assigneeLine}
+                    </span>
+                  )}
+                </span>
               </span>
-            ))}
-            {task.date ? (
+            ) : null}
+            {shouldShowDate ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-white/80 bg-white/75 px-2 py-0.5 text-[10px] text-slate-700">
                 <CalendarDays className="size-3" />
                 {getDisplayDay(task.date)}
