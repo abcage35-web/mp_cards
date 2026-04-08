@@ -10,13 +10,15 @@ import {
 } from "date-fns";
 import { ru } from "date-fns/locale";
 
-import { PARTICIPANTS } from "./constants";
+import { DEFAULT_WORK_HOURS_PER_DAY, PARTICIPANTS } from "./constants";
 import type {
   ContainerSpec,
   ParticipantId,
   PlannerState,
+  PlannerSettings,
   PlannerTask,
   PlannerTaskInput,
+  TaskProgressStatus,
   TaskFormValues,
 } from "./types";
 
@@ -58,6 +60,20 @@ function shouldScheduleTask(input: PlannerTaskInput) {
   return input.assignees.length > 0 && Boolean(input.date);
 }
 
+export function normalizeWorkHoursPerDay(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_WORK_HOURS_PER_DAY;
+  }
+
+  return Math.max(1, Math.min(24, Math.round(value * 10) / 10));
+}
+
+export function getTaskProgressStatus(
+  task: Pick<PlannerTask, "progressStatus"> & Partial<Pick<PlannerTask, "id">>,
+) {
+  return task.progressStatus || ("in-progress" satisfies TaskProgressStatus);
+}
+
 export function createEmptyPlannerState(): PlannerState {
   const nowIso = new Date().toISOString();
 
@@ -65,7 +81,16 @@ export function createEmptyPlannerState(): PlannerState {
     version: 1,
     createdAt: nowIso,
     updatedAt: nowIso,
+    settings: {
+      workHoursPerDay: DEFAULT_WORK_HOURS_PER_DAY,
+    },
     tasks: [],
+  };
+}
+
+export function getPlannerSettings(state: PlannerState | null): PlannerSettings {
+  return {
+    workHoursPerDay: normalizeWorkHoursPerDay(state?.settings?.workHoursPerDay ?? DEFAULT_WORK_HOURS_PER_DAY),
   };
 }
 
@@ -262,6 +287,7 @@ export function moveTaskToContainer(
         updatedAt: nowIso,
         seriesId: getTaskSeriesId(task),
         seriesAssignees: getTaskFallbackAssignees(task),
+        progressStatus: getTaskProgressStatus(task),
       },
       nextSpec,
     );
@@ -289,6 +315,44 @@ export function deletePlannerTask(tasks: PlannerTask[], taskId: string) {
 
   const deletingSeriesId = getTaskSeriesId(sourceTask);
   return normalizeTaskOrders(tasks.filter((task) => getTaskSeriesId(task) !== deletingSeriesId));
+}
+
+export function updateTaskSeriesProgressStatus(
+  tasks: PlannerTask[],
+  taskId: string,
+  progressStatus: TaskProgressStatus,
+) {
+  const sourceTask = tasks.find((task) => task.id === taskId);
+  if (!sourceTask) {
+    return tasks;
+  }
+
+  const nowIso = new Date().toISOString();
+  const updatingSeriesId = getTaskSeriesId(sourceTask);
+
+  return tasks.map((task) =>
+    getTaskSeriesId(task) === updatingSeriesId
+      ? {
+          ...task,
+          seriesId: getTaskSeriesId(task),
+          seriesAssignees: getTaskFallbackAssignees(task),
+          progressStatus,
+          updatedAt: nowIso,
+        }
+      : task,
+  );
+}
+
+export function cycleTaskProgressStatus(status: TaskProgressStatus) {
+  if (status === "in-progress") {
+    return "done" satisfies TaskProgressStatus;
+  }
+
+  if (status === "done") {
+    return "cancelled" satisfies TaskProgressStatus;
+  }
+
+  return "in-progress" satisfies TaskProgressStatus;
 }
 
 export function buildTaskInput(values: TaskFormValues): PlannerTaskInput {
@@ -339,6 +403,7 @@ export function upsertPlannerTask(
       id: previousSibling?.id || makeTaskId(),
       seriesId: previousSeriesId,
       seriesAssignees,
+      progressStatus: previousSibling?.progressStatus || "in-progress",
       title: input.title,
       description: input.description,
       link: input.link,

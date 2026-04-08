@@ -3,11 +3,17 @@ export type TaskGroupId = "planned" | "new" | "project" | "meeting" | "undefined
 export type ParticipantId = "sasha-nekrasov" | "sasha-manokhin" | "anton-bober";
 
 export type TaskStatus = "bank" | "calendar";
+export type TaskProgressStatus = "cancelled" | "in-progress" | "done";
+
+export interface PlannerSettings {
+  workHoursPerDay: number;
+}
 
 export interface PlannerTask {
   id: string;
   seriesId: string;
   seriesAssignees: ParticipantId[];
+  progressStatus: TaskProgressStatus;
   title: string;
   description: string;
   link: string;
@@ -25,6 +31,7 @@ export interface PlannerState {
   version: number;
   createdAt: string;
   updatedAt: string;
+  settings: PlannerSettings;
   tasks: PlannerTask[];
 }
 

@@ -37,6 +37,7 @@ import { Textarea } from "@/app/components/ui/textarea";
 import { cn } from "@/app/components/ui/utils";
 import { CalendarDayCell } from "@/app/planner/CalendarDayCell";
 import {
+  DEFAULT_WORK_HOURS_PER_DAY,
   DEFAULT_TASK_FORM_VALUES,
   PARTICIPANTS,
   TASK_GROUPS,
@@ -56,6 +57,7 @@ import {
   getMonthInputRange,
   getParticipantName,
   getParticipantNames,
+  getPlannerSettings,
   getScheduledTaskCount,
   getTaskSeriesAssignees,
   getTaskSeriesTasks,
@@ -63,7 +65,9 @@ import {
   getTasksForContainer,
   isDateWithinCurrentMonth,
   moveTaskToContainer,
+  normalizeWorkHoursPerDay,
   sortPlannerTasks,
+  updateTaskSeriesProgressStatus,
   upsertPlannerTask,
 } from "@/app/planner/planner-utils";
 import type {
@@ -73,6 +77,7 @@ import type {
   PlannerState,
   PlannerStorageInfo,
   PlannerTask,
+  TaskProgressStatus,
   TaskGroupId,
   TaskFormValues,
 } from "@/app/planner/types";
@@ -110,6 +115,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
     PARTICIPANTS.map((participant) => participant.id),
   );
   const [collapsedBankGroupIds, setCollapsedBankGroupIds] = useState<TaskGroupId[]>([]);
+  const [workHoursDraft, setWorkHoursDraft] = useState(String(DEFAULT_WORK_HOURS_PER_DAY));
 
   const plannerStateRef = useRef<PlannerState | null>(null);
   const saveTimeoutRef = useRef<number | null>(null);
@@ -137,6 +143,8 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
     () => (selectedTask ? getParticipantNames(getTaskSeriesAssignees(selectedTask)) : []),
     [selectedTask],
   );
+  const plannerSettings = useMemo(() => getPlannerSettings(plannerState), [plannerState]);
+  const workHoursPerDay = plannerSettings.workHoursPerDay;
   const visibleParticipants = useMemo(
     () =>
       PARTICIPANTS.filter((participant) => visibleParticipantIds.includes(participant.id)),
@@ -178,17 +186,18 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
     }, 450);
   }, []);
 
-  const applyTaskMutation = useCallback(
-    (updater: (tasks: PlannerTask[]) => PlannerTask[], summary: PlannerSaveSummary) => {
+  const applyPlannerMutation = useCallback(
+    (updater: (state: PlannerState) => PlannerState, summary: PlannerSaveSummary) => {
       const currentState = plannerStateRef.current;
       if (!currentState) {
         return;
       }
 
+      const nextDraft = updater(currentState);
       const nextState: PlannerState = {
-        ...currentState,
+        ...nextDraft,
         updatedAt: new Date().toISOString(),
-        tasks: updater(currentState.tasks),
+        settings: getPlannerSettings(nextDraft),
       };
 
       plannerStateRef.current = nextState;
@@ -198,6 +207,19 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
       queueSave(nextState, summary);
     },
     [queueSave],
+  );
+
+  const applyTaskMutation = useCallback(
+    (updater: (tasks: PlannerTask[]) => PlannerTask[], summary: PlannerSaveSummary) => {
+      applyPlannerMutation(
+        (state) => ({
+          ...state,
+          tasks: updater(state.tasks),
+        }),
+        summary,
+      );
+    },
+    [applyPlannerMutation],
   );
 
   useEffect(() => {
@@ -271,6 +293,10 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
       JSON.stringify(collapsedBankGroupIds),
     );
   }, [collapsedBankGroupIds]);
+
+  useEffect(() => {
+    setWorkHoursDraft(String(workHoursPerDay));
+  }, [workHoursPerDay]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -350,6 +376,46 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
       );
     },
     [applyTaskMutation],
+  );
+
+  const handleTaskProgressStatusToggle = useCallback(
+    (taskId: string, nextProgressStatus: TaskProgressStatus) => {
+      applyTaskMutation(
+        (tasks) => updateTaskSeriesProgressStatus(tasks, taskId, nextProgressStatus),
+        {
+          action: "progress",
+          message: "Обновлен статус задачи",
+          taskId,
+        },
+      );
+    },
+    [applyTaskMutation],
+  );
+
+  const commitWorkHoursPerDay = useCallback(
+    (rawValue: string) => {
+      const normalized = normalizeWorkHoursPerDay(Number(rawValue));
+      setWorkHoursDraft(String(normalized));
+
+      if (normalized === workHoursPerDay) {
+        return;
+      }
+
+      applyPlannerMutation(
+        (state) => ({
+          ...state,
+          settings: {
+            ...getPlannerSettings(state),
+            workHoursPerDay: normalized,
+          },
+        }),
+        {
+          action: "settings",
+          message: "Обновлена настройка рабочего времени в день",
+        },
+      );
+    },
+    [applyPlannerMutation, workHoursPerDay],
   );
 
   const handleDeleteTask = useCallback(() => {
@@ -560,6 +626,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
                       collapsed={collapsedBankGroupIds.includes(group.id)}
                       onToggleCollapsed={toggleCollapsedBankGroup}
                       onMoveTask={handleTaskMove}
+                      onToggleTaskProgressStatus={handleTaskProgressStatusToggle}
                       onOpenTask={openEditDialog}
                     />
                   ))}
@@ -570,33 +637,63 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
 
           <div className="space-y-6">
             <Card className="border-white/80 bg-white/82 shadow-[0_20px_60px_-42px_rgba(15,23,42,0.55)]">
-              <CardContent className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+              <CardContent className="flex flex-col gap-4 px-5 py-5 xl:flex-row xl:items-center xl:justify-between">
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-slate-900">Фильтр календарей</p>
                   <p className="text-sm text-slate-500">
                     По умолчанию включены все. Нажмите на имя, чтобы скрыть или вернуть календарь.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {PARTICIPANTS.map((participant) => {
-                    const isVisible = visibleParticipantIds.includes(participant.id);
+                <div className="flex flex-col gap-3 xl:items-end">
+                  <div className="flex flex-wrap gap-2">
+                    {PARTICIPANTS.map((participant) => {
+                      const isVisible = visibleParticipantIds.includes(participant.id);
 
-                    return (
-                      <button
-                        key={`filter-${participant.id}`}
-                        type="button"
-                        onClick={() => toggleVisibleParticipant(participant.id)}
-                        className={cn(
-                          "rounded-full border px-4 py-2 text-sm font-medium transition-all",
-                          isVisible
-                            ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_30px_-18px_rgba(15,23,42,0.8)]"
-                            : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900",
-                        )}
-                      >
-                        {participant.name}
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={`filter-${participant.id}`}
+                          type="button"
+                          onClick={() => toggleVisibleParticipant(participant.id)}
+                          className={cn(
+                            "rounded-full border px-4 py-2 text-sm font-medium transition-all",
+                            isVisible
+                              ? "border-slate-900 bg-slate-900 text-white shadow-[0_10px_30px_-18px_rgba(15,23,42,0.8)]"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900",
+                          )}
+                        >
+                          {participant.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+                    <Label
+                      htmlFor="work-hours-per-day"
+                      className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"
+                    >
+                      Рабочее время в день
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="work-hours-per-day"
+                        type="number"
+                        min="1"
+                        max="24"
+                        step="0.5"
+                        value={workHoursDraft}
+                        onChange={(event) => setWorkHoursDraft(event.target.value)}
+                        onBlur={(event) => commitWorkHoursPerDay(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitWorkHoursPerDay(workHoursDraft);
+                          }
+                        }}
+                        className="h-9 w-24 rounded-xl border-slate-200 bg-white text-sm shadow-none"
+                      />
+                      <span className="text-sm text-slate-500">ч</span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -658,7 +755,7 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
                         {WEEKDAY_LABELS.map((weekday) => (
                           <div
                             key={`${participant.id}-${weekday}`}
-                            className="rounded-xl bg-slate-100/80 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500"
+                            className="rounded-xl bg-slate-100/80 px-3 py-2 text-center text-[11px] font-semibold tracking-[0.14em] text-slate-500"
                           >
                             {weekday}
                           </div>
@@ -672,7 +769,9 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
                             currentMonth={currentMonth}
                             tasks={sortedTasks}
                             participantId={participant.id}
+                            workHoursPerDay={workHoursPerDay}
                             onMoveTask={handleTaskMove}
+                            onToggleTaskProgressStatus={handleTaskProgressStatusToggle}
                             onOpenTask={openEditDialog}
                           />
                         ))}

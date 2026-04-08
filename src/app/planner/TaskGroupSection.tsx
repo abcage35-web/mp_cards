@@ -8,7 +8,7 @@ import { TASK_GROUPS } from "@/app/planner/constants";
 import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
 import { getContainerId } from "@/app/planner/planner-utils";
 import { TaskCard } from "@/app/planner/TaskCard";
-import type { ContainerSpec, PlannerTask } from "@/app/planner/types";
+import type { ContainerSpec, PlannerTask, TaskProgressStatus } from "@/app/planner/types";
 
 interface TaskGroupSectionProps {
   title: string;
@@ -21,6 +21,7 @@ interface TaskGroupSectionProps {
   collapsed?: boolean;
   onToggleCollapsed?: (groupId: PlannerTask["group"]) => void;
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
+  onToggleTaskProgressStatus: (taskId: string, nextProgressStatus: TaskProgressStatus) => void;
   onOpenTask: (task: PlannerTask) => void;
 }
 
@@ -39,6 +40,7 @@ export function TaskGroupSection({
   collapsed = false,
   onToggleCollapsed,
   onMoveTask,
+  onToggleTaskProgressStatus,
   onOpenTask,
 }: TaskGroupSectionProps) {
   const groupMeta = getGroupMeta(groupId);
@@ -138,6 +140,7 @@ export function TaskGroupSection({
               compact={compact}
               variant={variant}
               onMoveTask={onMoveTask}
+              onToggleTaskProgressStatus={onToggleTaskProgressStatus}
               onOpenTask={onOpenTask}
             />
           ))

@@ -1,19 +1,29 @@
 import { useEffect, useRef } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { CalendarDays, GripVertical, Link2, UserRound } from "lucide-react";
+import {
+  Ban,
+  CalendarDays,
+  CheckCheck,
+  CircleDot,
+  GripVertical,
+  Link2,
+  UserRound,
+} from "lucide-react";
 
 import { Badge } from "@/app/components/ui/badge";
 import { cn } from "@/app/components/ui/utils";
-import { TASK_GROUPS } from "@/app/planner/constants";
+import { TASK_GROUPS, TASK_PROGRESS_STATUSES } from "@/app/planner/constants";
 import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
 import {
+  cycleTaskProgressStatus,
+  getTaskProgressStatus,
   formatHours,
   getContainerId,
   getDisplayDay,
   getShortParticipantName,
 } from "@/app/planner/planner-utils";
-import type { ContainerSpec, PlannerTask } from "@/app/planner/types";
+import type { ContainerSpec, PlannerTask, TaskProgressStatus } from "@/app/planner/types";
 
 interface TaskCardProps {
   task: PlannerTask;
@@ -22,11 +32,37 @@ interface TaskCardProps {
   compact?: boolean;
   variant?: "bank" | "calendar";
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
+  onToggleTaskProgressStatus: (taskId: string, nextProgressStatus: TaskProgressStatus) => void;
   onOpenTask: (task: PlannerTask) => void;
 }
 
 function getGroupMeta(groupId: PlannerTask["group"]) {
   return TASK_GROUPS.find((group) => group.id === groupId) || TASK_GROUPS[TASK_GROUPS.length - 1];
+}
+
+function getTaskProgressMeta(progressStatus: TaskProgressStatus) {
+  const baseMeta =
+    TASK_PROGRESS_STATUSES.find((status) => status.id === progressStatus) ||
+    TASK_PROGRESS_STATUSES[0];
+
+  if (progressStatus === "done") {
+    return {
+      ...baseMeta,
+      icon: CheckCheck,
+    };
+  }
+
+  if (progressStatus === "cancelled") {
+    return {
+      ...baseMeta,
+      icon: Ban,
+    };
+  }
+
+  return {
+    ...baseMeta,
+    icon: CircleDot,
+  };
 }
 
 export function TaskCard({
@@ -36,11 +72,14 @@ export function TaskCard({
   compact = false,
   variant = "bank",
   onMoveTask,
+  onToggleTaskProgressStatus,
   onOpenTask,
 }: TaskCardProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<HTMLDivElement | null>(null);
   const groupMeta = getGroupMeta(task.group);
+  const progressMeta = getTaskProgressMeta(getTaskProgressStatus(task));
+  const ProgressIcon = progressMeta.icon;
   const containerId = getContainerId(containerSpec);
 
   const [{ isDragging }, drag, preview] = useDrag(
@@ -150,12 +189,30 @@ export function TaskCard({
             >
               {task.title}
             </p>
-            <Badge
-              variant="outline"
-              className="shrink-0 border-white/80 bg-white/70 text-[10px] text-slate-700"
-            >
-              {formatHours(task.hours)}
-            </Badge>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleTaskProgressStatus(task.id, cycleTaskProgressStatus(progressMeta.id));
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center rounded-full border transition-colors",
+                  progressMeta.chipClass,
+                  compact ? "size-5" : "size-6",
+                )}
+                title={`${progressMeta.label}. Нажмите, чтобы переключить статус`}
+                aria-label={`${progressMeta.label}. Нажмите, чтобы переключить статус`}
+              >
+                <ProgressIcon className={compact ? "size-3" : "size-3.5"} />
+              </button>
+              <Badge
+                variant="outline"
+                className="shrink-0 border-white/80 bg-white/70 text-[10px] text-slate-700"
+              >
+                {formatHours(task.hours)}
+              </Badge>
+            </div>
           </div>
           {task.description && variant !== "calendar" ? (
             <p

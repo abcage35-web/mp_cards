@@ -1,4 +1,4 @@
-import type { TaskFormValues } from "./types";
+import type { TaskFormValues, TaskProgressStatus } from "./types";
 
 export const PARTICIPANTS = [
   {
@@ -67,7 +67,34 @@ export const TASK_GROUPS = [
   },
 ] as const;
 
-export const WEEKDAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+export const WEEKDAY_LABELS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+export const DEFAULT_WORK_HOURS_PER_DAY = 8;
+
+export const TASK_PROGRESS_STATUSES: {
+  id: TaskProgressStatus;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}[] = [
+  {
+    id: "in-progress",
+    label: "В работе",
+    shortLabel: "В работе",
+    chipClass: "border-sky-200 bg-sky-100/90 text-sky-800 hover:bg-sky-200/80",
+  },
+  {
+    id: "done",
+    label: "Готова",
+    shortLabel: "Готова",
+    chipClass: "border-emerald-200 bg-emerald-100/90 text-emerald-800 hover:bg-emerald-200/80",
+  },
+  {
+    id: "cancelled",
+    label: "Отменена",
+    shortLabel: "Отмена",
+    chipClass: "border-rose-200 bg-rose-100/90 text-rose-800 hover:bg-rose-200/80",
+  },
+];
 
 export const DEFAULT_TASK_FORM_VALUES: TaskFormValues = {
   title: "",

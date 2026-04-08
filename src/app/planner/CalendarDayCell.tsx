@@ -1,10 +1,9 @@
 import { format, isSameMonth } from "date-fns";
-import { ru } from "date-fns/locale";
 import { useRef } from "react";
 import { useDragLayer, useDrop } from "react-dnd";
 
 import { cn } from "@/app/components/ui/utils";
-import { TASK_GROUPS } from "@/app/planner/constants";
+import { TASK_GROUPS, WEEKDAY_LABELS } from "@/app/planner/constants";
 import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
 import {
   formatHours,
@@ -15,7 +14,7 @@ import {
   isDateToday,
 } from "@/app/planner/planner-utils";
 import { TaskGroupSection } from "@/app/planner/TaskGroupSection";
-import type { ContainerSpec, PlannerTask } from "@/app/planner/types";
+import type { ContainerSpec, PlannerTask, TaskProgressStatus } from "@/app/planner/types";
 
 function CalendarGroupChip({
   dateKey,
@@ -84,7 +83,9 @@ interface CalendarDayCellProps {
   currentMonth: Date;
   tasks: PlannerTask[];
   participantId: NonNullable<PlannerTask["assignee"]>;
+  workHoursPerDay: number;
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
+  onToggleTaskProgressStatus: (taskId: string, nextProgressStatus: TaskProgressStatus) => void;
   onOpenTask: (task: PlannerTask) => void;
 }
 
@@ -93,7 +94,9 @@ export function CalendarDayCell({
   currentMonth,
   tasks,
   participantId,
+  workHoursPerDay,
   onMoveTask,
+  onToggleTaskProgressStatus,
   onOpenTask,
 }: CalendarDayCellProps) {
   const isCurrentMonth = isSameMonth(date, currentMonth);
@@ -123,6 +126,8 @@ export function CalendarDayCell({
   }
 
   const dayHours = getDailyHours(tasks, participantId, dateKey);
+  const weekdayLabel = WEEKDAY_LABELS[(date.getDay() + 6) % 7];
+  const isOverbooked = dayHours > workHoursPerDay;
   const groupsWithTasks = TASK_GROUPS.map((group) => ({
     group,
     tasks: getTasksForContainer(tasks, {
@@ -155,11 +160,16 @@ export function CalendarDayCell({
             {format(date, "d")}
           </span>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
-              {format(date, "EEE", { locale: ru })}
+            <div className="text-[10px] tracking-[0.18em] text-slate-400">
+              {weekdayLabel}
             </div>
-            <div className="text-[10px] font-medium text-slate-500">
-              {dayHours > 0 ? formatHours(dayHours) : "свободно"}
+            <div
+              className={cn(
+                "text-[10px] font-medium",
+                isOverbooked ? "text-rose-600" : "text-slate-500",
+              )}
+            >
+              {formatHours(dayHours)} / {formatHours(workHoursPerDay)}
             </div>
           </div>
         </div>
@@ -179,6 +189,7 @@ export function CalendarDayCell({
               compact
               variant="calendar"
               onMoveTask={onMoveTask}
+              onToggleTaskProgressStatus={onToggleTaskProgressStatus}
               onOpenTask={onOpenTask}
             />
           ))}

@@ -9,6 +9,8 @@ const LOG_FILE = resolve(STORAGE_DIR, "planner-state-log.ndjson");
 
 const TASK_GROUPS = new Set(["planned", "new", "project", "meeting", "undefined"]);
 const PARTICIPANTS = new Set(["sasha-nekrasov", "sasha-manokhin", "anton-bober"]);
+const TASK_PROGRESS_STATUSES = new Set(["cancelled", "in-progress", "done"]);
+const DEFAULT_WORK_HOURS_PER_DAY = 8;
 
 const DEFAULT_TASKS = [
   {
@@ -18,6 +20,7 @@ const DEFAULT_TASKS = [
     link: "",
     hours: 2,
     group: "planned",
+    progressStatus: "in-progress",
     assignee: null,
     date: null,
     status: "bank",
@@ -32,6 +35,7 @@ const DEFAULT_TASKS = [
     link: "",
     hours: 1.5,
     group: "new",
+    progressStatus: "in-progress",
     assignee: null,
     date: null,
     status: "bank",
@@ -46,6 +50,7 @@ const DEFAULT_TASKS = [
     link: "",
     hours: 1,
     group: "meeting",
+    progressStatus: "in-progress",
     assignee: "sasha-nekrasov",
     date: null,
     status: "bank",
@@ -122,6 +127,20 @@ function toStatus(valueRaw) {
   return toSafeString(valueRaw, 20).toLowerCase() === "calendar" ? "calendar" : "bank";
 }
 
+function toProgressStatus(valueRaw) {
+  const value = toSafeString(valueRaw, 40).toLowerCase();
+  return TASK_PROGRESS_STATUSES.has(value) ? value : "in-progress";
+}
+
+function toWorkHours(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) {
+    return DEFAULT_WORK_HOURS_PER_DAY;
+  }
+
+  return Math.max(1, Math.min(24, Math.round(value * 10) / 10));
+}
+
 function sanitizeTask(taskRaw, index) {
   const raw = taskRaw && typeof taskRaw === "object" ? taskRaw : {};
   const createdAt = toIsoOrNow(raw.createdAt);
@@ -140,6 +159,7 @@ function sanitizeTask(taskRaw, index) {
     link: toSafeString(raw.link, 1000),
     hours: toHours(raw.hours),
     group: toGroup(raw.group),
+    progressStatus: toProgressStatus(raw.progressStatus),
     assignee,
     date,
     status: status === "calendar" && assignee && date ? "calendar" : "bank",
@@ -204,6 +224,9 @@ function sanitizeState(payloadRaw) {
     version: 1,
     createdAt,
     updatedAt,
+    settings: {
+      workHoursPerDay: toWorkHours(payload.settings?.workHoursPerDay),
+    },
     tasks,
   };
 }
