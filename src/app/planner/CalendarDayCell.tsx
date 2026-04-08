@@ -17,15 +17,17 @@ import {
 import { TaskGroupSection } from "@/app/planner/TaskGroupSection";
 import type { ContainerSpec, PlannerTask } from "@/app/planner/types";
 
-function CalendarEmptyGroupChip({
+function CalendarGroupChip({
   dateKey,
   groupId,
   participantId,
+  targetIndex,
   onMoveTask,
 }: {
   dateKey: string;
   groupId: PlannerTask["group"];
   participantId: NonNullable<PlannerTask["assignee"]>;
+  targetIndex: number;
   onMoveTask: (taskId: string, containerSpec: ContainerSpec, targetIndex: number) => void;
 }) {
   const groupMeta = TASK_GROUPS.find((group) => group.id === groupId) || TASK_GROUPS[TASK_GROUPS.length - 1];
@@ -46,9 +48,9 @@ function CalendarEmptyGroupChip({
           return undefined;
         }
 
-        onMoveTask(item.taskId, containerSpec, 0);
+        onMoveTask(item.taskId, containerSpec, targetIndex);
         item.containerId = containerId;
-        item.index = 0;
+        item.index = targetIndex;
         return { handled: true };
       },
       collect: (monitor) => ({
@@ -56,7 +58,7 @@ function CalendarEmptyGroupChip({
         canDrop: monitor.canDrop(),
       }),
     }),
-    [containerId, containerSpec, onMoveTask],
+    [containerId, containerSpec, onMoveTask, targetIndex],
   );
 
   drop(ref);
@@ -128,8 +130,6 @@ export function CalendarDayCell({
       group: group.id,
     }),
   }));
-  const emptyGroups = groupsWithTasks.filter(({ tasks: groupedTasks }) => groupedTasks.length === 0);
-
   return (
     <div
       ref={dayRef}
@@ -176,20 +176,21 @@ export function CalendarDayCell({
           />
         ))}
       </div>
-      {isAnyDragging && isOverDay && emptyGroups.length > 0 ? (
+      {isAnyDragging && isOverDay ? (
         <div className="pointer-events-none absolute inset-x-2 bottom-2 top-11 z-20 rounded-[20px] border border-white/70 bg-white/45 p-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.24)] backdrop-blur-[4px]">
           <div
             className={cn(
               "grid content-start gap-1.5",
-              emptyGroups.length === 1 ? "grid-cols-1" : "grid-cols-2",
+              groupsWithTasks.length <= 2 ? "grid-cols-1" : groupsWithTasks.length <= 4 ? "grid-cols-2" : "grid-cols-3",
             )}
           >
-            {emptyGroups.map(({ group }) => (
-              <CalendarEmptyGroupChip
-                key={`empty-${participantId}-${dateKey}-${group.id}`}
+            {groupsWithTasks.map(({ group, tasks: groupedTasks }) => (
+              <CalendarGroupChip
+                key={`overlay-${participantId}-${dateKey}-${group.id}`}
                 dateKey={dateKey}
                 groupId={group.id}
                 participantId={participantId}
+                targetIndex={groupedTasks.length}
                 onMoveTask={onMoveTask}
               />
             ))}
