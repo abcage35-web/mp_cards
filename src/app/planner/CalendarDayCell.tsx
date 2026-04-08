@@ -3,7 +3,6 @@ import { ru } from "date-fns/locale";
 import { useRef } from "react";
 import { useDragLayer, useDrop } from "react-dnd";
 
-import { Badge } from "@/app/components/ui/badge";
 import { cn } from "@/app/components/ui/utils";
 import { TASK_GROUPS } from "@/app/planner/constants";
 import { TASK_ITEM_TYPE, type DragTaskItem } from "@/app/planner/dnd";
@@ -66,25 +65,12 @@ function CalendarEmptyGroupChip({
     <div
       ref={ref}
       className={cn(
-        "pointer-events-auto flex min-h-9 items-center justify-between gap-2 rounded-2xl border bg-white/92 px-2.5 py-1.5 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.32)] backdrop-blur-sm transition-all",
-        groupMeta.borderClass,
-        isOver && canDrop && "border-primary bg-primary/10 shadow-[0_0_0_1px_rgba(13,148,136,0.35)]",
+        "pointer-events-auto flex min-h-8 items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold shadow-[0_10px_24px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm transition-all",
+        groupMeta.badgeClass,
+        isOver && canDrop && "scale-[1.02] border-primary bg-primary/15 text-primary shadow-[0_0_0_1px_rgba(13,148,136,0.35)]",
       )}
     >
-      <Badge
-        variant="outline"
-        className={cn("px-1.5 py-0 text-[9px] font-medium", groupMeta.badgeClass)}
-      >
-        {groupMeta.shortLabel}
-      </Badge>
-      <span
-        className={cn(
-          "text-[10px] font-medium",
-          isOver && canDrop ? "text-primary" : "text-slate-400",
-        )}
-      >
-        {isOver && canDrop ? "Отпустите" : "Перетащить"}
-      </span>
+      {groupMeta.shortLabel}
     </div>
   );
 }
@@ -109,6 +95,19 @@ export function CalendarDayCell({
   const isCurrentMonth = isSameMonth(date, currentMonth);
   const dateKey = getDateKey(date);
   const isAnyDragging = useDragLayer((monitor) => monitor.isDragging());
+  const dayRef = useRef<HTMLDivElement | null>(null);
+  const [{ isOverDay }, dayDrop] = useDrop<DragTaskItem>(
+    () => ({
+      accept: TASK_ITEM_TYPE,
+      hover: () => undefined,
+      collect: (monitor) => ({
+        isOverDay: monitor.isOver({ shallow: false }),
+      }),
+    }),
+    [],
+  );
+
+  dayDrop(dayRef);
 
   if (!isCurrentMonth) {
     return (
@@ -133,6 +132,7 @@ export function CalendarDayCell({
 
   return (
     <div
+      ref={dayRef}
       className={cn(
         "relative min-h-[168px] overflow-hidden rounded-[24px] border bg-white/80 p-3 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.45)] backdrop-blur-sm transition-colors",
         isDateToday(date) ? "border-primary/60 bg-primary/6" : "border-white/70",
@@ -176,8 +176,8 @@ export function CalendarDayCell({
           />
         ))}
       </div>
-      {isAnyDragging && emptyGroups.length > 0 ? (
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 top-11 z-20 rounded-[20px] border border-white/70 bg-white/55 p-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.28)] backdrop-blur-[4px]">
+      {isAnyDragging && isOverDay && emptyGroups.length > 0 ? (
+        <div className="pointer-events-none absolute inset-x-2 bottom-2 top-11 z-20 rounded-[20px] border border-white/70 bg-white/45 p-2 shadow-[0_18px_36px_-24px_rgba(15,23,42,0.24)] backdrop-blur-[4px]">
           <div
             className={cn(
               "grid content-start gap-1.5",
