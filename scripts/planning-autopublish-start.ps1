@@ -1,10 +1,10 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$Remote = "planning",
   [string]$Branch = "main",
   [int]$DebounceSeconds = 6
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $storageDir = Join-Path $repoRoot "storage"

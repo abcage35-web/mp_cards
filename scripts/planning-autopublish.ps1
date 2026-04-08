@@ -1,10 +1,10 @@
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$Remote = "planning",
   [string]$Branch = "main",
   [int]$DebounceSeconds = 6
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $storageDir = Join-Path $repoRoot "storage"
@@ -17,8 +17,6 @@ Set-Content -Path $pidPath -Value $PID -Encoding ascii
 
 $script:pendingAt = $null
 $script:isPublishing = $false
-$ignoreRegex = [regex]'\\(\.git|node_modules|dist|storage)(\\|$)'
-
 function Register-WatcherEvent {
   param(
     [System.IO.FileSystemWatcher]$Watcher,
