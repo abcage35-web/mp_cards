@@ -87,6 +87,16 @@ function buildHeadersFromNodeRequest(nodeHeaders: Record<string, string | string
   return headers;
 }
 
+async function readNodeRequestBody(request: import("node:http").IncomingMessage) {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+}
+
 async function sendFetchResponse(nodeResponse: import("node:http").ServerResponse, response: Response) {
   nodeResponse.statusCode = response.status;
   nodeResponse.statusMessage = response.statusText;
@@ -104,6 +114,7 @@ function createLocalFunctionsPlugin() {
     ["/api/xway-ab-test", "functions/api/xway-ab-test.js"],
     ["/api/xway-ab-tests", "functions/api/xway-ab-tests.js"],
     ["/api/xway-product-snapshots", "functions/api/xway-product-snapshots.js"],
+    ["/api/planner-state", "functions/api/planner-state.js"],
   ]);
 
   const attachMiddleware = (middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void }) => {
@@ -119,7 +130,15 @@ function createLocalFunctionsPlugin() {
       }
 
       const method = String(req.method || "GET").toUpperCase();
-      const handlerName = method === "OPTIONS" ? "onRequestOptions" : method === "GET" ? "onRequestGet" : "";
+      const handlerNameByMethod: Record<string, string> = {
+        OPTIONS: "onRequestOptions",
+        GET: "onRequestGet",
+        POST: "onRequestPost",
+        PUT: "onRequestPut",
+        PATCH: "onRequestPatch",
+        DELETE: "onRequestDelete",
+      };
+      const handlerName = handlerNameByMethod[method] || "";
       if (!handlerName) {
         next();
         return;
@@ -138,6 +157,7 @@ function createLocalFunctionsPlugin() {
         const request = new Request(url.toString(), {
           method,
           headers: buildHeadersFromNodeRequest(req.headers),
+          body: method === "GET" || method === "HEAD" || method === "OPTIONS" ? undefined : await readNodeRequestBody(req),
         });
         const response = await handler({
           request,
@@ -181,6 +201,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        planner: resolve(__dirname, "planner/index.html"),
         cards: resolve(__dirname, "cards/index.html"),
         abTests: resolve(__dirname, "ab-tests/index.html"),
       },

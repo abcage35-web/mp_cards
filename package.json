@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "publish:planning": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-publish.ps1",
+    "autopublish:planning:start": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-autopublish-start.ps1",
+    "autopublish:planning:stop": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-autopublish-stop.ps1"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
