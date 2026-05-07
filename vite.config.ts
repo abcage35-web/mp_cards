@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -32,6 +32,46 @@ function syncRuntimeFallbackAsset(sourceRelativePath: string, outputRelativePath
   }
 }
 
+function findRelativeJsImports(source: string) {
+  const imports = new Set<string>();
+  const importPattern = /(?:from\s*["']\.\/([^"']+\.js)["']|import\s*\(\s*["']\.\/([^"']+\.js)["']\s*\))/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = importPattern.exec(source))) {
+    const assetName = match[1] || match[2];
+    if (assetName) {
+      imports.add(assetName);
+    }
+  }
+
+  return imports;
+}
+
+function syncRuntimeFallbackImports(runtimeJsAsset: string) {
+  const distAssetsPath = resolve(__dirname, "dist", "assets");
+  const visitedAssets = new Set<string>();
+
+  const visitAsset = (assetName: string) => {
+    if (visitedAssets.has(assetName)) {
+      return;
+    }
+    visitedAssets.add(assetName);
+
+    const assetPath = resolve(distAssetsPath, assetName);
+    if (!existsSync(assetPath)) {
+      return;
+    }
+
+    const source = readFileSync(assetPath, "utf8");
+    for (const importedAssetName of findRelativeJsImports(source)) {
+      syncRuntimeFallbackAsset(`dist/assets/${importedAssetName}`, [`assets/${importedAssetName}`]);
+      visitAsset(importedAssetName);
+    }
+  };
+
+  visitAsset(runtimeJsAsset);
+}
+
 function syncRuntimeFallbackAssets() {
   const distAssetsPath = resolve(__dirname, "dist", "assets");
 
@@ -41,10 +81,19 @@ function syncRuntimeFallbackAssets() {
 
   const assetNames = readdirSync(distAssetsPath);
   const runtimeJsAsset = assetNames.filter((assetName) => /^main-.*\.js$/.test(assetName)).sort().at(-1);
-  const runtimeCssAsset = assetNames.filter((assetName) => /^main-.*\.css$/.test(assetName)).sort().at(-1);
+  const plannerJsAsset = assetNames.filter((assetName) => /^planner-.*\.js$/.test(assetName)).sort().at(-1);
+  const runtimeCssAsset =
+    assetNames.filter((assetName) => /^main-.*\.css$/.test(assetName)).sort().at(-1) ??
+    assetNames.filter((assetName) => /\.css$/.test(assetName)).sort().at(-1);
 
   if (runtimeJsAsset) {
     syncRuntimeFallbackAsset(`dist/assets/${runtimeJsAsset}`, ["assets/app.js", "dist/assets/app.js"]);
+    syncRuntimeFallbackImports(runtimeJsAsset);
+  }
+
+  if (plannerJsAsset) {
+    syncRuntimeFallbackAsset(`dist/assets/${plannerJsAsset}`, ["assets/planner.js", "dist/assets/planner.js"]);
+    syncRuntimeFallbackImports(plannerJsAsset);
   }
 
   if (runtimeCssAsset) {

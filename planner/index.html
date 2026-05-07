@@ -10,9 +10,37 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (() => {
+        const RAW_ENTRY = "/src/planner-main.tsx";
+        const FALLBACK_CSS = "/assets/app.css?v=20260507-runtime-fallback-v4";
+        const FALLBACK_JS = "/assets/planner.js?v=20260507-runtime-fallback-v4";
+
+        function ensureFallbackAssets() {
+          const entry = document.querySelector('script[data-app-entry="source"]');
+          if (!(entry instanceof HTMLScriptElement)) return;
+          if ((entry.getAttribute("src") || "").trim() !== RAW_ENTRY) return;
+          if (document.querySelector('link[data-app-fallback="css"]')) return;
+
+          const css = document.createElement("link");
+          css.rel = "stylesheet";
+          css.href = FALLBACK_CSS;
+          css.dataset.appFallback = "css";
+          document.head.appendChild(css);
+
+          const js = document.createElement("script");
+          js.type = "module";
+          js.src = FALLBACK_JS;
+          js.dataset.appFallback = "js";
+          document.body.appendChild(js);
+        }
+
+        window.addEventListener("DOMContentLoaded", ensureFallbackAssets, { once: true });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/planner-main.tsx"></script>
+    <script type="module" src="/src/planner-main.tsx" data-app-entry="source"></script>
   </body>
 </html>

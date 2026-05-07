@@ -179,6 +179,106 @@ export function PlannerPage({ standalone = false }: PlannerPageProps) {
     action: "init",
     message: "Planner state initialized",
   });
+  const plannerSettings = useMemo(() => getPlannerSettings(plannerState), [plannerState]);
+  const {
+    workHoursPerDay,
+    calendarDisplayMode,
+    hideWeekends,
+    interleaveWeeksByParticipant,
+    participantWorkSchedules,
+  } = plannerSettings;
+  const sortedTasks = useMemo(
+    () => sortPlannerTasks(plannerState?.tasks || []),
+    [plannerState?.tasks],
+  );
+  const orderedTaskGroups = useMemo(
+    () => getOrderedTaskGroups(plannerSettings.groupOrder),
+    [plannerSettings.groupOrder],
+  );
+  const orderedTaskGroupIds = useMemo(
+    () => orderedTaskGroups.map((group) => group.id),
+    [orderedTaskGroups],
+  );
+  const visibleOrderedTaskGroupIds = useMemo(
+    () => orderedTaskGroupIds.filter((groupId) => visibleTaskGroupIds.includes(groupId)),
+    [orderedTaskGroupIds, visibleTaskGroupIds],
+  );
+  const visibleParticipants = useMemo(
+    () => PARTICIPANTS.filter((participant) => visibleParticipantIds.includes(participant.id)),
+    [visibleParticipantIds],
+  );
+  const statsParticipants = visibleParticipants;
+  const participantWorkHoursById = useMemo(
+    () =>
+      PARTICIPANTS.reduce(
+        (accumulator, participant) => {
+          accumulator[participant.id] = getParticipantWorkHoursPerDay(
+            participantWorkSchedules[participant.id],
+          );
+          return accumulator;
+        },
+        {} as Record<ParticipantId, number>,
+      ),
+    [participantWorkSchedules],
+  );
+  const filteredTasks = useMemo(
+    () =>
+      sortedTasks.filter((task) => {
+        if (!visibleTaskGroupIds.includes(task.group)) {
+          return false;
+        }
+        if (!visibleTaskProgressStatuses.includes(task.progressStatus)) {
+          return false;
+        }
+        if (task.status === "calendar" && task.assignee && !visibleParticipantIds.includes(task.assignee)) {
+          return false;
+        }
+        return true;
+      }),
+    [sortedTasks, visibleParticipantIds, visibleTaskGroupIds, visibleTaskProgressStatuses],
+  );
+  const bankTaskCount = useMemo(() => getBankTaskCount(sortedTasks), [sortedTasks]);
+  const scheduledTaskCount = useMemo(() => getScheduledTaskCount(sortedTasks), [sortedTasks]);
+  const taskStatusFilterLabel =
+    visibleTaskProgressStatuses.length === TASK_PROGRESS_STATUSES.length
+      ? "Все статусы"
+      : `${visibleTaskProgressStatuses.length} из ${TASK_PROGRESS_STATUSES.length}`;
+  const taskGroupFilterLabel =
+    visibleTaskGroupIds.length === TASK_GROUPS.length
+      ? "Все типы"
+      : `${visibleTaskGroupIds.length} из ${TASK_GROUPS.length}`;
+  const activeDialogTask = useMemo(
+    () =>
+      dialogState.taskId
+        ? sortedTasks.find((task) => task.id === dialogState.taskId) || null
+        : null,
+    [dialogState.taskId, sortedTasks],
+  );
+  const selectedTask = useMemo(
+    () =>
+      dialogState.taskId
+        ? getTaskPrimaryTask(sortedTasks, dialogState.taskId) || activeDialogTask
+        : null,
+    [activeDialogTask, dialogState.taskId, sortedTasks],
+  );
+  const selectedTaskSeries = useMemo(
+    () => (dialogState.taskId ? getTaskLinkedTasks(sortedTasks, dialogState.taskId) : []),
+    [dialogState.taskId, sortedTasks],
+  );
+  const selectedAssigneeNames = useMemo(
+    () => getParticipantNames(formValues.assignees),
+    [formValues.assignees],
+  );
+  const selectedTaskSeriesAssigneeNames = useMemo(
+    () => getParticipantNames(selectedTaskSeries.flatMap((task) => getTaskSeriesAssignees(task))),
+    [selectedTaskSeries],
+  );
+  const canDetachActiveDialogTask =
+    Boolean(activeDialogTask?.date && activeDialogTask.assignee) && selectedTaskSeries.length > 1;
+  const recurrenceStartDate = formValues.recurrence.fromDate || formValues.date || "";
+  const recurrenceSummary = getRecurrenceSummary(formValues.recurrence, recurrenceStartDate);
+  const automaticCalendarPlacement =
+    formValues.status === "calendar" && formValues.assignees.length > 0 && Boolean(formValues.date);
   const {
     visibleWeekdayEntries,
     visibleMonthWeeks,
