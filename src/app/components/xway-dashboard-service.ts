@@ -624,7 +624,7 @@ function buildTimelineMetricRow(
           : "neutral"
       : "unknown";
 
-  return { label, before, during, after, deltaText, deltaKind };
+  return { label, before, during, after, deltaText, deltaKind, deltaValue };
 }
 
 function formatBidValue(valueRaw: number | null) {

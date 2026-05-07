@@ -10,6 +10,7 @@ import {
   AB_XWAY_ERROR_RETRY_START_DELAY_MS,
   abBuildDateRangeFromMonthKeys,
   abBuildSourceMetaText,
+  abBuildXwayComparisonRowsFromPayload,
   abFilterTests,
   abFormatInt,
   abNormalizeStatus,
@@ -19,6 +20,7 @@ import {
   createDefaultFilters,
   fetchXwayPayload,
   loadAbDashboardData,
+  type ComparisonRow,
   type DashboardModel,
   type Filters,
   type Product,
@@ -239,6 +241,24 @@ function areSummaryChecksEqual(a: SummaryChecks | null | undefined, b: SummaryCh
   );
 }
 
+function areComparisonRowsEqual(a: ComparisonRow[] | null | undefined, b: ComparisonRow[] | null | undefined) {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (left.length !== right.length) return false;
+  return left.every((row, index) => {
+    const next = right[index];
+    return (
+      String(row.label || "") === String(next?.label || "")
+      && String(row.before || "") === String(next?.before || "")
+      && String(row.during || "") === String(next?.during || "")
+      && String(row.after || "") === String(next?.after || "")
+      && String(row.deltaText || "") === String(next?.deltaText || "")
+      && String(row.deltaKind || "") === String(next?.deltaKind || "")
+      && String(row.deltaValue ?? "") === String(next?.deltaValue ?? "")
+    );
+  });
+}
+
 function buildCanonicalXwayTestUrl(payload: XwayPayload | null | undefined, fallbackTestIdRaw: string) {
   const shopId = Number(payload?.product?.shopId);
   const productId = Number(payload?.product?.productId);
@@ -287,12 +307,14 @@ export function DashboardPage() {
           const nextActivityStartedAtIso = String(payload?.test?.startedAt || "").trim() || test.abActivityStartedAtIso || test.startedAtIso;
           const nextActivityEndedAtIso = String(payload?.test?.endedAt || "").trim() || test.abActivityEndedAtIso || test.endedAtIso;
           const nextXwayUrl = buildCanonicalXwayTestUrl(payload, test.testId) || test.xwayUrl;
+          const nextXwayComparisonRows = payload ? abBuildXwayComparisonRowsFromPayload(payload, test.comparisonRows) : null;
           const sameChecks = areSummaryChecksEqual(test.xwaySummaryChecks || null, checks);
+          const sameXwayComparisonRows = areComparisonRowsEqual(test.xwayComparisonRows || null, nextXwayComparisonRows);
           const sameActivityPeriod =
             String(test.abActivityStartedAtIso || test.startedAtIso || "") === String(nextActivityStartedAtIso || "")
             && String(test.abActivityEndedAtIso || test.endedAtIso || "") === String(nextActivityEndedAtIso || "");
           const sameXwayUrl = String(test.xwayUrl || "").trim() === String(nextXwayUrl || "").trim();
-          if (sameChecks && sameActivityPeriod && sameXwayUrl) {
+          if (sameChecks && sameXwayComparisonRows && sameActivityPeriod && sameXwayUrl) {
             return test;
           }
           changed = true;
@@ -300,6 +322,7 @@ export function DashboardPage() {
             ...test,
             xwayUrl: nextXwayUrl,
             xwaySummaryChecks: checks || null,
+            xwayComparisonRows: nextXwayComparisonRows,
             abActivityStartedAtIso: nextActivityStartedAtIso,
             abActivityEndedAtIso: nextActivityEndedAtIso,
           };
@@ -406,6 +429,7 @@ export function DashboardPage() {
             return {
               ...test,
               xwaySummaryChecks: null,
+              xwayComparisonRows: null,
             };
           });
           return changed ? { ...current, tests: nextTests } : current;

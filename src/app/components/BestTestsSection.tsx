@@ -68,15 +68,25 @@ function resolveDeltaKind(beforeRaw: number | null, afterRaw: number | null) {
   return "neutral";
 }
 
+function getBestComparisonRows(test: TestCard) {
+  return Array.isArray(test.xwayComparisonRows) && test.xwayComparisonRows.length
+    ? test.xwayComparisonRows
+    : test.comparisonRows;
+}
+
 function getComparisonRow(test: TestCard, label: string) {
-  return test.comparisonRows.find((row) => String(row.label || "").trim() === label) || null;
+  return getBestComparisonRows(test).find((row) => String(row.label || "").trim() === label) || null;
 }
 
 function getCtrCr1GrowthScore(test: TestCard) {
   const row = getComparisonRow(test, "CTR*CR1");
+  const deltaValue = Number(row?.deltaValue);
+  if (Number.isFinite(deltaValue)) {
+    return deltaValue;
+  }
   const before = parseDisplayNumber(row?.before ?? null);
   const after = parseDisplayNumber(row?.after ?? null);
-  if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) {
+  if (before === null || after === null || !Number.isFinite(before) || !Number.isFinite(after) || before === 0) {
     return null;
   }
   return after / before - 1;
@@ -99,7 +109,7 @@ function isCompletedTest(test: TestCard) {
 }
 
 function isSuccessfulCleanTest(test: TestCard) {
-  return abNormalizeStatus(String(test.summaryChecks?.overall || "").trim()) === "good";
+  return abNormalizeStatus(String(test.xwaySummaryChecks?.overall || "").trim()) === "good";
 }
 
 function sortTimestampDesc(a: TestCard, b: TestCard) {
@@ -635,7 +645,7 @@ export function getBestCompletedTests<T extends TestCard>(testsRaw: T[]) {
 
 export function BestTestsSection({
   tests,
-  emptyMessage = "Нет завершённых успешных чистых тестов с рассчитанным приростом CTR*CR1 под выбранные фильтры.",
+  emptyMessage = "Нет завершённых успешных по XWAY чистых тестов с рассчитанным приростом CTR*CR1 под выбранные фильтры.",
 }: Props) {
   const [viewMode, setViewMode] = useState<BestViewMode>("full");
   const [poolMode, setPoolMode] = useState<BestPoolMode>("selected");
@@ -691,7 +701,7 @@ export function BestTestsSection({
               Лучшие
             </h2>
             <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
-              Только успешные по воронке чистых тестов, сортировка по `приросту CTR*CR1` по убыванию.
+              Только успешные по XWAY-воронке чистых тестов, сортировка по XWAY-приросту CTR*CR1 по убыванию.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

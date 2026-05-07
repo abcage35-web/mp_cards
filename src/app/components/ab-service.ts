@@ -109,6 +109,7 @@ export interface ComparisonRow {
   after: string;
   deltaText: string;
   deltaKind: string;
+  deltaValue?: number | null;
 }
 
 export interface SummaryChecks {
@@ -145,6 +146,7 @@ export interface TestCard {
   finalStatusKind: string;
   summaryChecks: SummaryChecks;
   xwaySummaryChecks?: SummaryChecks | null;
+  xwayComparisonRows?: ComparisonRow[] | null;
   variants: Variant[];
   priceDeviationCount: string;
   comparisonRows: ComparisonRow[];
@@ -657,7 +659,7 @@ function abBuildTimelineMetricRow(label: string, beforeValue: number | null, dur
   const deltaValue = canCalculateDelta ? Number(afterValue) / Number(beforeValue) - 1 : null;
   const deltaText = Number.isFinite(deltaValue) ? abFormatSignedPercentFraction(deltaValue, 0) : "—";
   const deltaKind = Number.isFinite(deltaValue) ? (deltaValue! > 0 ? "good" : deltaValue! < 0 ? "bad" : "neutral") : "unknown";
-  return { label, before, during, after, deltaText, deltaKind };
+  return { label, before, during, after, deltaText, deltaKind, deltaValue };
 }
 
 function abCountPriceTransitions(...valuesRaw: (number | null)[]) {
@@ -1332,6 +1334,54 @@ export async function fetchXwayPayload(
   }
 
   throw lastError || new Error("Не удалось получить данные XWAY.");
+}
+
+function abFormatXwayComparisonMetricValue(row: XwayMetricRow | null, valueRaw: number | null | undefined): string {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) return "—";
+  const key = String(row?.key || "").trim();
+  const kind = String(row?.kind || "").trim();
+  if (key === "views") return abFormatInt(value);
+  if (key === "bid") return abFormatInt(value);
+  if (key === "crf100") return abFormatFractionToPercent(abSafeDivide(value, 100), 2);
+  if (kind === "percent") return abFormatFractionToPercent(value, 2);
+  return abFormatInt(value);
+}
+
+function abBuildXwayComparisonMetricRow(label: string, row: XwayMetricRow | null): ComparisonRow {
+  const deltaValue = Number(row?.delta);
+  const preparedDelta = Number.isFinite(deltaValue) ? deltaValue : null;
+  return {
+    label,
+    before: abFormatXwayComparisonMetricValue(row, row?.before ?? null),
+    during: abFormatXwayComparisonMetricValue(row, row?.during ?? null),
+    after: abFormatXwayComparisonMetricValue(row, row?.after ?? null),
+    deltaText: Number.isFinite(preparedDelta) ? abFormatSignedPercentFraction(preparedDelta, 0) : "—",
+    deltaKind: Number.isFinite(preparedDelta) ? (preparedDelta! > 0 ? "good" : preparedDelta! < 0 ? "bad" : "neutral") : "unknown",
+    deltaValue: preparedDelta,
+  };
+}
+
+export function abBuildXwayComparisonRowsFromPayload(
+  payload: XwayPayload | null | undefined,
+  fallbackRows: ComparisonRow[] = [],
+): ComparisonRow[] {
+  const fallbackPriceRows = (Array.isArray(fallbackRows) ? fallbackRows : []).filter((row) => {
+    const label = String(row?.label || "").trim();
+    return label === "Цена" || label === "Откл. цены";
+  });
+  const rowMap = new Map((Array.isArray(payload?.metrics) ? payload!.metrics : []).map((row) => [String(row.key || ""), row]));
+  const metricRows = [
+    ["Ставка", "bid"],
+    ["Показы", "views"],
+    ["CTR", "ctr"],
+    ["CR1", "cr1"],
+    ["CR2", "cr2"],
+    ["CTR*CR1", "ctrCr1"],
+    ["CRF x 100", "crf100"],
+  ].map(([label, key]) => abBuildXwayComparisonMetricRow(label, rowMap.get(key) || null));
+
+  return [...fallbackPriceRows, ...metricRows];
 }
 
 function abNormalizeXwayVariantStatus(statusRaw: unknown) {
