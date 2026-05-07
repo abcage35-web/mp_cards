@@ -1016,6 +1016,21 @@ export interface XwayTotals {
   bid?: number | null;
 }
 
+export interface XwayVariantStat {
+  url?: string;
+  views?: number | null;
+  clicks?: number | null;
+  spend?: number | null;
+  ctr?: number | null;
+  ctrToAvg?: number | null;
+  ctrToMax?: number | null;
+  avgCtr?: number | null;
+  status?: string;
+  dateStart?: string;
+  main?: boolean;
+  sortIndex?: number | null;
+}
+
 export interface XwayPayload {
   ok: true;
   source: "xway";
@@ -1047,19 +1062,7 @@ export interface XwayPayload {
     launchStatus?: string;
     status?: string;
   };
-  variantStats?: Array<{
-    url?: string;
-    views?: number | null;
-    clicks?: number | null;
-    spend?: number | null;
-    ctr?: number | null;
-    ctrToAvg?: number | null;
-    ctrToMax?: number | null;
-    avgCtr?: number | null;
-    status?: string;
-    dateStart?: string;
-    main?: boolean;
-  }>;
+  variantStats?: XwayVariantStat[];
   matchedCampaigns?: {
     before?: XwayMatchedCampaign[];
     during?: XwayMatchedCampaign[];
@@ -1198,24 +1201,67 @@ export async function fetchXwayPayload(
   throw lastError || new Error("Не удалось получить данные XWAY.");
 }
 
+function abNormalizeXwayVariantStatus(statusRaw: unknown) {
+  return String(statusRaw || "").trim().toUpperCase();
+}
+
+function abIsPendingXwayVariantStatus(statusRaw: unknown) {
+  const status = abNormalizeXwayVariantStatus(statusRaw);
+  return status === "IN_QUEUE" || status === "PENDING" || status === "WAITING" || status === "CREATED";
+}
+
+function abHasMeasuredXwayVariantCtr(variant: XwayVariantStat | null | undefined) {
+  const ctr = Number(variant?.ctr);
+  if (!Number.isFinite(ctr)) {
+    return false;
+  }
+  const views = Number(variant?.views);
+  return !Number.isFinite(views) || views > 0;
+}
+
+export function calculateXwayVariantCtrBoost(variantsRaw: XwayVariantStat[] | null | undefined) {
+  const variants = (Array.isArray(variantsRaw) ? variantsRaw : []).filter(Boolean);
+  const baseline = variants[0] || null;
+  const baselineCtr = Number(baseline?.ctr);
+  const hasBaselineCtr =
+    Boolean(baseline)
+    && abHasMeasuredXwayVariantCtr(baseline)
+    && Number.isFinite(baselineCtr)
+    && baselineCtr !== 0;
+
+  let bestChallenger: XwayVariantStat | null = null;
+  let bestChallengerCtr = Number.NEGATIVE_INFINITY;
+
+  for (const variant of variants.slice(1)) {
+    if (abIsPendingXwayVariantStatus(variant?.status) || !abHasMeasuredXwayVariantCtr(variant)) {
+      continue;
+    }
+    const ctr = Number(variant?.ctr);
+    if (ctr > bestChallengerCtr) {
+      bestChallengerCtr = ctr;
+      bestChallenger = variant;
+    }
+  }
+
+  const boostCtr =
+    hasBaselineCtr && bestChallenger && Number.isFinite(bestChallengerCtr)
+      ? bestChallengerCtr / baselineCtr - 1
+      : null;
+
+  return {
+    baseline,
+    baselineCtr: hasBaselineCtr ? baselineCtr : null,
+    bestChallenger,
+    bestChallengerCtr: bestChallenger ? bestChallengerCtr : null,
+    boostCtr,
+  };
+}
+
 export function buildXwaySummaryChecksFromPayload(
   test: Pick<TestCard, "summaryChecks">,
   payload: XwayPayload,
 ): SummaryChecks {
-  const variants = Array.isArray(payload?.variantStats) ? payload.variantStats : [];
-  const baseline =
-    variants.find((item) => item?.main)
-    || variants.find((item) => Number.isFinite(Number(item?.ctr)))
-    || variants[0]
-    || null;
-  const baselineCtr = Number(baseline?.ctr);
-  const bestCtr = variants.reduce((max, item) => {
-    const ctr = Number(item?.ctr);
-    return Number.isFinite(ctr) && ctr > max ? ctr : max;
-  }, Number.NEGATIVE_INFINITY);
-  const ctrRaw = abResolveCtrDecisionRaw(
-    Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr) ? bestCtr / baselineCtr - 1 : null,
-  );
+  const ctrRaw = abResolveCtrDecisionRaw(calculateXwayVariantCtrBoost(payload?.variantStats).boostCtr);
   const priceRaw = String(test?.summaryChecks?.testPrice || "").trim() || "?";
   const rows = Array.isArray(payload?.metrics) ? payload.metrics : [];
   const ctrCr1Row = rows.find((row) => String(row?.label || "").trim().toUpperCase() === "CTR*CR1");

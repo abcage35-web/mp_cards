@@ -366,6 +366,31 @@ function resolveVariantImageUrl(item) {
   return "";
 }
 
+function resolveVariantSortIndex(source, fallback, fallbackSortIndex) {
+  const candidates = [
+    source?.sort_index,
+    source?.sortIndex,
+    source?.position,
+    source?.order,
+    source?.index,
+    fallback?.sort_index,
+    fallback?.sortIndex,
+    fallback?.position,
+    fallback?.order,
+    fallback?.index,
+    fallbackSortIndex,
+  ];
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function normalizeVariantStats(statsRaw, imagesRaw) {
   const stats = Array.isArray(statsRaw) ? statsRaw : [];
   const images = Array.isArray(imagesRaw) ? imagesRaw : [];
@@ -373,15 +398,17 @@ function normalizeVariantStats(statsRaw, imagesRaw) {
   const indexByKey = new Map();
   let blankCounter = 0;
 
-  const ensureVariant = (source, fallback = {}) => {
+  const ensureVariant = (source, fallback = {}, fallbackSortIndex = null) => {
     const url = resolveVariantImageUrl(source) || resolveVariantImageUrl(fallback);
     const key = url || `blank-${blankCounter += 1}`;
     let index = indexByKey.get(key);
+    const sortIndex = resolveVariantSortIndex(source, fallback, fallbackSortIndex);
 
     if (index === undefined) {
       index = variants.length;
       indexByKey.set(key, index);
       variants.push({
+        sortIndex,
         url,
         views: null,
         clicks: null,
@@ -407,7 +434,9 @@ function normalizeVariantStats(statsRaw, imagesRaw) {
     const status = String(source?.status || fallback?.status || target.status || "").trim();
     const dateStart = String(source?.date_start || fallback?.date_start || target.dateStart || "").trim();
 
+    const currentSortIndex = Number(target.sortIndex);
     target.url = url || target.url;
+    target.sortIndex = Number.isFinite(currentSortIndex) && currentSortIndex > 0 ? target.sortIndex : sortIndex;
     target.views = Number.isFinite(views) ? views : target.views;
     target.clicks = Number.isFinite(clicks) ? clicks : target.clicks;
     target.spend = Number.isFinite(spend) ? spend : target.spend;
@@ -420,15 +449,22 @@ function normalizeVariantStats(statsRaw, imagesRaw) {
     target.main = Boolean(source?.main || fallback?.main || target.main);
   };
 
-  for (const item of images) {
-    ensureVariant(item);
+  for (const [index, item] of images.entries()) {
+    ensureVariant(item, {}, index + 1);
   }
 
-  for (const item of stats) {
-    ensureVariant(item);
+  for (const [index, item] of stats.entries()) {
+    ensureVariant(item, {}, index + 1);
   }
 
-  return variants;
+  return variants.sort((a, b) => {
+    const aIndex = Number(a?.sortIndex);
+    const bIndex = Number(b?.sortIndex);
+    if (Number.isFinite(aIndex) && Number.isFinite(bIndex) && aIndex !== bIndex) {
+      return aIndex - bIndex;
+    }
+    return 0;
+  });
 }
 
 export async function onRequestGet(context) {
