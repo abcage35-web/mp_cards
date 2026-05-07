@@ -10,6 +10,7 @@ import {
   type Filters,
   type TestCard,
 } from "./ab-service";
+import { CopyXwayArticlesButton } from "./CopyXwayArticlesButton";
 
 type ChartMode = "bars" | "pies";
 type XwayStatus = "idle" | "loading" | "ready" | "error";
@@ -71,6 +72,7 @@ export function XwayFunnelDashboard({
           : `Готово: ${abFormatInt(xwayProgress.ready)}`;
   const xwayRefreshDisabled = xwayTotal === 0 || xwayProgress.loading > 0;
   const xwayErrorRefreshDisabled = xwayProgress.errors === 0 || xwayProgress.loading > 0;
+  const xwayCopyDisabled = xwayProgress.loading > 0 || xwayProgress.idle > 0;
 
   return (
     <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-5 shadow-sm">
@@ -140,6 +142,8 @@ export function XwayFunnelDashboard({
           <span className="inline-flex items-center h-7 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-[12px] text-slate-500 dark:text-slate-400" style={{ fontWeight: 600 }}>
             {xwayStatusText}
           </span>
+
+          <CopyXwayArticlesButton tests={filteredTests} disabled={xwayCopyDisabled} />
 
           <button
             type="button"

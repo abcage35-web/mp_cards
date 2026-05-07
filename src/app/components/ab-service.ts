@@ -1010,6 +1010,31 @@ export function abStageMatches(test: TestCard, stageKey: string, sourceKey = "ex
   return abIsGoodStatus(abGetSummaryStageRaw(checks, stageKey));
 }
 
+function abExtractWbArticleFromUrl(urlRaw: unknown): string {
+  const value = String(urlRaw || "").trim();
+  if (!value) return "";
+  const catalogMatch = value.match(/\/catalog\/(\d+)\//i);
+  if (catalogMatch?.[1]) return catalogMatch[1];
+  const nmMatch = value.match(/[?&]nm=(\d+)/i);
+  return nmMatch?.[1] || "";
+}
+
+export function abGetWbArticleFromTest(test: Pick<TestCard, "article" | "wbUrl">): string {
+  const urlArticle = abExtractWbArticleFromUrl(test?.wbUrl);
+  if (urlArticle) return urlArticle;
+  const article = String(test?.article || "").trim();
+  if (/^\d+$/.test(article)) return article;
+  return "";
+}
+
+export function abGetXwayOverallPassedWbArticles(testsRaw: TestCard[]): string[] {
+  const tests = Array.isArray(testsRaw) ? testsRaw : [];
+  return tests
+    .filter((test) => abStageMatches(test, "overall", "xway"))
+    .map(abGetWbArticleFromTest)
+    .filter(Boolean);
+}
+
 function abBuildFunnelCard(
   cardLabel: string,
   tests: TestCard[],
