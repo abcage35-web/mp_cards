@@ -615,8 +615,8 @@
 
 Логика:
 
-- baseline = базовая обложка / main;
-- bestCtr = лучший CTR среди вариантов;
+- baseline = исходная обложка, то есть вариант 1;
+- bestCtr = лучший измеренный CTR среди вариантов 2-N;
 - если `bestCtr > baselineCtr`, то `WIN`, иначе `LOOSE`.
 
 #### 2. `testPrice`

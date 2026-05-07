@@ -1003,23 +1003,57 @@ function getAbExportSummaryChecks(testIdRaw) {
   };
 }
 
+function isAbXwayPendingVariantStatus(statusRaw) {
+  const status = String(statusRaw || "").trim().toUpperCase();
+  return status === "IN_QUEUE" || status === "PENDING" || status === "WAITING" || status === "CREATED";
+}
+
+function hasMeasuredAbXwayVariantCtr(row) {
+  const ctr = Number(row?.ctr);
+  if (!Number.isFinite(ctr)) {
+    return false;
+  }
+  const views = Number(row?.views);
+  return !Number.isFinite(views) || views > 0;
+}
+
+function getAbXwayVariantCtrSummary(variantStatsRaw) {
+  const variants = Array.isArray(variantStatsRaw) ? variantStatsRaw.filter(Boolean) : [];
+  const baseline = variants[0] || null;
+  const baselineCtr = Number(baseline?.ctr);
+  const hasBaselineCtr =
+    Boolean(baseline)
+    && hasMeasuredAbXwayVariantCtr(baseline)
+    && Number.isFinite(baselineCtr)
+    && baselineCtr !== 0;
+
+  let bestChallengerCtr = Number.NEGATIVE_INFINITY;
+  for (const row of variants.slice(1)) {
+    if (isAbXwayPendingVariantStatus(row?.status) || !hasMeasuredAbXwayVariantCtr(row)) {
+      continue;
+    }
+    const ctr = Number(row?.ctr);
+    if (ctr > bestChallengerCtr) {
+      bestChallengerCtr = ctr;
+    }
+  }
+
+  return {
+    boostCtr:
+      hasBaselineCtr && Number.isFinite(bestChallengerCtr)
+        ? bestChallengerCtr / baselineCtr - 1
+        : null,
+  };
+}
+
 function getAbXwaySummaryChecks(testIdRaw, payload) {
   const exportChecks = getAbExportSummaryChecks(testIdRaw);
   const priceRaw = String(exportChecks?.price || "").trim();
   const variantStats = Array.isArray(payload?.variantStats) ? payload.variantStats : [];
-  const baseline =
-    variantStats.find((row) => row?.main)
-    || variantStats.find((row) => Number.isFinite(Number(row?.ctr)))
-    || variantStats[0]
-    || null;
-  const baselineCtr = Number(baseline?.ctr);
-  const bestCtr = variantStats.reduce((max, row) => {
-    const ctr = Number(row?.ctr);
-    return Number.isFinite(ctr) && ctr > max ? ctr : max;
-  }, Number.NEGATIVE_INFINITY);
+  const ctrSummary = getAbXwayVariantCtrSummary(variantStats);
   const ctrRaw =
-    Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr)
-      ? bestCtr / baselineCtr - 1 > 0
+    Number.isFinite(ctrSummary.boostCtr)
+      ? ctrSummary.boostCtr > 0
         ? "WIN"
         : "LOOSE"
       : "?";

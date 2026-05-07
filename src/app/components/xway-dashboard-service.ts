@@ -4,6 +4,7 @@ import {
   abGetCurrentMonthRange,
   abNormalizeStatus,
   buildXwaySummaryChecksFromPayload,
+  calculateXwayVariantCtrBoost,
   loadAbDashboardData,
   type ComparisonRow,
   type DashboardModel,
@@ -585,14 +586,6 @@ function isActiveVariantStatus(statusRaw: string) {
   return status === "LAUNCHED" || status === "ACTIVE" || status === "RUNNING";
 }
 
-function getVariantStatusOrder(statusRaw: string) {
-  const status = normalizeVariantStatus(statusRaw);
-  if (status === "DONE" || status === "TESTED" || status === "COMPLETED") return 0;
-  if (status === "LAUNCHED" || status === "ACTIVE" || status === "RUNNING") return 1;
-  if (status === "IN_QUEUE" || status === "PENDING" || status === "WAITING" || status === "CREATED") return 2;
-  return 3;
-}
-
 function buildSheetPriceMetrics(snapshot: XwaySheetPriceSnapshot | null | undefined) {
   const priceRow = snapshot?.rows?.find((row) => String(row.label || "").trim() === "Цена");
   const priceBefore = parseDisplayNumber(priceRow?.before || "");
@@ -653,6 +646,7 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
     status?: string;
     dateStart?: string;
     main?: boolean;
+    sortIndex?: number | null;
   }> = [];
 
   const pushVariant = (item: {
@@ -663,6 +657,7 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
     status?: string;
     dateStart?: string;
     main?: boolean;
+    sortIndex?: number | null;
   }) => {
     const url = String(item.url || "").trim();
     if (!url) return;
@@ -680,22 +675,24 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
     return test.variants;
   }
 
-  const ordered = combined.map((item) => ({
+  const ordered = combined.map((item, index) => ({
     ...item,
-    dateMs: item.dateStart ? new Date(item.dateStart).getTime() : 0,
+    originalIndex: index,
+    sortIndexValue: Number.isFinite(Number(item.sortIndex)) ? Number(item.sortIndex) : index + 1,
   }))
     .sort((a, b) => {
-      const orderDiff = getVariantStatusOrder(String(a.status || "")) - getVariantStatusOrder(String(b.status || ""));
+      const orderDiff = a.sortIndexValue - b.sortIndexValue;
       if (orderDiff !== 0) return orderDiff;
-      return 0;
+      return a.originalIndex - b.originalIndex;
     });
-  const baseline = ordered.find((item) => item.main) || ordered.find((item) => Number.isFinite(item.ctr)) || ordered[0];
+  const baseline = ordered[0] || null;
   const baselineCtr = Number(baseline?.ctr);
-  const bestCtr = ordered.reduce((max, item) => {
+  const bestCtr = ordered.slice(1).reduce((max, item) => {
     if (isPendingVariantStatus(String(item.status || ""))) return max;
     const ctr = Number(item.ctr);
     const views = Number(item.views);
-    return Number.isFinite(ctr) && Number.isFinite(views) && views > 0 && ctr > max ? ctr : max;
+    const hasMeasuredCtr = Number.isFinite(ctr) && (!Number.isFinite(views) || views > 0);
+    return hasMeasuredCtr && ctr > max ? ctr : max;
   }, Number.NEGATIVE_INFINITY);
   const fallbackEndMs = test.endedAtIso ? new Date(test.endedAtIso).getTime() : Date.now();
 
@@ -713,7 +710,7 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
     const ctrValue = Number(item.ctr);
     const installedAtIso = !isPending && Number.isFinite(currentMs) && currentMs > 0 && currentMs <= fallbackEndMs ? String(item.dateStart || "").trim() : "";
     const installedAt = formatVariantDateTime(installedAtIso);
-    const ctrBoostValue = item !== baseline && !isPending && Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(ctrValue)
+    const ctrBoostValue = index > 0 && !isPending && Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(ctrValue)
       ? ctrValue / baselineCtr - 1
       : null;
 
@@ -730,7 +727,7 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
       installedAtDate: installedAt.date,
       installedAtTime: installedAt.time,
       hours: formatHours(hoursValue),
-      isBest: Number.isFinite(bestCtr) && Number.isFinite(ctrValue) && Math.abs(ctrValue - bestCtr) <= 1e-9,
+      isBest: index > 0 && Number.isFinite(bestCtr) && Number.isFinite(ctrValue) && Math.abs(ctrValue - bestCtr) <= 1e-9,
       ctrBoostValue,
       ctrBoostText: Number.isFinite(ctrBoostValue) ? formatSignedPercentFraction(ctrBoostValue, 0) : "",
       ctrBoostKind:
@@ -751,17 +748,12 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
 function buildXwaySummaryChecks(payload: XwayPayload, sheetPrice: XwaySheetPriceSnapshot | null): {
   checks: SummaryChecks;
   boostCtr: number | null;
+  baselineCtr: number | null;
+  bestCtr: number | null;
   ctrCr1Delta: number | null;
   priceDeltas: ReturnType<typeof buildPriceDeltaMetrics>;
 } {
-  const variants = Array.isArray(payload.variantStats) ? payload.variantStats : [];
-  const baseline = variants.find((item) => item.main) || variants.find((item) => Number.isFinite(Number(item.ctr))) || variants[0];
-  const baselineCtr = Number(baseline?.ctr);
-  const bestCtr = variants.reduce((max, item) => {
-    const ctr = Number(item?.ctr);
-    return Number.isFinite(ctr) && ctr > max ? ctr : max;
-  }, Number.NEGATIVE_INFINITY);
-  const boostCtr = Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(bestCtr) ? bestCtr / baselineCtr - 1 : null;
+  const ctrSummary = calculateXwayVariantCtrBoost(payload.variantStats);
   const ctrCr1Delta = payload.metrics?.find((row) => String(row.label || "").trim().toUpperCase() === "CTR*CR1")?.delta ?? null;
   const { priceDeltas } = buildSheetPriceMetrics(sheetPrice);
   const priceDecisionRaw = String(sheetPrice?.priceDecisionRaw || "?").trim() || "?";
@@ -779,7 +771,9 @@ function buildXwaySummaryChecks(payload: XwayPayload, sheetPrice: XwaySheetPrice
 
   return {
     checks,
-    boostCtr,
+    boostCtr: ctrSummary.boostCtr,
+    baselineCtr: ctrSummary.baselineCtr,
+    bestCtr: ctrSummary.bestChallengerCtr,
     ctrCr1Delta: Number.isFinite(Number(ctrCr1Delta)) ? Number(ctrCr1Delta) : null,
     priceDeltas,
   };
@@ -804,19 +798,15 @@ function buildComparisonRows(payload: XwayPayload, sheetPrice: XwaySheetPriceSna
 function buildReportLines(
   payload: XwayPayload,
   boostCtr: number | null,
+  baselineCtr: number | null,
+  bestCtr: number | null,
   ctrCr1Delta: number | null,
   priceDeltas: ReturnType<typeof buildPriceDeltaMetrics>,
 ) {
-  const baseline = Array.isArray(payload.variantStats) ? payload.variantStats.find((item) => item.main) || payload.variantStats[0] : null;
-  const bestCtr = (Array.isArray(payload.variantStats) ? payload.variantStats : []).reduce((max, item) => {
-    const ctr = Number(item?.ctr);
-    return Number.isFinite(ctr) && ctr > max ? ctr : max;
-  }, Number.NEGATIVE_INFINITY);
-
   return [
     `Буст CTR: ${formatFractionToPercent(boostCtr, 0)}`,
-    `CTR базовой обложки: ${formatFractionToPercent(Number.isFinite(Number(baseline?.ctr)) ? Number(baseline?.ctr) : null, 2)}`,
-    `Лучший CTR: ${formatFractionToPercent(Number.isFinite(bestCtr) ? bestCtr : null, 2)}`,
+    `CTR исходной обложки: ${formatFractionToPercent(baselineCtr, 2)}`,
+    `Лучший CTR обложек 2-N: ${formatFractionToPercent(bestCtr, 2)}`,
     " ",
     `Буст CTR*CR1: ${formatFractionToPercent(ctrCr1Delta, 0)}`,
     `CTR*CR1 до: ${formatFractionToPercent(payload.metrics?.find((row) => row.key === "ctrCr1")?.before ?? null, 2)}`,
@@ -839,8 +829,8 @@ export function buildXwayDashboardPatch(test: XwayDashboardTest, payload: XwayPa
   };
   const variants = buildVariantCards(test, payload);
   const comparisonRows = buildComparisonRows(payload, sheetPrice);
-  const { checks, boostCtr, ctrCr1Delta, priceDeltas } = buildXwaySummaryChecks(payload, sheetPrice);
-  const reportLines = buildReportLines(payload, boostCtr, ctrCr1Delta, priceDeltas);
+  const { checks, boostCtr, baselineCtr, bestCtr, ctrCr1Delta, priceDeltas } = buildXwaySummaryChecks(payload, sheetPrice);
+  const reportLines = buildReportLines(payload, boostCtr, baselineCtr, bestCtr, ctrCr1Delta, priceDeltas);
   const overallRaw = String(checks.overall || "").trim();
   const finalStatusRaw = overallRaw && overallRaw !== "?" ? overallRaw : "?";
   const finalStatusKind = overallRaw && overallRaw !== "?"
