@@ -3,7 +3,11 @@ import { RefreshCw, Database, AlertTriangle, Loader2 } from "lucide-react";
 
 import {
   AB_TEST_LIMIT_OPTIONS,
+  AB_XWAY_BATCH_CONCURRENCY,
   AB_XWAY_ERROR_CACHE_TTL_MS,
+  AB_XWAY_ERROR_RETRY_REQUEST_DELAY_MS,
+  AB_XWAY_ERROR_RETRY_RETRIES,
+  AB_XWAY_ERROR_RETRY_START_DELAY_MS,
   abBuildDateRangeFromMonthKeys,
   abBuildSourceMetaText,
   abFilterTests,
@@ -64,6 +68,10 @@ interface ProductSnapshotMeta {
   article: string;
   shopId: number;
   productId: number;
+}
+
+function waitForXwayRetry(durationMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(durationMs) || 0)));
 }
 
 interface XwayProductSnapshot {
@@ -319,7 +327,7 @@ export function DashboardPage() {
     });
   }, []);
 
-  const resolveXwayForTest = useCallback(async (test: TestCard, options: { force?: boolean } = {}) => {
+  const resolveXwayForTest = useCallback(async (test: TestCard, options: { force?: boolean; retries?: number } = {}) => {
     const meta = buildXwayRequestMeta(test);
     if (!meta.testId) {
       return {
@@ -347,7 +355,7 @@ export function DashboardPage() {
       return inflight;
     }
 
-    const task = fetchXwayPayload(meta, { force: options.force })
+    const task = fetchXwayPayload(meta, { force: options.force, retries: options.retries })
       .then((payload) => {
         const checks = buildXwaySummaryChecksFromPayload(test, payload);
         const result: XwayResolvedResult = {
@@ -376,16 +384,16 @@ export function DashboardPage() {
     return task;
   }, []);
 
-  const hydrateXwayForTests = useCallback(async (testsRaw: TestCard[], options: { force?: boolean; reset?: boolean } = {}) => {
-    const queue = testsRaw
+  const hydrateXwayForTests = useCallback(async (testsRaw: TestCard[], options: { force?: boolean; reset?: boolean; retryErrors?: boolean } = {}) => {
+    const targetItems = testsRaw
       .map((test) => ({ test, meta: buildXwayRequestMeta(test) }))
       .filter((item) => item.meta.testId);
 
-    if (!queue.length) return;
+    if (!targetItems.length) return;
 
-    const targetIds = new Set(queue.map((item) => item.test.testId));
+    const targetIds = new Set(targetItems.map((item) => item.test.testId));
     if (options.reset) {
-      for (const item of queue) {
+      for (const item of targetItems) {
         xwayCacheRef.current.delete(buildXwayRequestKey(item.meta));
       }
       startTransition(() => {
@@ -405,38 +413,75 @@ export function DashboardPage() {
       });
     }
 
-    setXwayStatusByTestId((current) => {
-      const next = { ...current };
-      let changed = false;
-      for (const item of queue) {
-        const previous = next[item.test.testId];
-        if (previous?.status === "loading" && !options.force) continue;
-        next[item.test.testId] = {
-          status: "loading",
-          error: "",
-          updatedAt: Date.now(),
-        };
-        changed = true;
-      }
-      return changed ? next : current;
-    });
-
-    const worker = async () => {
-      while (queue.length) {
-        const item = queue.shift();
-        if (!item) return;
-        const result = await resolveXwayForTest(item.test, { force: options.force });
-        if (result.status === "ready") {
-          applyXwayChecksToModel(item.test.testId, result.checks, result.payload);
-          updateXwayStatus(item.test.testId, "ready");
-        } else {
-          applyXwayChecksToModel(item.test.testId, null);
-          updateXwayStatus(item.test.testId, "error", result.error);
+    const markItemsLoading = (items: typeof targetItems, forceLoading = false) => {
+      setXwayStatusByTestId((current) => {
+        const next = { ...current };
+        let changed = false;
+        for (const item of items) {
+          const previous = next[item.test.testId];
+          if (previous?.status === "loading" && !forceLoading) continue;
+          next[item.test.testId] = {
+            status: "loading",
+            error: "",
+            updatedAt: Date.now(),
+          };
+          changed = true;
         }
-      }
+        return changed ? next : current;
+      });
     };
 
-    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, () => worker()));
+    const runQueue = async (
+      items: typeof targetItems,
+      runOptions: { force?: boolean; retries?: number; concurrency?: number; requestDelayMs?: number } = {},
+    ) => {
+      const queue = [...items];
+      const failedItems: typeof targetItems = [];
+      const worker = async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          if (!item) return;
+          if (runOptions.requestDelayMs) {
+            await waitForXwayRetry(runOptions.requestDelayMs);
+          }
+          const result = await resolveXwayForTest(item.test, {
+            force: runOptions.force,
+            retries: runOptions.retries,
+          });
+          if (result.status === "ready") {
+            applyXwayChecksToModel(item.test.testId, result.checks, result.payload);
+            updateXwayStatus(item.test.testId, "ready");
+          } else {
+            failedItems.push(item);
+            applyXwayChecksToModel(item.test.testId, null);
+            updateXwayStatus(item.test.testId, "error", result.error);
+          }
+        }
+      };
+      const concurrency = Math.max(1, Math.min(Math.round(Number(runOptions.concurrency) || 1), queue.length));
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+      return failedItems;
+    };
+
+    markItemsLoading(targetItems, Boolean(options.force));
+    const failedItems = await runQueue(targetItems, {
+      force: options.force,
+      concurrency: AB_XWAY_BATCH_CONCURRENCY,
+    });
+
+    if (options.retryErrors !== false && failedItems.length) {
+      await waitForXwayRetry(AB_XWAY_ERROR_RETRY_START_DELAY_MS);
+      for (const item of failedItems) {
+        xwayCacheRef.current.delete(buildXwayRequestKey(item.meta));
+      }
+      markItemsLoading(failedItems, true);
+      await runQueue(failedItems, {
+        force: true,
+        retries: AB_XWAY_ERROR_RETRY_RETRIES,
+        concurrency: 1,
+        requestDelayMs: AB_XWAY_ERROR_RETRY_REQUEST_DELAY_MS,
+      });
+    }
   }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus]);
 
   const loadData = useCallback(async () => {
@@ -606,6 +651,11 @@ export function DashboardPage() {
   const handleRefreshFilteredXway = useCallback(async () => {
     await hydrateXwayForTests(filteredTestsRef.current, { force: true, reset: true });
   }, [hydrateXwayForTests]);
+
+  const handleRefreshErroredXway = useCallback(async () => {
+    const erroredTests = filteredTestsRef.current.filter((test) => xwayStatusByTestId[test.testId]?.status === "error");
+    await hydrateXwayForTests(erroredTests, { force: true, reset: true });
+  }, [hydrateXwayForTests, xwayStatusByTestId]);
 
   const handleRefreshSingleXway = useCallback(async (test: TestCard) => {
     const meta = buildXwayRequestMeta(test);
@@ -821,6 +871,7 @@ export function DashboardPage() {
             onStageFilter={handleStageFilter}
             xwayStatusByTestId={xwayStatusByTestId}
             onRefreshXway={handleRefreshFilteredXway}
+            onRefreshXwayErrors={handleRefreshErroredXway}
           />
 
           {showTests ? (

@@ -14,9 +14,10 @@ interface Props {
   onStageFilter: (cabinet: string, stage: string, source: string) => void;
   xwayStatusByTestId: Record<string, { status: XwayStatus; error?: string }>;
   onRefreshXway: () => void;
+  onRefreshXwayErrors: () => void;
 }
 
-export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwayStatusByTestId, onRefreshXway }: Props) {
+export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwayStatusByTestId, onRefreshXway, onRefreshXwayErrors }: Props) {
   const [chartMode, setChartMode] = useState<ChartMode>("pies");
   const [groupByIp, setGroupByIp] = useState(true);
 
@@ -65,6 +66,7 @@ export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwaySta
           ? `Готово: ${abFormatInt(xwayProgress.ready)} · ошибки: ${abFormatInt(xwayProgress.errors)}`
           : `Готово: ${abFormatInt(xwayProgress.ready)}`;
   const xwayRefreshDisabled = xwayTotal === 0 || xwayProgress.loading > 0;
+  const xwayErrorRefreshDisabled = xwayProgress.errors === 0 || xwayProgress.loading > 0;
 
   return (
     <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-5 shadow-sm">
@@ -166,6 +168,19 @@ export function FunnelDashboard({ filteredTests, filters, onStageFilter, xwaySta
                 <RefreshCw className={`w-3.5 h-3.5 ${xwayProgress.loading > 0 ? "animate-spin" : ""}`} />
                 Обновить XWAY
               </button>
+              {xwayProgress.errors > 0 ? (
+                <button
+                  type="button"
+                  onClick={onRefreshXwayErrors}
+                  disabled={xwayErrorRefreshDisabled}
+                  title="Повторить только тесты со статусом ошибки"
+                  className="h-8 px-3 rounded-xl border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-[12px] inline-flex items-center gap-1.5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:border-amber-300 transition-all disabled:cursor-wait disabled:opacity-70"
+                  style={{ fontWeight: 600 }}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${xwayProgress.loading > 0 ? "animate-spin" : ""}`} />
+                  Обновить ошибки
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

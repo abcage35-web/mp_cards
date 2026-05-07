@@ -8,6 +8,10 @@ export const AB_XWAY_ERROR_CACHE_TTL_MS = 60_000;
 export const AB_XWAY_REQUEST_RETRIES = 2;
 export const AB_XWAY_REQUEST_RETRY_DELAY_MS = 500;
 export const AB_XWAY_REQUEST_TIMEOUT_MS = 45_000;
+export const AB_XWAY_BATCH_CONCURRENCY = 2;
+export const AB_XWAY_ERROR_RETRY_RETRIES = 4;
+export const AB_XWAY_ERROR_RETRY_START_DELAY_MS = 1_500;
+export const AB_XWAY_ERROR_RETRY_REQUEST_DELAY_MS = 700;
 
 const AB_DASHBOARD_SOURCE_SHEETS: Record<string, { gid: string; label: string }> = {
   catalog: { gid: "795894762", label: "Каталог товаров" },
