@@ -885,6 +885,89 @@ function pickStatePayload(...payloadsRaw) {
   return best;
 }
 
+function getPayloadRows(payloadRaw) {
+  const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
+  return Array.isArray(payload.rows) ? payload.rows : [];
+}
+
+function getPayloadRowMergeKey(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const nmId = String(row.nmId || row.nm_id || "").trim();
+  if (nmId) {
+    return `nm:${nmId}`;
+  }
+  const rowId = String(row.id || row.rowId || "").trim();
+  return rowId ? `id:${rowId}` : "";
+}
+
+function isBareLocalAddedRow(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  if (!getPayloadRowMergeKey(row)) {
+    return false;
+  }
+  if (row.data && typeof row.data === "object") {
+    return false;
+  }
+  if (String(row.error || "").trim()) {
+    return false;
+  }
+  if (String(row.updatedAt || "").trim()) {
+    return false;
+  }
+  if (Array.isArray(row.updateLogs) && row.updateLogs.length > 0) {
+    return false;
+  }
+  return true;
+}
+
+function mergeRemotePayloadWithLocalAdditions(remotePayloadRaw, ...localPayloadsRaw) {
+  const remotePayload = remotePayloadRaw && typeof remotePayloadRaw === "object" ? remotePayloadRaw : null;
+  if (!remotePayload) {
+    return null;
+  }
+
+  const remoteRows = getPayloadRows(remotePayload);
+  if (remoteRows.length <= 0) {
+    return pickStatePayload(remotePayload, ...localPayloadsRaw) || remotePayload;
+  }
+
+  const seen = new Set();
+  remoteRows.forEach((row) => {
+    const key = getPayloadRowMergeKey(row);
+    if (key) {
+      seen.add(key);
+    }
+  });
+
+  const localPayloads = localPayloadsRaw
+    .filter((payload) => getPayloadRowsCount(payload) > 0)
+    .sort((left, right) => getStatePayloadSavedAtMs(right) - getStatePayloadSavedAtMs(left));
+  const additions = [];
+
+  for (const payload of localPayloads) {
+    for (const row of getPayloadRows(payload)) {
+      const key = getPayloadRowMergeKey(row);
+      if (!key || seen.has(key) || !isBareLocalAddedRow(row)) {
+        continue;
+      }
+      seen.add(key);
+      additions.push({
+        ...(row && typeof row === "object" ? row : {}),
+        updateLogs: [],
+      });
+    }
+  }
+
+  if (additions.length <= 0) {
+    return remotePayload;
+  }
+
+  return {
+    ...remotePayload,
+    rows: [...remoteRows, ...additions],
+  };
+}
+
 function getPayloadRowsCount(payload) {
   if (!payload || typeof payload !== "object") {
     return 0;
@@ -1066,15 +1149,19 @@ async function restoreState(options = {}) {
     if (remotePayload && typeof remotePayload === "object") {
       const nonEmptyShadowPayload = getPayloadRowsCount(shadowPendingPayload) > 0 ? shadowPendingPayload : null;
       const nonEmptyLocalPayload = getPayloadRowsCount(localPayload) > 0 ? localPayload : null;
-      const selectedPayload = pickStatePayload(remotePayload, nonEmptyShadowPayload, nonEmptyLocalPayload);
+      const appliedPayload =
+        mergeRemotePayloadWithLocalAdditions(remotePayload, nonEmptyShadowPayload, nonEmptyLocalPayload) ||
+        remotePayload;
       try {
-        applyParsedState(selectedPayload || remotePayload);
+        applyParsedState(appliedPayload);
       } catch {
         resetStateToDefaults();
         return;
       }
-      const appliedPayload = selectedPayload || remotePayload;
       persistStateLocalPayload(appliedPayload);
+      if (appliedPayload === remotePayload && typeof clearShadowPendingPayload === "function") {
+        clearShadowPendingPayload();
+      }
       if (
         appliedPayload !== remotePayload &&
         typeof queueCloudStateSync === "function"
