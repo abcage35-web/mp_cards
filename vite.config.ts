@@ -81,7 +81,6 @@ function syncRuntimeFallbackAssets() {
 
   const assetNames = readdirSync(distAssetsPath);
   const runtimeJsAsset = assetNames.filter((assetName) => /^main-.*\.js$/.test(assetName)).sort().at(-1);
-  const plannerJsAsset = assetNames.filter((assetName) => /^planner-.*\.js$/.test(assetName)).sort().at(-1);
   const runtimeCssAsset =
     assetNames.filter((assetName) => /^main-.*\.css$/.test(assetName)).sort().at(-1) ??
     assetNames.filter((assetName) => /\.css$/.test(assetName)).sort().at(-1);
@@ -89,11 +88,6 @@ function syncRuntimeFallbackAssets() {
   if (runtimeJsAsset) {
     syncRuntimeFallbackAsset(`dist/assets/${runtimeJsAsset}`, ["assets/app.js", "dist/assets/app.js"]);
     syncRuntimeFallbackImports(runtimeJsAsset);
-  }
-
-  if (plannerJsAsset) {
-    syncRuntimeFallbackAsset(`dist/assets/${plannerJsAsset}`, ["assets/planner.js", "dist/assets/planner.js"]);
-    syncRuntimeFallbackImports(plannerJsAsset);
   }
 
   if (runtimeCssAsset) {
@@ -163,7 +157,6 @@ function createLocalFunctionsPlugin() {
     ["/api/xway-ab-test", "functions/api/xway-ab-test.js"],
     ["/api/xway-ab-tests", "functions/api/xway-ab-tests.js"],
     ["/api/xway-product-snapshots", "functions/api/xway-product-snapshots.js"],
-    ["/api/planner-state", "functions/api/planner-state.js"],
   ]);
 
   const attachMiddleware = (middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void }) => {
@@ -253,7 +246,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        planner: resolve(__dirname, "planner/index.html"),
         cards: resolve(__dirname, "cards/index.html"),
         abTests: resolve(__dirname, "ab-tests/index.html"),
       },

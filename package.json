@@ -1,15 +1,12 @@
 {
-  "name": "planning",
+  "name": "media-plan",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "publish:planning": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-publish.ps1",
-    "autopublish:planning:start": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-autopublish-start.ps1",
-    "autopublish:planning:stop": "powershell -ExecutionPolicy Bypass -File ./scripts/planning-autopublish-stop.ps1"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -47,7 +44,6 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
-    "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
@@ -55,8 +51,6 @@
     "next-themes": "0.4.6",
     "react": "18.3.1",
     "react-day-picker": "8.10.1",
-    "react-dnd": "16.0.1",
-    "react-dnd-html5-backend": "16.0.1",
     "react-dom": "18.3.1",
     "react-hook-form": "7.55.0",
     "react-popper": "2.3.0",
