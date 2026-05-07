@@ -1,5 +1,6 @@
 import {
   AB_TEST_LIMIT_OPTIONS,
+  abBuildCoverImageSrc,
   abFormatInt,
   abGetCurrentMonthRange,
   abNormalizeStatus,
@@ -200,6 +201,7 @@ function buildPlaceholderVariants(item: XwayAbApiItem, mainImageUrl: string): Va
     return {
       index: index + 1,
       imageUrl,
+      imageSrc: abBuildCoverImageSrc(imageUrl),
       viewsValue: null,
       clicksValue: null,
       ctrValue: null,
@@ -717,6 +719,7 @@ function buildVariantCards(test: XwayDashboardTest, payload: XwayPayload) {
     return {
       index: index + 1,
       imageUrl: String(item.url || "").trim(),
+      imageSrc: abBuildCoverImageSrc(String(item.url || "").trim()),
       viewsValue: Number.isFinite(Number(item.views)) ? Number(item.views) : null,
       clicksValue: Number.isFinite(Number(item.clicks)) ? Number(item.clicks) : null,
       ctrValue: Number.isFinite(ctrValue) ? ctrValue : null,

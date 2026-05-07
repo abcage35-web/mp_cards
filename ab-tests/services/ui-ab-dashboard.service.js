@@ -656,8 +656,14 @@ function abBuildCoverImageSrc(imageUrlRaw) {
   }
 
   try {
-    const url = new URL(imageUrl);
-    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru" && url.pathname.startsWith("/card_s3/")) {
+    const url = new URL(imageUrl.startsWith("//") ? `https:${imageUrl}` : imageUrl);
+    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru") {
+      if (!url.pathname.startsWith("/card_s3/")) {
+        const fileName = url.pathname.split("/").filter(Boolean).pop() || "";
+        if (/\.(?:webp|png|jpe?g|gif|avif)$/i.test(fileName)) {
+          url.pathname = `/card_s3/${fileName}`;
+        }
+      }
       return `/api/ab-cover-image?url=${encodeURIComponent(url.toString())}`;
     }
   } catch {

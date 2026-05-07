@@ -421,6 +421,7 @@ function CoverImage({
   statusRaw: string;
 }) {
   const [preview, setPreview] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const [failedSrc, setFailedSrc] = useState("");
   const linkRef = useRef<HTMLAnchorElement>(null);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -438,6 +439,15 @@ function CoverImage({
   const handleMouseLeave = useCallback(() => {
     setPreview({ visible: false, x: 0, y: 0 });
   }, []);
+  const displaySrc = String(imageSrc || imageUrl || "").trim();
+  const hasImage = Boolean(displaySrc && failedSrc !== displaySrc);
+  const frameClassName = `w-[56px] rounded-md overflow-hidden border-2 transition-all ${
+    isActive
+      ? "border-teal-400 shadow-sm shadow-teal-100"
+      : isBest
+        ? "border-emerald-400 shadow-sm shadow-emerald-100"
+        : "border-slate-200 dark:border-slate-600 hover:border-slate-300"
+  }`;
 
   return (
     <div className="relative">
@@ -461,31 +471,41 @@ function CoverImage({
         </span>
       ) : null}
       {isActive ? <span className="absolute inset-0 rounded-md border-2 border-teal-400/70 animate-pulse pointer-events-none" /> : null}
-      <a
-        ref={linkRef}
-        href={imageUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`block w-[56px] rounded-md overflow-hidden border-2 transition-all ${
-          isActive
-            ? "border-teal-400 shadow-sm shadow-teal-100"
-            : isBest
-              ? "border-emerald-400 shadow-sm shadow-emerald-100"
-              : "border-slate-200 dark:border-slate-600 hover:border-slate-300"
-        }`}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        title={statusRaw || `Обложка ${index}`}
-      >
-        <img src={imageSrc} alt={`Обложка ${index}`} loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover block" />
-      </a>
+      {hasImage ? (
+        <a
+          ref={linkRef}
+          href={imageUrl || displaySrc}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`block ${frameClassName}`}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          title={statusRaw || `Обложка ${index}`}
+        >
+          <img
+            src={displaySrc}
+            alt={`Обложка ${index}`}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedSrc(displaySrc)}
+            className="w-full aspect-[3/4] object-cover block"
+          />
+        </a>
+      ) : (
+        <div
+          className={`flex aspect-[3/4] items-center justify-center bg-slate-50 px-1 text-center text-[9px] leading-tight text-slate-400 dark:bg-slate-800 dark:text-slate-500 ${frameClassName}`}
+          title={statusRaw || `Обложка ${index}`}
+        >
+          Нет обложки
+        </div>
+      )}
       {preview.visible && (
         <div
           className="fixed pointer-events-none z-[10000] transition-opacity duration-150"
           style={{ left: preview.x, top: preview.y, width: 220, transform: "translateX(-50%)", opacity: 1 }}
         >
           <img
-            src={imageSrc}
+            src={displaySrc}
             alt={`Обложка ${index} (увеличенная)`}
             className="w-full aspect-[3/4] object-cover block rounded-2xl border border-slate-200/80 bg-white"
             style={{ boxShadow: "0 22px 44px rgba(16,31,41,0.24), 0 4px 12px rgba(16,31,41,0.16)" }}

@@ -10,6 +10,7 @@ import {
   AB_XWAY_ERROR_RETRY_START_DELAY_MS,
   abBuildDateRangeFromMonthKeys,
   abBuildSourceMetaText,
+  abBuildVariantCardsFromXwayPayload,
   abBuildXwayComparisonRowsFromPayload,
   abFilterTests,
   abFormatInt,
@@ -259,6 +260,26 @@ function areComparisonRowsEqual(a: ComparisonRow[] | null | undefined, b: Compar
   });
 }
 
+function areVariantsEqual(a: TestCard["variants"] | null | undefined, b: TestCard["variants"] | null | undefined) {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (left.length !== right.length) return false;
+  return left.every((variant, index) => {
+    const next = right[index];
+    return (
+      String(variant.imageUrl || "") === String(next?.imageUrl || "")
+      && String(variant.imageSrc || "") === String(next?.imageSrc || "")
+      && String(variant.views || "") === String(next?.views || "")
+      && String(variant.clicks || "") === String(next?.clicks || "")
+      && String(variant.ctr || "") === String(next?.ctr || "")
+      && String(variant.statusRaw || "") === String(next?.statusRaw || "")
+      && Boolean(variant.isBest) === Boolean(next?.isBest)
+      && Boolean(variant.isPending) === Boolean(next?.isPending)
+      && Boolean(variant.isActive) === Boolean(next?.isActive)
+    );
+  });
+}
+
 function buildCanonicalXwayTestUrl(payload: XwayPayload | null | undefined, fallbackTestIdRaw: string) {
   const shopId = Number(payload?.product?.shopId);
   const productId = Number(payload?.product?.productId);
@@ -308,13 +329,15 @@ export function DashboardPage() {
           const nextActivityEndedAtIso = String(payload?.test?.endedAt || "").trim() || test.abActivityEndedAtIso || test.endedAtIso;
           const nextXwayUrl = buildCanonicalXwayTestUrl(payload, test.testId) || test.xwayUrl;
           const nextXwayComparisonRows = payload ? abBuildXwayComparisonRowsFromPayload(payload, test.comparisonRows) : null;
+          const nextVariants = payload ? abBuildVariantCardsFromXwayPayload(test.variants, payload, nextActivityEndedAtIso || test.endedAtIso) : test.variants;
           const sameChecks = areSummaryChecksEqual(test.xwaySummaryChecks || null, checks);
           const sameXwayComparisonRows = areComparisonRowsEqual(test.xwayComparisonRows || null, nextXwayComparisonRows);
+          const sameVariants = areVariantsEqual(test.variants, nextVariants);
           const sameActivityPeriod =
             String(test.abActivityStartedAtIso || test.startedAtIso || "") === String(nextActivityStartedAtIso || "")
             && String(test.abActivityEndedAtIso || test.endedAtIso || "") === String(nextActivityEndedAtIso || "");
           const sameXwayUrl = String(test.xwayUrl || "").trim() === String(nextXwayUrl || "").trim();
-          if (sameChecks && sameXwayComparisonRows && sameActivityPeriod && sameXwayUrl) {
+          if (sameChecks && sameXwayComparisonRows && sameVariants && sameActivityPeriod && sameXwayUrl) {
             return test;
           }
           changed = true;
@@ -323,6 +346,7 @@ export function DashboardPage() {
             xwayUrl: nextXwayUrl,
             xwaySummaryChecks: checks || null,
             xwayComparisonRows: nextXwayComparisonRows,
+            variants: nextVariants,
             abActivityStartedAtIso: nextActivityStartedAtIso,
             abActivityEndedAtIso: nextActivityEndedAtIso,
           };

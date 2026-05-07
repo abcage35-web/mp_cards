@@ -91,8 +91,14 @@ export function abBuildCoverImageSrc(imageUrlRaw: string) {
   }
 
   try {
-    const url = new URL(imageUrl);
-    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru" && url.pathname.startsWith("/card_s3/")) {
+    const url = new URL(imageUrl.startsWith("//") ? `https:${imageUrl}` : imageUrl);
+    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru") {
+      if (!url.pathname.startsWith("/card_s3/")) {
+        const fileName = url.pathname.split("/").filter(Boolean).pop() || "";
+        if (/\.(?:webp|png|jpe?g|gif|avif)$/i.test(fileName)) {
+          url.pathname = `/card_s3/${fileName}`;
+        }
+      }
       return `/api/ab-cover-image?url=${encodeURIComponent(url.toString())}`;
     }
   } catch {
@@ -100,6 +106,11 @@ export function abBuildCoverImageSrc(imageUrlRaw: string) {
   }
 
   return imageUrl;
+}
+
+function abIsActiveXwayVariantStatus(statusRaw: unknown) {
+  const status = abNormalizeXwayVariantStatus(statusRaw);
+  return status === "LAUNCHED" || status === "ACTIVE" || status === "RUNNING";
 }
 
 export interface ComparisonRow {
@@ -1400,6 +1411,119 @@ function abHasMeasuredXwayVariantCtr(variant: XwayVariantStat | null | undefined
   }
   const views = Number(variant?.views);
   return !Number.isFinite(views) || views > 0;
+}
+
+export function abBuildVariantCardsFromXwayPayload(
+  currentVariantsRaw: Variant[],
+  payload: XwayPayload | null | undefined,
+  endedAtIso = "",
+): Variant[] {
+  const currentVariants = Array.isArray(currentVariantsRaw) ? currentVariantsRaw : [];
+  const rawVariants = (Array.isArray(payload?.variantStats) ? payload!.variantStats : []).filter(Boolean);
+  const variantsWithUrls = rawVariants.filter((variant) => String(variant?.url || "").trim());
+  if (!variantsWithUrls.length) {
+    return currentVariants;
+  }
+
+  const seenUrls = new Set<string>();
+  const ordered = rawVariants
+    .map((variant, index) => ({
+      ...variant,
+      originalIndex: index,
+      sortIndexValue: Number.isFinite(Number(variant?.sortIndex)) ? Number(variant?.sortIndex) : index + 1,
+    }))
+    .filter((variant) => {
+      const url = String(variant?.url || "").trim();
+      if (!url) return false;
+      if (seenUrls.has(url)) return false;
+      seenUrls.add(url);
+      return true;
+    })
+    .sort((a, b) => {
+      const orderDiff = a.sortIndexValue - b.sortIndexValue;
+      if (orderDiff !== 0) return orderDiff;
+      return a.originalIndex - b.originalIndex;
+    });
+
+  const baseline = ordered[0] || null;
+  const baselineCtr = Number(baseline?.ctr);
+  const bestChallengerCtr = ordered.slice(1).reduce((max, variant) => {
+    if (abIsPendingXwayVariantStatus(variant?.status) || !abHasMeasuredXwayVariantCtr(variant)) {
+      return max;
+    }
+    const ctr = Number(variant?.ctr);
+    return ctr > max ? ctr : max;
+  }, Number.NEGATIVE_INFINITY);
+  const fallbackEndMs = endedAtIso ? new Date(endedAtIso).getTime() : Date.now();
+
+  const xwayVariants = ordered.map((variant, index) => {
+    const next = ordered[index + 1] || null;
+    const statusRaw = abNormalizeXwayVariantStatus(variant?.status);
+    const isPending = abIsPendingXwayVariantStatus(statusRaw);
+    const isActive = abIsActiveXwayVariantStatus(statusRaw);
+    const currentMs = variant?.dateStart ? new Date(variant.dateStart).getTime() : 0;
+    const nextMsRaw = next?.dateStart ? new Date(next.dateStart).getTime() : 0;
+    const nextMs = nextMsRaw && !abIsPendingXwayVariantStatus(next?.status) && nextMsRaw >= currentMs && nextMsRaw <= fallbackEndMs
+      ? nextMsRaw
+      : fallbackEndMs;
+    const hoursValue = !isPending && currentMs && nextMs && nextMs >= currentMs ? (nextMs - currentMs) / 3_600_000 : null;
+    const ctrValue = Number(variant?.ctr);
+    const installedAtIso = !isPending && Number.isFinite(currentMs) && currentMs > 0 && currentMs <= fallbackEndMs
+      ? String(variant?.dateStart || "").trim()
+      : "";
+    const installedAt = installedAtIso ? abFormatVariantDateTime(installedAtIso) : { date: "—", time: "" };
+    const ctrBoostValue = index > 0 && !isPending && Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(ctrValue)
+      ? ctrValue / baselineCtr - 1
+      : null;
+    const imageUrl = String(variant?.url || "").trim();
+
+    return {
+      index: index + 1,
+      imageUrl,
+      imageSrc: abBuildCoverImageSrc(imageUrl),
+      viewsValue: Number.isFinite(Number(variant?.views)) ? Number(variant?.views) : null,
+      clicksValue: Number.isFinite(Number(variant?.clicks)) ? Number(variant?.clicks) : null,
+      ctrValue: Number.isFinite(ctrValue) ? ctrValue : null,
+      installedAtIso,
+      views: abFormatInt(variant?.views),
+      clicks: abFormatInt(variant?.clicks),
+      ctr: Number.isFinite(ctrValue) ? abFormatFractionToPercent(ctrValue, 2) : "—",
+      installedAtDate: installedAt.date || "—",
+      installedAtTime: installedAt.time || "",
+      hours: Number.isFinite(hoursValue) ? abFormatHours(hoursValue) : "—",
+      isBest: index > 0 && Number.isFinite(bestChallengerCtr) && Number.isFinite(ctrValue) && Math.abs(ctrValue - bestChallengerCtr) <= 1e-9,
+      ctrBoostValue,
+      ctrBoostText: Number.isFinite(ctrBoostValue) ? abFormatCtrBoostBadge(ctrBoostValue) : "",
+      ctrBoostKind: Number.isFinite(ctrBoostValue) ? abResolveCtrBoostKind(ctrBoostValue) : "",
+      statusRaw,
+      isPending,
+      isActive,
+    };
+  });
+
+  if (!currentVariants.length) {
+    return xwayVariants;
+  }
+
+  const bySortIndex = new Map<number, Variant>();
+  for (const variant of xwayVariants) {
+    bySortIndex.set(variant.index, variant);
+  }
+
+  return currentVariants.map((variant, index) => {
+    const xwayVariant = bySortIndex.get(variant.index) || xwayVariants[index] || null;
+    if (!xwayVariant?.imageUrl) {
+      return variant;
+    }
+    return {
+      ...variant,
+      imageUrl: xwayVariant.imageUrl,
+      imageSrc: xwayVariant.imageSrc || abBuildCoverImageSrc(xwayVariant.imageUrl),
+      statusRaw: xwayVariant.statusRaw || variant.statusRaw,
+      isPending: Boolean(xwayVariant.isPending),
+      isActive: Boolean(xwayVariant.isActive),
+    };
+  });
 }
 
 export function calculateXwayVariantCtrBoost(variantsRaw: XwayVariantStat[] | null | undefined) {
