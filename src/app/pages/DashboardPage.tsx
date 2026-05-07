@@ -29,6 +29,7 @@ import {
   type TestCard,
   type XwayPayload,
 } from "../components/ab-service";
+import { applyAbTimeFiltersFromUrl, replaceAbTimeFiltersInUrl } from "../components/ab-time-url-sync";
 import { BestTestsSection, getBestCompletedTests } from "../components/BestTestsSection";
 import { FilterToolbar } from "../components/FilterToolbar";
 import { FunnelDashboard } from "../components/FunnelDashboard";
@@ -299,7 +300,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>(createDefaultFilters);
+  const [filters, setFilters] = useState<Filters>(() => applyAbTimeFiltersFromUrl(createDefaultFilters()));
   const [filterCollapsed, setFilterCollapsed] = useState(false);
   const [xwayStatusByTestId, setXwayStatusByTestId] = useState<Record<string, XwayStatusEntry>>({});
   const [xwayDialogState, setXwayDialogState] = useState<XwayDialogState>({
@@ -620,6 +621,18 @@ export function DashboardPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    replaceAbTimeFiltersInUrl(filters);
+  }, [filters.dateFrom, filters.dateTo, filters.monthKeys]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setFilters((current) => applyAbTimeFiltersFromUrl(current));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const handleFilterChange = useCallback((partial: Partial<Filters>) => {
     setFilters((previous) => {
