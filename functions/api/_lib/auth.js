@@ -4,8 +4,11 @@ const MIN_SESSION_TTL_SECONDS = 60 * 5;
 const MAX_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MIN_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 900000;
+const FALLBACK_SESSION_PREFIX = "fb1";
+const DEFAULT_FALLBACK_AUTH_SECRET = "mp-cards-fallback-auth-v1";
 
 const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 export function json(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -106,6 +109,121 @@ function generateSessionId() {
   return Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function normalizeSessionRole(roleRaw) {
+  const role = String(roleRaw || "").trim().toLowerCase();
+  return role === "admin" || role === "user" ? role : "";
+}
+
+function bytesToBase64Url(bytesRaw) {
+  const bytes = bytesRaw instanceof Uint8Array ? bytesRaw : new Uint8Array(0);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(base64UrlRaw) {
+  const base64Url = String(base64UrlRaw || "").trim();
+  if (!base64Url) {
+    return new Uint8Array(0);
+  }
+
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(base64Url.length / 4) * 4, "=");
+  const binary = atob(base64);
+  const output = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index);
+  }
+  return output;
+}
+
+function textToBase64Url(valueRaw) {
+  return bytesToBase64Url(textEncoder.encode(String(valueRaw || "")));
+}
+
+function base64UrlToText(valueRaw) {
+  return textDecoder.decode(base64UrlToBytes(valueRaw));
+}
+
+function getFallbackAuthSecret(env) {
+  const custom = String(env?.AUTH_FALLBACK_SECRET || env?.AUTH_SECRET || env?.JWT_SECRET || "").trim();
+  return custom || DEFAULT_FALLBACK_AUTH_SECRET;
+}
+
+async function signFallbackSession(env, payloadPart) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(getFallbackAuthSecret(env)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, textEncoder.encode(String(payloadPart || "")));
+  return bytesToBase64Url(new Uint8Array(signature));
+}
+
+export async function createFallbackSession(env, userRaw) {
+  const login = sanitizeLogin(userRaw?.login);
+  const role = normalizeSessionRole(userRaw?.role);
+  if (!login || !role) {
+    throw new Error("Invalid fallback user");
+  }
+
+  const ttlSeconds = getSessionTtlSeconds(env);
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  const payloadPart = textToBase64Url(JSON.stringify({
+    login,
+    role,
+    exp: Math.floor(new Date(expiresAt).getTime() / 1000),
+  }));
+  const signaturePart = await signFallbackSession(env, payloadPart);
+
+  return {
+    sid: `${FALLBACK_SESSION_PREFIX}.${payloadPart}.${signaturePart}`,
+    expiresAt,
+    ttlSeconds,
+  };
+}
+
+async function getFallbackSessionFromId(env, sidRaw) {
+  const sid = String(sidRaw || "").trim();
+  const parts = sid.split(".");
+  if (parts.length !== 3 || parts[0] !== FALLBACK_SESSION_PREFIX) {
+    return null;
+  }
+
+  const [, payloadPart, signaturePart] = parts;
+  const expectedSignature = await signFallbackSession(env, payloadPart);
+  if (!constantTimeEqual(base64UrlToBytes(signaturePart), base64UrlToBytes(expectedSignature))) {
+    return null;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(base64UrlToText(payloadPart));
+  } catch {
+    return null;
+  }
+
+  const login = sanitizeLogin(payload?.login);
+  const role = normalizeSessionRole(payload?.role);
+  const expiresAtMs = Math.round(Number(payload?.exp) || 0) * 1000;
+  if (!login || !role || !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    return null;
+  }
+
+  return {
+    sid,
+    user: {
+      id: 0,
+      login,
+      role,
+    },
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+}
+
 export async function createSession(db, env, userIdRaw) {
   const userId = Number(userIdRaw);
   if (!Number.isFinite(userId) || userId <= 0) {
@@ -134,21 +252,21 @@ export async function createSession(db, env, userIdRaw) {
 
 export async function deleteSessionById(db, sidRaw) {
   const sid = String(sidRaw || "").trim();
-  if (!sid) {
+  if (!db || !sid) {
     return;
   }
   await db.prepare(`DELETE FROM sessions WHERE sid = ?1`).bind(sid).run();
 }
 
 export async function getSessionFromRequest(request, env) {
-  const db = env?.DB;
-  if (!db) {
-    return null;
-  }
-
   const sid = getSessionIdFromRequest(request, env);
   if (!sid) {
     return null;
+  }
+
+  const db = env?.DB;
+  if (!db) {
+    return getFallbackSessionFromId(env, sid);
   }
 
   const row = await db

@@ -6,10 +6,6 @@ export async function onRequestOptions() {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  if (!env?.DB) {
-    return json({ ok: false, error: "D1 binding DB is not configured" }, { status: 500 });
-  }
-
   const session = await getSessionFromRequest(request, env);
   if (!session) {
     return json({ ok: false, error: "Unauthorized" }, { status: 401 });

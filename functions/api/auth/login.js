@@ -1,5 +1,6 @@
 import {
   buildSessionCookie,
+  createFallbackSession,
   createSession,
   json,
   sanitizeLogin,
@@ -56,6 +57,38 @@ async function readUserByLogin(db, login) {
     .first();
 }
 
+async function ensureAuthTables(db) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS users (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         login TEXT NOT NULL UNIQUE,
+         password_hash TEXT NOT NULL,
+         role TEXT NOT NULL CHECK (role IN ('user', 'admin')),
+         is_active INTEGER NOT NULL DEFAULT 1,
+         created_at TEXT NOT NULL
+       )`,
+    )
+    .run();
+
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`).run();
+
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS sessions (
+         sid TEXT PRIMARY KEY,
+         user_id INTEGER NOT NULL,
+         expires_at TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+       )`,
+    )
+    .run();
+
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`).run();
+}
+
 async function upsertBootstrapUser(db, bootstrapUser) {
   if (!bootstrapUser || typeof bootstrapUser !== "object") {
     return;
@@ -79,10 +112,6 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  if (!env?.DB) {
-    return json({ ok: false, error: "D1 binding DB is not configured" }, { status: 500 });
-  }
-
   let body = null;
   try {
     body = await request.json();
@@ -96,6 +125,30 @@ export async function onRequestPost(context) {
     return unauthorizedResponse();
   }
 
+  if (!env?.DB) {
+    const bootstrapUser = getBootstrapUserByCredentials(login, password);
+    if (!bootstrapUser) {
+      return unauthorizedResponse();
+    }
+
+    const session = await createFallbackSession(env, bootstrapUser);
+    const headers = new Headers();
+    headers.append("set-cookie", buildSessionCookie(request, env, session.sid, session.ttlSeconds));
+
+    return json(
+      {
+        ok: true,
+        user: {
+          login: bootstrapUser.login,
+          role: bootstrapUser.role,
+        },
+        expiresAt: session.expiresAt,
+      },
+      { headers },
+    );
+  }
+
+  await ensureAuthTables(env.DB);
   let user = await readUserByLogin(env.DB, login);
   let isValidPassword = false;
   if (user && Number(user.is_active) === 1) {
