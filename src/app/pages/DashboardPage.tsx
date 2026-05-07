@@ -331,14 +331,17 @@ export function DashboardPage() {
           const nextXwayUrl = buildCanonicalXwayTestUrl(payload, test.testId) || test.xwayUrl;
           const nextXwayComparisonRows = payload ? abBuildXwayComparisonRowsFromPayload(payload, test.comparisonRows) : null;
           const nextVariants = payload ? abBuildVariantCardsFromXwayPayload(test.variants, payload, nextActivityEndedAtIso || test.endedAtIso) : test.variants;
+          const nextXwayBeforeAdjustment = payload?.range?.beforeAdjustment?.applied ? payload.range.beforeAdjustment : null;
           const sameChecks = areSummaryChecksEqual(test.xwaySummaryChecks || null, checks);
           const sameXwayComparisonRows = areComparisonRowsEqual(test.xwayComparisonRows || null, nextXwayComparisonRows);
           const sameVariants = areVariantsEqual(test.variants, nextVariants);
+          const sameXwayBeforeAdjustment =
+            JSON.stringify(test.xwayBeforeAdjustment || null) === JSON.stringify(nextXwayBeforeAdjustment);
           const sameActivityPeriod =
             String(test.abActivityStartedAtIso || test.startedAtIso || "") === String(nextActivityStartedAtIso || "")
             && String(test.abActivityEndedAtIso || test.endedAtIso || "") === String(nextActivityEndedAtIso || "");
           const sameXwayUrl = String(test.xwayUrl || "").trim() === String(nextXwayUrl || "").trim();
-          if (sameChecks && sameXwayComparisonRows && sameVariants && sameActivityPeriod && sameXwayUrl) {
+          if (sameChecks && sameXwayComparisonRows && sameVariants && sameXwayBeforeAdjustment && sameActivityPeriod && sameXwayUrl) {
             return test;
           }
           changed = true;
@@ -347,6 +350,7 @@ export function DashboardPage() {
             xwayUrl: nextXwayUrl,
             xwaySummaryChecks: checks || null,
             xwayComparisonRows: nextXwayComparisonRows,
+            xwayBeforeAdjustment: nextXwayBeforeAdjustment,
             variants: nextVariants,
             abActivityStartedAtIso: nextActivityStartedAtIso,
             abActivityEndedAtIso: nextActivityEndedAtIso,
@@ -449,12 +453,13 @@ export function DashboardPage() {
           if (!current) return current;
           let changed = false;
           const nextTests = current.tests.map((test) => {
-            if (!targetIds.has(test.testId) || !test.xwaySummaryChecks) return test;
+            if (!targetIds.has(test.testId) || (!test.xwaySummaryChecks && !test.xwayBeforeAdjustment)) return test;
             changed = true;
             return {
               ...test,
               xwaySummaryChecks: null,
               xwayComparisonRows: null,
+              xwayBeforeAdjustment: null,
             };
           });
           return changed ? { ...current, tests: nextTests } : current;

@@ -14,6 +14,8 @@ import {
   xwayShiftIsoDate,
 } from "./_lib/xway-client.js";
 
+const XWAY_BEFORE_MIN_VIEWS = 3000;
+
 function parseCampaignTypeFallback(testNameRaw) {
   const name = String(testNameRaw || "").trim();
   if (!name) {
@@ -39,6 +41,19 @@ function buildProductPageReferer(shopIdRaw, productIdRaw) {
     return XWAY_REFERERS.abTests;
   }
   return `https://am.xway.ru/wb/shop/${shopId}/product/${productId}`;
+}
+
+function buildStataPath(shopId, productId, startDate, endDate) {
+  return `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${startDate}&end=${endDate}&tags&active_camps=1`;
+}
+
+function buildBeforeAdjustmentNote(adjustment) {
+  if (!adjustment?.applied) {
+    return "";
+  }
+  const originalViews = new Intl.NumberFormat("ru-RU").format(Number(adjustment.originalViews) || 0);
+  const threshold = new Intl.NumberFormat("ru-RU").format(Number(adjustment.threshold) || XWAY_BEFORE_MIN_VIEWS);
+  return `День «ДО» заменен на +1: ${adjustment.originalDate} дал ${originalViews} показов (< ${threshold}), поэтому взят ${adjustment.actualDate}.`;
 }
 
 function parseBidHistoryDateTime(valueRaw) {
@@ -535,33 +550,60 @@ export async function onRequestGet(context) {
     const campaignType = explicitCampaignType || parseCampaignTypeFallback(testInfo?.name);
     const campaignExternalId = explicitCampaignExternalId || parseCampaignExternalIdFallback(testInfo?.name);
 
-    const [beforeStata, duringStata, afterStata] = await Promise.all([
+    const [initialBeforeStata, duringStata, afterStata] = await Promise.all([
       xwayFetchJson(
         env,
-        `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${beforeDate}&end=${beforeDate}&tags&active_camps=1`,
+        buildStataPath(shopId, productId, beforeDate, beforeDate),
         { referer: productPageReferer },
       ),
       xwayFetchJson(
         env,
-        `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${startedDate}&end=${duringEndDate}&tags&active_camps=1`,
+        buildStataPath(shopId, productId, startedDate, duringEndDate),
         { referer: productPageReferer },
       ),
       afterDate
         ? xwayFetchJson(
             env,
-            `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${afterDate}&end=${afterDate}&tags&active_camps=1`,
+            buildStataPath(shopId, productId, afterDate, afterDate),
             { referer: productPageReferer },
           )
         : Promise.resolve(null),
     ]);
 
-    const beforeCampaignsAll = (Array.isArray(beforeStata?.campaign_wb) ? beforeStata.campaign_wb : []).map(normalizeCampaignRecord);
+    const initialBeforeCampaignsAll = (Array.isArray(initialBeforeStata?.campaign_wb) ? initialBeforeStata.campaign_wb : []).map(normalizeCampaignRecord);
     const duringCampaignsAll = (Array.isArray(duringStata?.campaign_wb) ? duringStata.campaign_wb : []).map(normalizeCampaignRecord);
     const afterCampaignsAll = (Array.isArray(afterStata?.campaign_wb) ? afterStata.campaign_wb : []).map(normalizeCampaignRecord);
 
-    const beforeCampaigns = beforeCampaignsAll.filter((campaign) =>
+    let effectiveBeforeDate = beforeDate;
+    let beforeCampaigns = initialBeforeCampaignsAll.filter((campaign) =>
       matchCampaignRecord(campaign, campaignType, campaignExternalId),
     );
+    const initialBeforeTotals = xwayAggregateCampaignStats(beforeCampaigns);
+    let beforeAdjustment = null;
+    const nextBeforeDate = xwayShiftIsoDate(beforeDate, 1);
+    if (Number(initialBeforeTotals?.views) < XWAY_BEFORE_MIN_VIEWS && nextBeforeDate) {
+      const shiftedBeforeStata = await xwayFetchJson(
+        env,
+        buildStataPath(shopId, productId, nextBeforeDate, nextBeforeDate),
+        { referer: productPageReferer },
+      );
+      const shiftedBeforeCampaignsAll = (Array.isArray(shiftedBeforeStata?.campaign_wb) ? shiftedBeforeStata.campaign_wb : []).map(normalizeCampaignRecord);
+      const shiftedBeforeCampaigns = shiftedBeforeCampaignsAll.filter((campaign) =>
+        matchCampaignRecord(campaign, campaignType, campaignExternalId),
+      );
+      const shiftedBeforeTotals = xwayAggregateCampaignStats(shiftedBeforeCampaigns);
+      effectiveBeforeDate = nextBeforeDate;
+      beforeCampaigns = shiftedBeforeCampaigns;
+      beforeAdjustment = {
+        applied: true,
+        threshold: XWAY_BEFORE_MIN_VIEWS,
+        originalDate: beforeDate,
+        actualDate: effectiveBeforeDate,
+        originalViews: Number(initialBeforeTotals?.views) || 0,
+        actualViews: Number(shiftedBeforeTotals?.views) || 0,
+      };
+      beforeAdjustment.note = buildBeforeAdjustmentNote(beforeAdjustment);
+    }
     const duringCampaigns = duringCampaignsAll.filter((campaign) =>
       matchCampaignRecord(campaign, campaignType, campaignExternalId),
     );
@@ -573,7 +615,7 @@ export async function onRequestGet(context) {
       shopId,
       productId,
       referer: productPageReferer,
-      beforeDate,
+      beforeDate: effectiveBeforeDate,
       duringStartDate: startedDate,
       duringEndDate,
       afterDate,
@@ -610,7 +652,10 @@ export async function onRequestGet(context) {
       campaignType,
       campaignExternalId,
       range: {
-        before: beforeDate,
+        before: effectiveBeforeDate,
+        beforeOriginal: beforeDate,
+        beforeShifted: Boolean(beforeAdjustment?.applied),
+        beforeAdjustment,
         during: {
           from: startedDate,
           to: duringEndDate,

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ExternalLink, Trophy } from "lucide-react";
+import { AlertTriangle, ExternalLink, Trophy } from "lucide-react";
 
-import { abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
+import { abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, abGetXwayBeforeAdjustmentNote, abNormalizeStatus, type ComparisonRow, type TestCard, type Variant } from "./ab-service";
 
 interface Props {
   tests: TestCard[];
@@ -486,7 +486,9 @@ function BestTestCard({
   const bestVariant = getBestVariant(test) || baselineVariant;
   const rkCtrCr1GrowthText = getCtrCr1GrowthText(test);
   const abTestActivityPeriod = formatAbTestActivityPeriod(test);
-  const beforeRkDate = formatBlockDate(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
+  const beforeAdjustment = test.xwayBeforeAdjustment?.applied ? test.xwayBeforeAdjustment : null;
+  const beforeAdjustmentNote = abGetXwayBeforeAdjustmentNote(beforeAdjustment);
+  const beforeRkDate = beforeAdjustment ? formatBlockDate(beforeAdjustment.actualDate) : formatBlockDate(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
   const afterRkDate = formatBlockDate(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
   const title = test.title || test.productName || `Тест ${test.testId}`;
   const abTestUrl = abBuildXwayAbTestUrl(test.xwayUrl);
@@ -566,6 +568,15 @@ function BestTestCard({
                 <Trophy className="h-3 w-3" />
                 Прирост CTR*CR1: {rkCtrCr1GrowthText}
               </div>
+              {beforeAdjustment ? (
+                <span
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300"
+                  title={beforeAdjustmentNote}
+                  aria-label="День ДО XWAY заменен на +1"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                </span>
+              ) : null}
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center gap-1">

@@ -130,6 +130,16 @@ export interface SummaryChecks {
   overall: string;
 }
 
+export interface XwayBeforeAdjustment {
+  applied: boolean;
+  threshold: number;
+  originalDate: string;
+  actualDate: string;
+  originalViews: number;
+  actualViews: number;
+  note: string;
+}
+
 export interface TestCard {
   testId: string;
   xwayUrl: string;
@@ -158,6 +168,7 @@ export interface TestCard {
   summaryChecks: SummaryChecks;
   xwaySummaryChecks?: SummaryChecks | null;
   xwayComparisonRows?: ComparisonRow[] | null;
+  xwayBeforeAdjustment?: XwayBeforeAdjustment | null;
   variants: Variant[];
   priceDeviationCount: string;
   comparisonRows: ComparisonRow[];
@@ -308,6 +319,14 @@ export function abFormatInt(valueRaw: unknown): string {
   const value = Number(valueRaw);
   if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("ru-RU").format(Math.round(value));
+}
+
+export function abGetXwayBeforeAdjustmentNote(adjustmentRaw: XwayBeforeAdjustment | null | undefined) {
+  const adjustment = adjustmentRaw?.applied ? adjustmentRaw : null;
+  if (!adjustment) return "";
+  const explicitNote = String(adjustment.note || "").trim();
+  if (explicitNote) return explicitNote;
+  return `День «ДО» заменен на +1: ${adjustment.originalDate} дал ${abFormatInt(adjustment.originalViews)} показов (< ${abFormatInt(adjustment.threshold)}), поэтому взят ${adjustment.actualDate}.`;
 }
 
 function abNormalizeNumericId(valueRaw: unknown): string {
@@ -1185,6 +1204,9 @@ export interface XwayPayload {
   campaignExternalId: string;
   range?: {
     before?: string;
+    beforeOriginal?: string;
+    beforeShifted?: boolean;
+    beforeAdjustment?: XwayBeforeAdjustment | null;
     during?: {
       from?: string;
       to?: string;

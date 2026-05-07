@@ -2,6 +2,7 @@ import { AlertTriangle, Loader2, X } from "lucide-react";
 import { useEffect } from "react";
 
 import {
+  abGetXwayBeforeAdjustmentNote,
   buildXwaySummaryChecksFromPayload,
   type SummaryChecks,
   type TestCard,
@@ -324,6 +325,12 @@ export function XwayDetailsDialog({
   const xwayRows = Array.isArray(payload?.metrics) ? payload.metrics : [];
   const campaignsBefore = Array.isArray(payload?.matchedCampaigns?.before) ? payload?.matchedCampaigns?.before : [];
   const campaignsAfter = Array.isArray(payload?.matchedCampaigns?.after) ? payload?.matchedCampaigns?.after : [];
+  const beforeAdjustment = payload?.range?.beforeAdjustment?.applied
+    ? payload.range.beforeAdjustment
+    : test.xwayBeforeAdjustment?.applied
+      ? test.xwayBeforeAdjustment
+      : null;
+  const beforeAdjustmentNote = abGetXwayBeforeAdjustmentNote(beforeAdjustment);
 
   return (
     <div className="fixed inset-0 z-[110]">
@@ -415,6 +422,20 @@ export function XwayDetailsDialog({
                   <TotalsCard title="Во время" subtitle={duringDate} totals={payload.totals?.during} />
                   <TotalsCard title="После" subtitle={afterDate} totals={payload.totals?.after} />
                 </div>
+
+                {beforeAdjustmentNote ? (
+                  <div className="flex items-start gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-amber-900 dark:border-amber-700/70 dark:bg-amber-950/30 dark:text-amber-200">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div>
+                      <div className="text-[13px]" style={{ fontWeight: 800 }}>
+                        Примечание по дню «ДО»
+                      </div>
+                      <div className="mt-0.5 text-[13px]" style={{ fontWeight: 600 }}>
+                        {beforeAdjustmentNote}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-700/80 dark:bg-slate-900/70">

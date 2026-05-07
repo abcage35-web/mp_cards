@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
-import { ExternalLink, Info, RefreshCw, BarChart3, ArrowRight, ChevronRight } from "lucide-react";
-import { type TestCard as TestCardType, abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, AB_MATRIX_METRIC_COL_WIDTH, AB_MATRIX_VARIANT_COL_WIDTH } from "./ab-service";
+import { ExternalLink, Info, RefreshCw, BarChart3, ArrowRight, ChevronRight, AlertTriangle } from "lucide-react";
+import { type TestCard as TestCardType, abBuildXwayAbTestUrl, abBuildXwayRkUrl, abFormatCompactPeriodDateTime, abGetXwayBeforeAdjustmentNote, AB_MATRIX_METRIC_COL_WIDTH, AB_MATRIX_VARIANT_COL_WIDTH } from "./ab-service";
 import { StatusPill } from "./StatusPill";
 
 type XwayStatus = "idle" | "loading" | "ready" | "error";
@@ -83,7 +83,11 @@ export function TestCardComponent({
   const testPeriodText = `${abFormatCompactPeriodDateTime(test.startedAtIso)} — ${abFormatCompactPeriodDateTime(test.endedAtIso)}`;
   const abTestUrl = abBuildXwayAbTestUrl(test.xwayUrl);
   const rkUrl = abBuildXwayRkUrl(test.xwayUrl);
-  const rkBeforeDate = formatDateOnly(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
+  const beforeAdjustment = test.xwayBeforeAdjustment?.applied ? test.xwayBeforeAdjustment : null;
+  const beforeAdjustmentNote = abGetXwayBeforeAdjustmentNote(beforeAdjustment);
+  const rkBeforeDate = summaryLayout === "xway-only" && beforeAdjustment
+    ? formatDateOnly(beforeAdjustment.actualDate)
+    : formatDateOnly(shiftIsoDateTime(test.startedAtIso, -1), test.startedAt);
   const rkDuringDate = buildPeriodLabel(test.startedAtIso, test.endedAtIso, test.startedAt, test.endedAt);
   const rkAfterDate = formatDateOnly(shiftIsoDateTime(test.endedAtIso, 1), test.endedAt);
   const xwayChecksFlow = test.xwaySummaryChecks
@@ -130,6 +134,7 @@ export function TestCardComponent({
           {/* Action buttons - top right */}
           <div className="shrink-0 flex items-center gap-1 flex-wrap justify-end">
             <TestLifecyclePill status={lifecycleStatus} />
+            {beforeAdjustment ? <BeforeAdjustmentBadge note={beforeAdjustmentNote} /> : null}
             <div className="relative">
               <button
                 onClick={() => setShowReport(!showReport)}
@@ -141,6 +146,12 @@ export function TestCardComponent({
               {showReport && (
                 <div className="absolute top-full right-0 mt-1.5 w-[340px] max-w-[calc(100vw-32px)] p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-10">
                   <div className="text-[12px] text-slate-700 dark:text-slate-200 mb-1.5" style={{ fontWeight: 700 }}>Отчет по расчетам</div>
+                  {beforeAdjustmentNote ? (
+                    <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800 dark:border-amber-700/70 dark:bg-amber-900/30 dark:text-amber-200" style={{ fontWeight: 600 }}>
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>{beforeAdjustmentNote}</span>
+                    </div>
+                  ) : null}
                   {test.reportLines.length ? (
                     <ul className="space-y-0.5 pl-4 list-disc">
                       {test.reportLines.map((line, i) =>
@@ -354,6 +365,18 @@ export function TestCardComponent({
         </div>
       </div>
     </article>
+  );
+}
+
+function BeforeAdjustmentBadge({ note }: { note: string }) {
+  return (
+    <span
+      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-700/70 dark:bg-amber-900/30 dark:text-amber-300"
+      title={note || "День «ДО» в XWAY заменен на +1 из-за малого числа показов."}
+      aria-label="День ДО XWAY заменен на +1"
+    >
+      <AlertTriangle className="h-3.5 w-3.5" />
+    </span>
   );
 }
 

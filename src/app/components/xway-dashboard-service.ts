@@ -2,6 +2,7 @@ import {
   AB_TEST_LIMIT_OPTIONS,
   abBuildCoverImageSrc,
   abFormatInt,
+  abGetXwayBeforeAdjustmentNote,
   abGetCurrentMonthRange,
   abNormalizeStatus,
   buildXwaySummaryChecksFromPayload,
@@ -345,6 +346,7 @@ function buildBaseTest(item: XwayAbApiItem, mainImageUrl: string, sheetPrice: Xw
     finalStatusKind: "unknown",
     summaryChecks,
     xwaySummaryChecks: null,
+    xwayBeforeAdjustment: null,
     variants: buildPlaceholderVariants(item, mainImageUrl),
     priceDeviationCount: sheetPrice?.priceDeviationCount || "—",
     comparisonRows: buildDefaultComparisonRows(sheetPrice),
@@ -806,7 +808,9 @@ function buildReportLines(
   ctrCr1Delta: number | null,
   priceDeltas: ReturnType<typeof buildPriceDeltaMetrics>,
 ) {
+  const beforeAdjustmentNote = abGetXwayBeforeAdjustmentNote(payload.range?.beforeAdjustment);
   return [
+    beforeAdjustmentNote ? `Примечание ДО: ${beforeAdjustmentNote}` : "",
     `Буст CTR: ${formatFractionToPercent(boostCtr, 0)}`,
     `CTR исходной обложки: ${formatFractionToPercent(baselineCtr, 2)}`,
     `Лучший CTR обложек 2-N: ${formatFractionToPercent(bestCtr, 2)}`,
@@ -843,6 +847,7 @@ export function buildXwayDashboardPatch(test: XwayDashboardTest, payload: XwayPa
   return {
     summaryChecks: checks,
     xwaySummaryChecks: checks,
+    xwayBeforeAdjustment: payload.range?.beforeAdjustment?.applied ? payload.range.beforeAdjustment : null,
     abActivityStartedAtIso: String(payload?.test?.startedAt || "").trim() || test.abActivityStartedAtIso || test.startedAtIso,
     abActivityEndedAtIso: String(payload?.test?.endedAt || "").trim() || test.abActivityEndedAtIso || test.endedAtIso,
     finalStatusRaw,
