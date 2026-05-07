@@ -3,6 +3,7 @@ import { XWAY_FALLBACK_STORAGE_STATE } from "./xway-storage-state.js";
 const XWAY_BASE_URL = "https://am.xway.ru";
 const XWAY_AB_TESTS_REFERER = `${XWAY_BASE_URL}/wb/ab-tests`;
 const XWAY_RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+export const XWAY_STATS_TIME_ZONE = "Asia/Tbilisi";
 
 function wait(durationMs) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(durationMs) || 0)));
@@ -177,11 +178,24 @@ export function xwayIsoDateFromDateLike(valueRaw) {
   if (!value) {
     return "";
   }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-  return date.toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: XWAY_STATS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "";
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  return year && month && day ? `${year}-${month}-${day}` : date.toISOString().slice(0, 10);
 }
 
 export function xwayShiftIsoDate(isoDateRaw, deltaDays) {

@@ -1,6 +1,7 @@
 import {
   AB_TEST_LIMIT_OPTIONS,
   abBuildCoverImageSrc,
+  abFormatXwayVariantDateTime,
   abFormatInt,
   abGetXwayBeforeAdjustmentNote,
   abGetCurrentMonthRange,
@@ -518,16 +519,7 @@ function formatHours(valueRaw: number | null | undefined) {
 }
 
 function formatVariantDateTime(isoRaw: string) {
-  const value = String(isoRaw || "").trim();
-  if (!value) return { date: "—", time: "" };
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { date: "—", time: "" };
-  if (date.getFullYear() >= new Date().getFullYear() + 2) return { date: "—", time: "" };
-  const pad = (num: number) => String(num).padStart(2, "0");
-  return {
-    date: `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${String(date.getFullYear()).slice(-2)}`,
-    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
-  };
+  return abFormatXwayVariantDateTime(isoRaw);
 }
 
 function parseDisplayNumber(valueRaw: string) {

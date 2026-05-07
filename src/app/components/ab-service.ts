@@ -13,6 +13,7 @@ export const AB_XWAY_ERROR_RETRY_RETRIES = 4;
 export const AB_XWAY_ERROR_RETRY_START_DELAY_MS = 1_500;
 export const AB_XWAY_ERROR_RETRY_REQUEST_DELAY_MS = 700;
 export const AB_CTR_BOOST_WIN_THRESHOLD = 0.01;
+export const AB_XWAY_DISPLAY_TIME_ZONE = "Asia/Tbilisi";
 
 const AB_DASHBOARD_SOURCE_SHEETS: Record<string, { gid: string; label: string }> = {
   catalog: { gid: "795894762", label: "Каталог товаров" },
@@ -494,6 +495,34 @@ function abFormatVariantDateTime(valueRaw: unknown) {
   const date = new Date(iso);
   const pad = (v: number) => String(v).padStart(2, "0");
   return { date: `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${String(date.getFullYear()).slice(-2)}`, time: `${pad(date.getHours())}:${pad(date.getMinutes())}` };
+}
+
+export function abFormatXwayVariantDateTime(valueRaw: unknown) {
+  const iso = typeof valueRaw === "string" && valueRaw.includes("T") ? valueRaw : abParseDateLiteral(valueRaw);
+  if (!iso) return { date: "—", time: "" };
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { date: "—", time: "" };
+  if (date.getFullYear() >= new Date().getFullYear() + 2) return { date: "—", time: "" };
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: AB_XWAY_DISPLAY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value || "";
+  const year = part("year").slice(-2);
+  const month = part("month");
+  const day = part("day");
+  const hour = part("hour");
+  const minute = part("minute");
+  return {
+    date: day && month && year ? `${day}.${month}.${year}` : "—",
+    time: hour && minute ? `${hour}:${minute}` : "",
+  };
 }
 
 export function abFormatCompactPeriodDateTime(isoRaw: string): string {
@@ -1203,6 +1232,7 @@ export interface XwayPayload {
   campaignType: string;
   campaignExternalId: string;
   range?: {
+    timeZone?: string;
     before?: string;
     beforeOriginal?: string;
     beforeShifted?: boolean;
@@ -1493,7 +1523,7 @@ export function abBuildVariantCardsFromXwayPayload(
     const installedAtIso = !isPending && Number.isFinite(currentMs) && currentMs > 0 && currentMs <= fallbackEndMs
       ? String(variant?.dateStart || "").trim()
       : "";
-    const installedAt = installedAtIso ? abFormatVariantDateTime(installedAtIso) : { date: "—", time: "" };
+    const installedAt = installedAtIso ? abFormatXwayVariantDateTime(installedAtIso) : { date: "—", time: "" };
     const ctrBoostValue = index > 0 && !isPending && Number.isFinite(baselineCtr) && baselineCtr !== 0 && Number.isFinite(ctrValue)
       ? ctrValue / baselineCtr - 1
       : null;

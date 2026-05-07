@@ -1,6 +1,7 @@
 import { json } from "./_lib/auth.js";
 import {
   XWAY_REFERERS,
+  XWAY_STATS_TIME_ZONE,
   buildXwayCookieHeader,
   getXwayStorageState,
   xwayAggregateCampaignStats,
@@ -652,6 +653,7 @@ export async function onRequestGet(context) {
       campaignType,
       campaignExternalId,
       range: {
+        timeZone: XWAY_STATS_TIME_ZONE,
         before: effectiveBeforeDate,
         beforeOriginal: beforeDate,
         beforeShifted: Boolean(beforeAdjustment?.applied),
