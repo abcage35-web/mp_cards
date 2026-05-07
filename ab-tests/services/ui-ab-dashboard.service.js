@@ -3,6 +3,7 @@ const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 const AB_TEST_LIMIT_OPTIONS = Object.freeze([50, 100, 150, 200, 250, 300]);
 const AB_MATRIX_METRIC_COL_WIDTH = 136;
 const AB_MATRIX_VARIANT_COL_WIDTH = 112;
+const AB_CTR_BOOST_WIN_THRESHOLD = 0.01;
 const AB_DASHBOARD_SOURCE_SHEETS = Object.freeze({
   catalog: { gid: "795894762", label: "Каталог товаров" },
   technical: { gid: "763001257", label: "AB-выгрузка" },
@@ -323,6 +324,35 @@ function abFormatSignedPercentFraction(valueRaw, digits = 0) {
   const percent = value * 100;
   const sign = percent > 0 ? "+" : "";
   return `${sign}${percent.toFixed(digits).replace(".", ",")}%`;
+}
+
+function abFormatCtrBoostBadge(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  const percent = value * 100;
+  if (percent > 0 && percent < 1) {
+    return "+<1%";
+  }
+  if (percent < 0 && percent > -1) {
+    return "-<1%";
+  }
+  return abFormatSignedPercentFraction(value, 0);
+}
+
+function abResolveCtrBoostKind(boostCtr) {
+  const value = Number(boostCtr);
+  if (!Number.isFinite(value)) {
+    return "";
+  }
+  if (value >= AB_CTR_BOOST_WIN_THRESHOLD) {
+    return "good";
+  }
+  if (value < 0) {
+    return "bad";
+  }
+  return "neutral";
 }
 
 function abFormatHours(valueRaw) {
@@ -725,7 +755,7 @@ function abResolveCtrDecisionRaw(boostCtr) {
   if (!Number.isFinite(boostCtr)) {
     return "?";
   }
-  return boostCtr > 0 ? "WIN" : "LOOSE";
+  return boostCtr >= AB_CTR_BOOST_WIN_THRESHOLD ? "WIN" : "LOOSE";
 }
 
 function abResolveCtrCr1DecisionRaw(boostCtrCr1) {
@@ -842,24 +872,17 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
       return Number.isFinite(item.ctrValue) && item.ctrValue > max ? item.ctrValue : max;
     }, Number.NEGATIVE_INFINITY);
     const tolerance = 1e-9;
-    return prepared.map((item) => ({
-      ...item,
-      isBest: Number.isFinite(bestCtr) && Number.isFinite(item.ctrValue) ? Math.abs(item.ctrValue - bestCtr) <= tolerance : false,
-      ctrBoostValue:
-        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue) ? item.ctrValue / baseCtr - 1 : null,
-      ctrBoostText:
-        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue)
-          ? abFormatSignedPercentFraction(item.ctrValue / baseCtr - 1, 0)
-          : "",
-      ctrBoostKind:
-        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue)
-          ? item.ctrValue / baseCtr - 1 > 0
-            ? "good"
-            : item.ctrValue / baseCtr - 1 < 0
-              ? "bad"
-              : "neutral"
-          : "",
-    }));
+    return prepared.map((item) => {
+      const boostValue =
+        item.index > 1 && Number.isFinite(baseCtr) && Number.isFinite(item.ctrValue) ? item.ctrValue / baseCtr - 1 : null;
+      return {
+        ...item,
+        isBest: Number.isFinite(bestCtr) && Number.isFinite(item.ctrValue) ? Math.abs(item.ctrValue - bestCtr) <= tolerance : false,
+        ctrBoostValue: boostValue,
+        ctrBoostText: Number.isFinite(boostValue) ? abFormatCtrBoostBadge(boostValue) : "",
+        ctrBoostKind: Number.isFinite(boostValue) ? abResolveCtrBoostKind(boostValue) : "",
+      };
+    });
   }
 
   return [

@@ -12,6 +12,7 @@ export const AB_XWAY_BATCH_CONCURRENCY = 2;
 export const AB_XWAY_ERROR_RETRY_RETRIES = 4;
 export const AB_XWAY_ERROR_RETRY_START_DELAY_MS = 1_500;
 export const AB_XWAY_ERROR_RETRY_REQUEST_DELAY_MS = 700;
+export const AB_CTR_BOOST_WIN_THRESHOLD = 0.01;
 
 const AB_DASHBOARD_SOURCE_SHEETS: Record<string, { gid: string; label: string }> = {
   catalog: { gid: "795894762", label: "Каталог товаров" },
@@ -322,6 +323,23 @@ function abFormatSignedPercentFraction(valueRaw: unknown, digits = 0): string {
   return `${sign}${percent.toFixed(digits).replace(".", ",")}%`;
 }
 
+function abFormatCtrBoostBadge(valueRaw: unknown): string {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value)) return "";
+  const percent = value * 100;
+  if (percent > 0 && percent < 1) return "+<1%";
+  if (percent < 0 && percent > -1) return "-<1%";
+  return abFormatSignedPercentFraction(value, 0);
+}
+
+function abResolveCtrBoostKind(boostCtr: number | null): string {
+  const value = Number(boostCtr);
+  if (!Number.isFinite(value)) return "";
+  if (value >= AB_CTR_BOOST_WIN_THRESHOLD) return "good";
+  if (value < 0) return "bad";
+  return "neutral";
+}
+
 function abFormatHours(valueRaw: unknown): string {
   const value = Number(valueRaw);
   if (!Number.isFinite(value)) return "—";
@@ -588,12 +606,15 @@ function abBuildVariantCards(resultsList: any[], endedAtIso = ""): Variant[] {
   if (prepared.length) {
     const baseCtr = Number.isFinite(prepared[0]?.ctrValue) && prepared[0].ctrValue !== 0 ? prepared[0].ctrValue : null;
     const bestCtr = prepared.reduce((max, item) => Number.isFinite(item.ctrValue) && item.ctrValue! > max ? item.ctrValue! : max, Number.NEGATIVE_INFINITY);
-    return prepared.map(item => ({
-      ...item, isBest: Number.isFinite(bestCtr) && Number.isFinite(item.ctrValue) ? Math.abs(item.ctrValue! - bestCtr) <= 1e-9 : false,
-      ctrBoostValue: item.index > 1 && baseCtr && Number.isFinite(item.ctrValue) ? item.ctrValue! / baseCtr - 1 : null,
-      ctrBoostText: item.index > 1 && baseCtr && Number.isFinite(item.ctrValue) ? abFormatSignedPercentFraction(item.ctrValue! / baseCtr - 1, 0) : "",
-      ctrBoostKind: item.index > 1 && baseCtr && Number.isFinite(item.ctrValue) ? (item.ctrValue! / baseCtr - 1 > 0 ? "good" : item.ctrValue! / baseCtr - 1 < 0 ? "bad" : "neutral") : "",
-    }));
+    return prepared.map(item => {
+      const boostValue = item.index > 1 && baseCtr && Number.isFinite(item.ctrValue) ? item.ctrValue! / baseCtr - 1 : null;
+      return {
+        ...item, isBest: Number.isFinite(bestCtr) && Number.isFinite(item.ctrValue) ? Math.abs(item.ctrValue! - bestCtr) <= 1e-9 : false,
+        ctrBoostValue: boostValue,
+        ctrBoostText: Number.isFinite(boostValue) ? abFormatCtrBoostBadge(boostValue) : "",
+        ctrBoostKind: Number.isFinite(boostValue) ? abResolveCtrBoostKind(boostValue) : "",
+      };
+    });
   }
   return [{ index: 1, imageUrl: "", imageSrc: "", viewsValue: null, clicksValue: null, ctrValue: null, installedAtIso: "", views: "—", clicks: "—", ctr: "—", installedAtDate: "—", installedAtTime: "", hours: "—", isBest: false, ctrBoostValue: null, ctrBoostText: "", ctrBoostKind: "" }];
 }
@@ -614,7 +635,7 @@ function abBuildPriceDeltaMetrics(priceBefore: number | null, priceDuring: numbe
   return { priceDeltaBefore: pdb, priceDeltaDuring: pdd, priceDeltaAfter: pda, minPriceDelta: deltas.length ? Math.min(...deltas) : null, maxPriceDelta: deltas.length ? Math.max(...deltas) : null };
 }
 
-function abResolveCtrDecisionRaw(boostCtr: number | null) { return Number.isFinite(boostCtr) ? (boostCtr! > 0 ? "WIN" : "LOOSE") : "?"; }
+function abResolveCtrDecisionRaw(boostCtr: number | null) { return Number.isFinite(boostCtr) ? (Number(boostCtr) >= AB_CTR_BOOST_WIN_THRESHOLD ? "WIN" : "LOOSE") : "?"; }
 function abResolveCtrCr1DecisionRaw(boostCtrCr1: number | null) { return Number.isFinite(boostCtrCr1) ? (boostCtrCr1! >= 0.1 ? "WIN" : "LOOSE") : "?"; }
 function abResolvePriceDecisionRaw(a: number | null, b: number | null, c: number | null) {
   const deltas = [a, b, c];
