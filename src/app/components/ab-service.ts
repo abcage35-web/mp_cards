@@ -33,18 +33,31 @@ export const AB_FUNNEL_STAGE_STYLES: Record<string, { colorFrom: string; colorTo
   overall: { colorFrom: "#10B981", colorTo: "#34D399" },
 };
 
-export const AB_CABINET_GROUPS = [
+interface AbCabinetGroup {
+  key: string;
+  label: string;
+  cabinets: string[];
+  aliases?: Record<string, string[]>;
+}
+
+export const AB_CABINET_GROUPS: AbCabinetGroup[] = [
   {
     key: "group:pasha",
     label: "ИП Паша",
     cabinets: ["ИП Карпачев П. А.", "Качественные товары"],
+    aliases: {
+      "ИП Карпачев П. А.": ["Карпачев", "ИП Карпачев П.А."],
+    },
   },
   {
     key: "group:stas",
     label: "ИП Стас",
     cabinets: ["Качественные товары abcAge", "ИП Сытин С. О."],
+    aliases: {
+      "ИП Сытин С. О.": ["Сытин", "ИП Сытин С.О."],
+    },
   },
-] as const;
+];
 
 // ── Types ──
 export interface Variant {
@@ -356,11 +369,58 @@ function abParseDateLiteral(valueRaw: unknown): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function abNormalizeCabinetKey(valueRaw: unknown): string {
+  return String(valueRaw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9]+/giu, "");
+}
+
+function abGetCabinetAliasValues(group: AbCabinetGroup, cabinet: string): string[] {
+  return [cabinet, ...(group.aliases?.[cabinet] || [])];
+}
+
+function abGetCabinetMatchKeys(cabinetRaw: unknown): Set<string> {
+  const value = String(cabinetRaw || "").trim();
+  const valueKey = abNormalizeCabinetKey(value);
+  const keys = new Set<string>();
+  if (valueKey) keys.add(valueKey);
+
+  for (const group of AB_CABINET_GROUPS) {
+    for (const cabinet of group.cabinets) {
+      const aliases = abGetCabinetAliasValues(group, cabinet);
+      if (aliases.some((alias) => abNormalizeCabinetKey(alias) === valueKey)) {
+        aliases.map(abNormalizeCabinetKey).filter(Boolean).forEach((key) => keys.add(key));
+        return keys;
+      }
+    }
+  }
+
+  return keys;
+}
+
+function abResolveCabinetDisplayName(rawValue: unknown): string {
+  const value = String(rawValue || "").trim();
+  const valueKey = abNormalizeCabinetKey(value);
+  if (!valueKey) return value;
+
+  for (const group of AB_CABINET_GROUPS) {
+    for (const cabinet of group.cabinets) {
+      if (abGetCabinetAliasValues(group, cabinet).some((alias) => abNormalizeCabinetKey(alias) === valueKey)) {
+        return cabinet;
+      }
+    }
+  }
+
+  return value;
+}
+
 function abResolveCabinet(testNameRaw: string): string {
   const testName = (testNameRaw || "").trim();
   if (!testName) return "?";
-  if (/^\s*С\s*\//u.test(testName) || /Сытин/u.test(testName)) return "Сытин";
-  if (/^\s*П\s*\//u.test(testName) || /Карпачев/u.test(testName)) return "Карпачев";
+  if (/^\s*С\s*\//u.test(testName) || /Сытин/u.test(testName)) return "ИП Сытин С. О.";
+  if (/^\s*П\s*\//u.test(testName) || /Карпачев/u.test(testName)) return "ИП Карпачев П. А.";
   return "?";
 }
 
@@ -906,18 +966,19 @@ function abBuildFunnelCard(
 function abGetCabinetGroup(rawValue: string) {
   const value = String(rawValue || "").trim();
   if (!value) return null;
-  return AB_CABINET_GROUPS.find((group) => group.key === value || group.label === value) || null;
+  const valueKey = abNormalizeCabinetKey(value);
+  return AB_CABINET_GROUPS.find((group) => group.key === value || abNormalizeCabinetKey(group.label) === valueKey) || null;
 }
 
 export function abResolveCabinetFilterLabel(rawValue: string) {
   const value = String(rawValue || "").trim();
   if (!value) return "";
-  return abGetCabinetGroup(value)?.label || value;
+  return abGetCabinetGroup(value)?.label || abResolveCabinetDisplayName(value);
 }
 
 export function abExpandCabinetFilter(rawValue: string): string[] | null {
   const group = abGetCabinetGroup(rawValue);
-  return group ? [...group.cabinets] : null;
+  return group ? group.cabinets.flatMap((cabinet) => abGetCabinetAliasValues(group, cabinet)) : null;
 }
 
 export function abBuildAggregateFunnelCard(tests: TestCard[], sourceKey = "export", label = "Все кабинеты"): FunnelCard | null {
@@ -926,9 +987,21 @@ export function abBuildAggregateFunnelCard(tests: TestCard[], sourceKey = "expor
 
 export function abBuildCabinetFunnelCards(tests: TestCard[], cabinetOrder: string[] = [], sourceKey = "export"): FunnelCard[] {
   const list = Array.isArray(tests) ? tests : [];
-  const cabinets = cabinetOrder.length ? cabinetOrder : Array.from(new Set(list.map(i => i?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+  const sourceCabinets = cabinetOrder.length ? cabinetOrder : Array.from(new Set(list.map(i => i?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+  const seenCabinetKeys = new Set<string>();
+  const cabinets = sourceCabinets
+    .map(abResolveCabinetDisplayName)
+    .filter((cabinet) => {
+      const cabinetKey = abNormalizeCabinetKey(cabinet);
+      if (!cabinetKey || seenCabinetKeys.has(cabinetKey)) return false;
+      seenCabinetKeys.add(cabinetKey);
+      return true;
+    });
   return cabinets
-    .map(cabinet => abBuildFunnelCard(cabinet, list.filter(i => i?.cabinet === cabinet), sourceKey, cabinet, false))
+    .map(cabinet => {
+      const cabinetKeys = abGetCabinetMatchKeys(cabinet);
+      return abBuildFunnelCard(cabinet, list.filter(i => cabinetKeys.has(abNormalizeCabinetKey(i?.cabinet))), sourceKey, cabinet, false);
+    })
     .filter(Boolean) as FunnelCard[];
 }
 
@@ -938,21 +1011,33 @@ export function abBuildGroupedCabinetFunnelCards(tests: TestCard[], cabinetOrder
   const groupedCabinets = new Set<string>();
 
   for (const group of AB_CABINET_GROUPS) {
-    const groupTests = list.filter((test) => group.cabinets.includes(String(test?.cabinet || "").trim()));
-    group.cabinets.forEach((cabinet) => groupedCabinets.add(cabinet));
+    const groupCabinetKeys = new Set(group.cabinets.flatMap((cabinet) => abGetCabinetAliasValues(group, cabinet)).map(abNormalizeCabinetKey).filter(Boolean));
+    const groupTests = list.filter((test) => groupCabinetKeys.has(abNormalizeCabinetKey(test?.cabinet)));
+    groupCabinetKeys.forEach((cabinetKey) => groupedCabinets.add(cabinetKey));
     const card = abBuildFunnelCard(group.label, groupTests, sourceKey, group.key, false);
     if (card) cards.push(card);
   }
 
-  const cabinets = (cabinetOrder.length
+  const sourceCabinets = cabinetOrder.length
     ? cabinetOrder
-    : Array.from(new Set(list.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru")))
-    .filter((cabinet) => !groupedCabinets.has(String(cabinet || "").trim()));
+    : Array.from(new Set(list.map((item) => item?.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+  const seenCabinetKeys = new Set<string>();
+  const cabinets = sourceCabinets
+    .map(abResolveCabinetDisplayName)
+    .filter((cabinet) => {
+      const cabinetKey = abNormalizeCabinetKey(cabinet);
+      if (!cabinetKey || groupedCabinets.has(cabinetKey) || seenCabinetKeys.has(cabinetKey)) return false;
+      seenCabinetKeys.add(cabinetKey);
+      return true;
+    });
 
   return [
     ...cards,
     ...cabinets
-      .map((cabinet) => abBuildFunnelCard(cabinet, list.filter((item) => item?.cabinet === cabinet), sourceKey, cabinet, false))
+      .map((cabinet) => {
+        const cabinetKeys = abGetCabinetMatchKeys(cabinet);
+        return abBuildFunnelCard(cabinet, list.filter((item) => cabinetKeys.has(abNormalizeCabinetKey(item?.cabinet))), sourceKey, cabinet, false);
+      })
       .filter(Boolean) as FunnelCard[],
   ];
 }
@@ -968,11 +1053,14 @@ export function abFilterTests(model: DashboardModel, filters: Filters): TestCard
   const dateTo = (filters.dateTo || "").trim();
   const monthKeys = (Array.isArray(filters.monthKeys) ? filters.monthKeys : []).filter(v => /^\d{4}-\d{2}$/.test(v));
   const expandedCabinetFilter = cabinet !== "all" ? abExpandCabinetFilter(cabinet) : null;
+  const cabinetFilterKeys = cabinet !== "all"
+    ? expandedCabinetFilter
+      ? new Set(expandedCabinetFilter.map(abNormalizeCabinetKey).filter(Boolean))
+      : abGetCabinetMatchKeys(cabinet)
+    : null;
   return tests.filter(test => {
     if (cabinet !== "all") {
-      if (expandedCabinetFilter) {
-        if (!expandedCabinetFilter.includes(String(test.cabinet || "").trim())) return false;
-      } else if (test.cabinet !== cabinet) {
+      if (!cabinetFilterKeys?.has(abNormalizeCabinetKey(test.cabinet))) {
         return false;
       }
     }
