@@ -227,7 +227,7 @@ export function TestCardComponent({
                     <td key={v.index} className="border-b border-r border-slate-100 dark:border-slate-700 px-1.5 py-1.5 text-center h-[80px]">
                       <div className="flex items-center justify-center h-full">
                         {v.imageUrl ? (
-                          <CoverImage imageUrl={v.imageUrl} index={v.index} isBest={v.isBest} isActive={Boolean(v.isActive)} isPending={Boolean(v.isPending)} statusRaw={String(v.statusRaw || "")} />
+                          <CoverImage imageUrl={v.imageUrl} imageSrc={v.imageSrc || v.imageUrl} index={v.index} isBest={v.isBest} isActive={Boolean(v.isActive)} isPending={Boolean(v.isPending)} statusRaw={String(v.statusRaw || "")} />
                         ) : (
                           <div className="relative flex items-center justify-center">
                             {v.isPending ? (
@@ -405,6 +405,7 @@ function SummaryCard({
 // ── Cover image with hover preview ──
 function CoverImage({
   imageUrl,
+  imageSrc,
   index,
   isBest,
   isActive,
@@ -412,6 +413,7 @@ function CoverImage({
   statusRaw,
 }: {
   imageUrl: string;
+  imageSrc: string;
   index: number;
   isBest: boolean;
   isActive: boolean;
@@ -475,7 +477,7 @@ function CoverImage({
         onMouseLeave={handleMouseLeave}
         title={statusRaw || `Обложка ${index}`}
       >
-        <img src={imageUrl} alt={`Обложка ${index}`} loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover block" />
+        <img src={imageSrc} alt={`Обложка ${index}`} loading="lazy" decoding="async" className="w-full aspect-[3/4] object-cover block" />
       </a>
       {preview.visible && (
         <div
@@ -483,7 +485,7 @@ function CoverImage({
           style={{ left: preview.x, top: preview.y, width: 220, transform: "translateX(-50%)", opacity: 1 }}
         >
           <img
-            src={imageUrl}
+            src={imageSrc}
             alt={`Обложка ${index} (увеличенная)`}
             className="w-full aspect-[3/4] object-cover block rounded-2xl border border-slate-200/80 bg-white"
             style={{ boxShadow: "0 22px 44px rgba(16,31,41,0.24), 0 4px 12px rgba(16,31,41,0.16)" }}

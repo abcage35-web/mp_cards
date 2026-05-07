@@ -777,6 +777,7 @@ function TestCard({ test, matrixMetricWidth, matrixVariantWidth }) {
                       </div>
                     </td>`;
                   }
+                  const imageSrc = variant.imageSrc || variant.imageUrl;
                   return html`<td key=${variant.index}>
                     <div className="ab-image-cell">
                       <div className="ab-image-center">
@@ -788,7 +789,7 @@ function TestCard({ test, matrixMetricWidth, matrixVariantWidth }) {
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            <img src=${variant.imageUrl} alt=${`Обложка ${variant.index}`} loading="lazy" decoding="async" />
+                            <img src=${imageSrc} alt=${`Обложка ${variant.index}`} loading="lazy" decoding="async" />
                           </a>
                         </div>
                       </div>

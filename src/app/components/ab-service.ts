@@ -50,6 +50,7 @@ export const AB_CABINET_GROUPS = [
 export interface Variant {
   index: number;
   imageUrl: string;
+  imageSrc?: string;
   viewsValue: number | null;
   clicksValue: number | null;
   ctrValue: number | null;
@@ -67,6 +68,24 @@ export interface Variant {
   statusRaw?: string;
   isPending?: boolean;
   isActive?: boolean;
+}
+
+export function abBuildCoverImageSrc(imageUrlRaw: string) {
+  const imageUrl = String(imageUrlRaw || "").trim();
+  if (!imageUrl) {
+    return "";
+  }
+
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru" && url.pathname.startsWith("/card_s3/")) {
+      return `/api/ab-cover-image?url=${encodeURIComponent(url.toString())}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
 }
 
 export interface ComparisonRow {
@@ -497,8 +516,9 @@ function abBuildVariantCards(resultsList: any[], endedAtIso = ""): Variant[] {
     const endMs = Number.isFinite(nextInstalledMs) ? nextInstalledMs : testEndedMs;
     const installedAtParts = item.installedAt ? abFormatVariantDateTime(item.installedAt) : { date: "", time: "" };
     const hoursValue = Number.isFinite(currentInstalledMs) && Number.isFinite(endMs) ? (endMs - currentInstalledMs) / 3600000 : null;
+    const imageUrl = String(item.coverUrl || "").trim();
     return {
-      index: index + 1, imageUrl: item.coverUrl, viewsValue: item.views, clicksValue: item.clicks, ctrValue,
+      index: index + 1, imageUrl, imageSrc: abBuildCoverImageSrc(imageUrl), viewsValue: item.views, clicksValue: item.clicks, ctrValue,
       installedAtIso: item.installedAt || "", views: abFormatInt(item.views), clicks: abFormatInt(item.clicks),
       ctr: Number.isFinite(ctrValue) ? abFormatFractionToPercent(ctrValue, 2) : "—",
       installedAtDate: installedAtParts.date || "—", installedAtTime: installedAtParts.time || "",
@@ -515,7 +535,7 @@ function abBuildVariantCards(resultsList: any[], endedAtIso = ""): Variant[] {
       ctrBoostKind: item.index > 1 && baseCtr && Number.isFinite(item.ctrValue) ? (item.ctrValue! / baseCtr - 1 > 0 ? "good" : item.ctrValue! / baseCtr - 1 < 0 ? "bad" : "neutral") : "",
     }));
   }
-  return [{ index: 1, imageUrl: "", viewsValue: null, clicksValue: null, ctrValue: null, installedAtIso: "", views: "—", clicks: "—", ctr: "—", installedAtDate: "—", installedAtTime: "", hours: "—", isBest: false, ctrBoostValue: null, ctrBoostText: "", ctrBoostKind: "" }];
+  return [{ index: 1, imageUrl: "", imageSrc: "", viewsValue: null, clicksValue: null, ctrValue: null, installedAtIso: "", views: "—", clicks: "—", ctr: "—", installedAtDate: "—", installedAtTime: "", hours: "—", isBest: false, ctrBoostValue: null, ctrBoostText: "", ctrBoostKind: "" }];
 }
 
 function abSafeDivide(n: unknown, d: unknown) {

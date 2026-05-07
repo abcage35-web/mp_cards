@@ -198,6 +198,7 @@ function CoverPreview({
   sizePx?: number;
 }) {
   const imageUrl = String(variant?.imageUrl || "").trim();
+  const imageSrc = String(variant?.imageSrc || imageUrl).trim();
 
   return (
     <div className="flex items-center justify-center">
@@ -215,7 +216,7 @@ function CoverPreview({
             className="block overflow-hidden rounded-[14px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
           >
             <img
-              src={imageUrl}
+              src={imageSrc}
               alt={fallbackLabel}
               loading="lazy"
               decoding="async"

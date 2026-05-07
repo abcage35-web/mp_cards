@@ -619,6 +619,24 @@ function abNormalizeTestId(valueRaw) {
   return digits ? digits[0] : "";
 }
 
+function abBuildCoverImageSrc(imageUrlRaw) {
+  const imageUrl = String(imageUrlRaw || "").trim();
+  if (!imageUrl) {
+    return "";
+  }
+
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol === "https:" && url.hostname === "static.mpmpmp.ru" && url.pathname.startsWith("/card_s3/")) {
+      return `/api/ab-cover-image?url=${encodeURIComponent(url.toString())}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
 function abParseResultIndex(resultsSheet) {
   const rows = Array.isArray(resultsSheet?.rows) ? resultsSheet.rows : [];
   const map = new Map();
@@ -800,9 +818,11 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
         ? (endMs - currentInstalledMs) / 3600000
         : null;
 
+    const imageUrl = String(item.coverUrl || "").trim();
     return {
       index: index + 1,
-      imageUrl: item.coverUrl,
+      imageUrl,
+      imageSrc: abBuildCoverImageSrc(imageUrl),
       viewsValue: item.views,
       clicksValue: item.clicks,
       ctrValue,
@@ -846,6 +866,7 @@ function abBuildVariantCards(resultsList, endedAtIso = "") {
     {
       index: 1,
       imageUrl: "",
+      imageSrc: "",
       viewsValue: null,
       clicksValue: null,
       ctrValue: null,
@@ -1696,10 +1717,11 @@ function renderAbTestCard(test) {
       if (!variant.imageUrl) {
         return '<td><div class="ab-image-cell"><div class="ab-image-center"><div class="ab-image-placeholder">нет обложки</div></div></div></td>';
       }
+      const imageSrc = variant.imageSrc || variant.imageUrl;
       return `<td><div class="ab-image-cell"><div class="ab-image-center"><div class="ab-cover-frame${variant.isBest ? " is-best" : ""}">${
         variant.isBest ? '<span class="ab-variant-best-badge">Лучшая</span>' : ""
       }<a class="ab-cover-link${variant.isBest ? " is-best" : ""}" href="${abEscapeAttr(variant.imageUrl)}" target="_blank" rel="noopener noreferrer"><img src="${abEscapeAttr(
-        variant.imageUrl,
+        imageSrc,
       )}" alt="Обложка ${variant.index}" loading="lazy" decoding="async" /></a></div></div></div></td>`;
     })
     .join("");
