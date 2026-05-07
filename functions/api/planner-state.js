@@ -1,12 +1,3 @@
-import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
-const STORAGE_DIR = resolve(process.cwd(), "storage");
-const STATE_FILE = resolve(STORAGE_DIR, "planner-state.json");
-const TEMP_STATE_FILE = resolve(STORAGE_DIR, "planner-state.json.tmp");
-const LOG_FILE = resolve(STORAGE_DIR, "planner-state-log.ndjson");
-
 const TASK_GROUPS = new Set(["planned", "new", "project", "planned-meeting", "new-meeting", "off-hours", "undefined"]);
 const DEFAULT_GROUP_ORDER = ["planned", "new", "project", "planned-meeting", "new-meeting", "off-hours", "undefined"];
 const PARTICIPANTS = new Set(["sasha-nekrasov", "sasha-manokhin", "anton-bober"]);
@@ -28,6 +19,13 @@ const DEFAULT_PARTICIPANT_WORK_SCHEDULES = {
     endTime: "18:00",
   },
 };
+
+const PLANNER_STATE_KEY = "planner-state-v1";
+const MEMORY_LOG_LIMIT = 1000;
+let plannerTablesEnsured = false;
+let plannerTablesEnsurePromise = null;
+let memoryPlannerState = null;
+let memoryPlannerLog = [];
 const LEGACY_DEFAULT_PARTICIPANT_WORK_SCHEDULES = {
   "sasha-nekrasov": {
     startTime: "09:00",
@@ -494,20 +492,114 @@ function buildDefaultState() {
   });
 }
 
-async function ensureStorageDir() {
-  await mkdir(STORAGE_DIR, { recursive: true });
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
-async function writeStateFile(payload) {
-  await ensureStorageDir();
-  await writeFile(TEMP_STATE_FILE, JSON.stringify(payload, null, 2), "utf8");
-  await rename(TEMP_STATE_FILE, STATE_FILE);
+function getStorageInfo(env) {
+  if (env?.DB) {
+    return {
+      stateFile: "D1 planner_state",
+      logFile: "D1 planner_state_log",
+    };
+  }
+
+  return {
+    stateFile: "runtime memory planner_state",
+    logFile: "runtime memory planner_state_log",
+  };
 }
 
-async function appendLogEntry(entryRaw) {
-  await ensureStorageDir();
+function createLogId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  const random = Math.random().toString(36).slice(2);
+  return `${Date.now().toString(36)}-${random}`;
+}
+
+async function ensurePlannerTables(db) {
+  if (!db || plannerTablesEnsured) {
+    return;
+  }
+
+  if (!plannerTablesEnsurePromise) {
+    plannerTablesEnsurePromise = (async () => {
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS planner_state (
+             state_key TEXT PRIMARY KEY,
+             payload_json TEXT NOT NULL,
+             created_at TEXT NOT NULL,
+             updated_at TEXT NOT NULL
+           )`,
+        )
+        .run();
+
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS planner_state_log (
+             state_key TEXT NOT NULL,
+             log_id TEXT NOT NULL,
+             entry_json TEXT NOT NULL,
+             created_at TEXT NOT NULL,
+             PRIMARY KEY(state_key, log_id)
+           )`,
+        )
+        .run();
+
+      await db
+        .prepare(
+          `CREATE INDEX IF NOT EXISTS idx_planner_state_log_created_at
+             ON planner_state_log(state_key, created_at)`,
+        )
+        .run();
+
+      plannerTablesEnsured = true;
+    })().catch((error) => {
+      plannerTablesEnsurePromise = null;
+      throw error;
+    });
+  }
+
+  await plannerTablesEnsurePromise;
+}
+
+async function appendLogEntryToD1(db, entryRaw) {
+  await ensurePlannerTables(db);
   const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
-  await appendFile(LOG_FILE, `${JSON.stringify(entry)}\n`, "utf8");
+  const createdAt = toIsoOrNow(entry.at);
+
+  await db
+    .prepare(
+      `INSERT INTO planner_state_log (state_key, log_id, entry_json, created_at)
+       VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(PLANNER_STATE_KEY, createLogId(), JSON.stringify(entry), createdAt)
+    .run();
+}
+
+async function writeStateToD1(db, payload) {
+  await ensurePlannerTables(db);
+  const updatedAt = toIsoOrNow(payload?.updatedAt);
+  const createdAt = toIsoOrNow(payload?.createdAt, updatedAt);
+
+  await db
+    .prepare(
+      `INSERT INTO planner_state (state_key, payload_json, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(state_key) DO UPDATE SET
+         payload_json = excluded.payload_json,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(PLANNER_STATE_KEY, JSON.stringify(payload), createdAt, updatedAt)
+    .run();
+}
+
+function appendLogEntryToMemory(entryRaw) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  memoryPlannerLog = [...memoryPlannerLog, cloneJson(entry)].slice(-MEMORY_LOG_LIMIT);
 }
 
 function summarizeState(payload) {
@@ -554,38 +646,78 @@ function buildTaskLogSnapshot(payload, changedTaskId) {
   };
 }
 
-async function loadStateFromDisk() {
-  if (!existsSync(STATE_FILE)) {
-    const defaultState = buildDefaultState();
-    await writeStateFile(defaultState);
-    await appendLogEntry({
-      at: defaultState.updatedAt,
-      action: "init",
-      summary: "Initial planner state created",
-      ...summarizeState(defaultState),
-    });
-    return defaultState;
+async function initializeDefaultState(db = null) {
+  const defaultState = buildDefaultState();
+  const initEntry = {
+    at: defaultState.updatedAt,
+    action: "init",
+    summary: "Initial planner state created",
+    ...summarizeState(defaultState),
+  };
+
+  if (db) {
+    await writeStateToD1(db, defaultState);
+    await appendLogEntryToD1(db, initEntry);
+  } else {
+    memoryPlannerState = cloneJson(defaultState);
+    appendLogEntryToMemory(initEntry);
   }
 
-  const raw = await readFile(STATE_FILE, "utf8");
-  return sanitizeState(JSON.parse(raw));
+  return defaultState;
+}
+
+async function loadPlannerState(env) {
+  const db = env?.DB;
+  if (!db) {
+    if (!memoryPlannerState) {
+      return initializeDefaultState();
+    }
+
+    return sanitizeState(cloneJson(memoryPlannerState));
+  }
+
+  await ensurePlannerTables(db);
+  const row = await db
+    .prepare(
+      `SELECT payload_json
+       FROM planner_state
+       WHERE state_key = ?1
+       LIMIT 1`,
+    )
+    .bind(PLANNER_STATE_KEY)
+    .first();
+
+  if (!row?.payload_json) {
+    return initializeDefaultState(db);
+  }
+
+  return sanitizeState(JSON.parse(String(row.payload_json)));
+}
+
+async function savePlannerState(env, payload, logEntry) {
+  const db = env?.DB;
+  if (!db) {
+    memoryPlannerState = cloneJson(payload);
+    appendLogEntryToMemory(logEntry);
+    return;
+  }
+
+  await writeStateToD1(db, payload);
+  await appendLogEntryToD1(db, logEntry);
 }
 
 export async function onRequestOptions() {
   return new Response(null, { status: 204 });
 }
 
-export async function onRequestGet() {
+export async function onRequestGet(context) {
   try {
-    const payload = await loadStateFromDisk();
+    const payload = await loadPlannerState(context?.env);
 
     return json({
       ok: true,
       payload,
-      storage: {
-        stateFile: "storage/planner-state.json",
-        logFile: "storage/planner-state-log.ndjson",
-      },
+      storage: getStorageInfo(context?.env),
       stats: summarizeState(payload),
     });
   } catch (error) {
@@ -611,23 +743,21 @@ export async function onRequestPut(context) {
   payload.updatedAt = nowIso;
 
   try {
-    await writeStateFile(payload);
-    await appendLogEntry({
+    const logEntry = {
       at: nowIso,
       action,
       taskId: changedTaskId,
       summary,
       taskSnapshot: buildTaskLogSnapshot(payload, changedTaskId),
       ...summarizeState(payload),
-    });
+    };
+
+    await savePlannerState(context?.env, payload, logEntry);
 
     return json({
       ok: true,
       payload,
-      storage: {
-        stateFile: "storage/planner-state.json",
-        logFile: "storage/planner-state-log.ndjson",
-      },
+      storage: getStorageInfo(context?.env),
       stats: summarizeState(payload),
     });
   } catch (error) {
