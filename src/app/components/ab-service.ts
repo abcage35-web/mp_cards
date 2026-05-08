@@ -1,7 +1,5 @@
 // ── Constants ──
 const AB_DASHBOARD_SHEET_ID = "1FS-XeiQA5IIB420mDAUlEGW09HoZWU0Sqtpk6i1jcEQ";
-const AB_OVR_SETTINGS_SHEET_ID = "1STPnPgj8xSrvN-F3K96bDj_pmunCICHTjaj358pRaB4";
-const AB_OVR_SETTINGS_GID = "1574673852";
 const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 export const AB_TEST_LIMIT_OPTIONS = [50, 100, 150, 200, 250, 300] as const;
 export const AB_MATRIX_METRIC_COL_WIDTH = 136;
@@ -972,18 +970,34 @@ export async function abLoadOvrPerformerByWbArticle(options: { force?: boolean }
     return abOvrPerformerByArticlePromise;
   }
 
-  abOvrPerformerByArticlePromise = fetchGoogleSheetRaw(AB_OVR_SETTINGS_SHEET_ID, AB_OVR_SETTINGS_GID)
-    .then((sheet) => {
-      const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
-      const map: Record<string, string> = {};
-      for (const row of rows) {
-        const article = abNormalizeNumericId(abCellText(row, "B") || abCellRaw(row, "B"));
-        const performer = abCellText(row, "G");
-        if (!article || !performer || map[article]) continue;
-        map[article] = performer;
+  abOvrPerformerByArticlePromise = (async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), AB_DASHBOARD_FETCH_TIMEOUT_MS);
+    try {
+      const url = options.force ? `/api/ovr-performers?_ts=${Date.now()}` : "/api/ovr-performers";
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      const payload = text.trim() ? JSON.parse(text) : null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || "Не удалось загрузить имена из ОВР.");
       }
-      return map;
-    })
+      return payload.performerByArticle && typeof payload.performerByArticle === "object"
+        ? payload.performerByArticle as Record<string, string>
+        : {};
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        throw new Error("Превышено время ожидания ответа ОВР.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  })()
     .catch((error) => {
       abOvrPerformerByArticlePromise = null;
       throw error;

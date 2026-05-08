@@ -157,6 +157,7 @@ function createLocalFunctionsPlugin() {
     ["/api/xway-ab-test", "functions/api/xway-ab-test.js"],
     ["/api/xway-ab-tests", "functions/api/xway-ab-tests.js"],
     ["/api/xway-product-snapshots", "functions/api/xway-product-snapshots.js"],
+    ["/api/ovr-performers", "functions/api/ovr-performers.js"],
   ]);
 
   const attachMiddleware = (middlewares: { use: (handler: (req: any, res: any, next: () => void) => void | Promise<void>) => void }) => {
