@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, Check, ClipboardCopy, ExternalLink, Loader2, Star, X } from "lucide-react";
 
@@ -60,6 +60,7 @@ export function XwayBestTestsButton({ tests, disabled = false }: Props) {
   const [namesError, setNamesError] = useState("");
   const [performerByArticle, setPerformerByArticle] = useState<Record<string, string>>({});
   const copyResetTimerRef = useRef<number | null>(null);
+  const namesRequestSeqRef = useRef(0);
 
   const baseRows = useMemo(() => abGetXwayBestTestRows(tests), [tests]);
   const rows = useMemo(() => abGetXwayBestTestRows(tests, performerByArticle), [performerByArticle, tests]);
@@ -92,26 +93,28 @@ export function XwayBestTestsButton({ tests, disabled = false }: Props) {
     };
   }, [open]);
 
-  useEffect(() => {
-    if (!open || namesStatus === "ready" || namesStatus === "loading") return;
-    let cancelled = false;
+  const loadNames = useCallback((force = false) => {
+    const requestId = namesRequestSeqRef.current + 1;
+    namesRequestSeqRef.current = requestId;
     setNamesStatus("loading");
     setNamesError("");
-    abLoadOvrPerformerByWbArticle()
+    abLoadOvrPerformerByWbArticle({ force })
       .then((map) => {
-        if (cancelled) return;
+        if (namesRequestSeqRef.current !== requestId) return;
         setPerformerByArticle(map);
         setNamesStatus("ready");
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (namesRequestSeqRef.current !== requestId) return;
         setNamesError(error instanceof Error ? error.message : "Не удалось загрузить имена из ОВР.");
         setNamesStatus("error");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [namesStatus, open]);
+  }, []);
+
+  useEffect(() => {
+    if (!open || namesStatus !== "idle") return;
+    loadNames(false);
+  }, [loadNames, namesStatus, open]);
 
   const scheduleCopyReset = () => {
     if (copyResetTimerRef.current) window.clearTimeout(copyResetTimerRef.current);
@@ -132,17 +135,7 @@ export function XwayBestTestsButton({ tests, disabled = false }: Props) {
   };
 
   const handleRetryNames = () => {
-    setNamesStatus("loading");
-    setNamesError("");
-    abLoadOvrPerformerByWbArticle({ force: true })
-      .then((map) => {
-        setPerformerByArticle(map);
-        setNamesStatus("ready");
-      })
-      .catch((error) => {
-        setNamesError(error instanceof Error ? error.message : "Не удалось загрузить имена из ОВР.");
-        setNamesStatus("error");
-      });
+    loadNames(true);
   };
 
   const CopyIcon = copyStatus === "copied" ? Check : copyStatus === "error" ? AlertCircle : ClipboardCopy;
