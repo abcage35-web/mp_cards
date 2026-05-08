@@ -1,5 +1,7 @@
 // ── Constants ──
 const AB_DASHBOARD_SHEET_ID = "1FS-XeiQA5IIB420mDAUlEGW09HoZWU0Sqtpk6i1jcEQ";
+const AB_OVR_SETTINGS_SHEET_ID = "1STPnPgj8xSrvN-F3K96bDj_pmunCICHTjaj358pRaB4";
+const AB_OVR_SETTINGS_GID = "1574673852";
 const AB_DASHBOARD_FETCH_TIMEOUT_MS = 32000;
 export const AB_TEST_LIMIT_OPTIONS = [50, 100, 150, 200, 250, 300] as const;
 export const AB_MATRIX_METRIC_COL_WIDTH = 136;
@@ -195,6 +197,13 @@ export interface Product {
   currentImageUrl?: string;
   currentStockValue?: number | null;
   currentInStock?: boolean | null;
+}
+
+export interface XwayBestTestRow {
+  article: string;
+  xwayUrl: string;
+  performer: string;
+  testId: string;
 }
 
 export interface FunnelStage {
@@ -923,10 +932,12 @@ async function abFetchWithTimeout(url: string, timeoutMs: number) {
   } finally { clearTimeout(timeout); }
 }
 
-async function fetchAbSheetRaw(sheetConfig: { gid: string }) {
-  const gid = (sheetConfig?.gid || "").trim();
+async function fetchGoogleSheetRaw(sheetIdRaw: string, gidRaw: string) {
+  const sheetId = (sheetIdRaw || "").trim();
+  const gid = (gidRaw || "").trim();
+  if (!sheetId) throw new Error("Не задан id Google Sheets.");
   if (!gid) throw new Error("Не задан gid листа Google Sheets.");
-  const url = new URL(`https://docs.google.com/spreadsheets/d/${AB_DASHBOARD_SHEET_ID}/gviz/tq`);
+  const url = new URL(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq`);
   url.searchParams.set("gid", gid);
   url.searchParams.set("tqx", "out:json");
   const responseText = await abFetchWithTimeout(url.toString(), AB_DASHBOARD_FETCH_TIMEOUT_MS);
@@ -948,6 +959,37 @@ async function fetchAbSheetRaw(sheetConfig: { gid: string }) {
     return mapped;
   });
   return { cols, colIds, rows };
+}
+
+async function fetchAbSheetRaw(sheetConfig: { gid: string }) {
+  return fetchGoogleSheetRaw(AB_DASHBOARD_SHEET_ID, sheetConfig?.gid || "");
+}
+
+let abOvrPerformerByArticlePromise: Promise<Record<string, string>> | null = null;
+
+export async function abLoadOvrPerformerByWbArticle(options: { force?: boolean } = {}): Promise<Record<string, string>> {
+  if (!options.force && abOvrPerformerByArticlePromise) {
+    return abOvrPerformerByArticlePromise;
+  }
+
+  abOvrPerformerByArticlePromise = fetchGoogleSheetRaw(AB_OVR_SETTINGS_SHEET_ID, AB_OVR_SETTINGS_GID)
+    .then((sheet) => {
+      const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+      const map: Record<string, string> = {};
+      for (const row of rows) {
+        const article = abNormalizeNumericId(abCellText(row, "B") || abCellRaw(row, "B"));
+        const performer = abCellText(row, "G");
+        if (!article || !performer || map[article]) continue;
+        map[article] = performer;
+      }
+      return map;
+    })
+    .catch((error) => {
+      abOvrPerformerByArticlePromise = null;
+      throw error;
+    });
+
+  return abOvrPerformerByArticlePromise;
 }
 
 export async function loadAbDashboardData(): Promise<DashboardModel> {
@@ -1033,6 +1075,23 @@ export function abGetXwayOverallPassedWbArticles(testsRaw: TestCard[]): string[]
     .filter((test) => abStageMatches(test, "overall", "xway"))
     .map(abGetWbArticleFromTest)
     .filter(Boolean);
+}
+
+export function abGetXwayBestTestRows(testsRaw: TestCard[], performerByArticle: Record<string, string> = {}): XwayBestTestRow[] {
+  const tests = Array.isArray(testsRaw) ? testsRaw : [];
+  return tests
+    .filter((test) => abStageMatches(test, "overall", "xway"))
+    .map((test) => {
+      const article = abGetWbArticleFromTest(test);
+      if (!article) return null;
+      return {
+        article,
+        xwayUrl: String(test?.xwayUrl || "").trim(),
+        performer: String(performerByArticle[article] || "").trim(),
+        testId: String(test?.testId || "").trim(),
+      };
+    })
+    .filter(Boolean) as XwayBestTestRow[];
 }
 
 function abBuildFunnelCard(
