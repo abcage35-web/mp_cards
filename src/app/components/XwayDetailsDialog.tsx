@@ -1,5 +1,5 @@
-import { AlertTriangle, Loader2, X } from "lucide-react";
-import { useEffect } from "react";
+import { AlertTriangle, Loader2, RefreshCw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   abGetXwayBeforeAdjustmentNote,
@@ -20,6 +20,9 @@ interface XwayDetailsDialogProps {
   status: DialogStatus;
   payload: XwayPayload | null;
   error: string;
+  rangeRefreshing?: boolean;
+  rangeError?: string;
+  onRefreshRange?: (test: TestCard, range: { beforeDate: string; afterDate: string }) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -120,10 +123,7 @@ function buildSummaryFlow(checks: SummaryChecks | null) {
 
 function getExportComparisonRows(test: TestCard | null) {
   const rows = Array.isArray(test?.comparisonRows) ? test.comparisonRows : [];
-  return rows.filter((row) => {
-    const label = String(row?.label || "").trim().toUpperCase();
-    return label && label !== "ЦЕНА" && label !== "ОТКЛ. ЦЕНЫ";
-  });
+  return rows.filter((row) => String(row?.label || "").trim());
 }
 
 function TotalsCard({ title, subtitle, totals }: { title: string; subtitle?: string; totals: XwayTotals | undefined }) {
@@ -298,8 +298,19 @@ export function XwayDetailsDialog({
   status,
   payload,
   error,
+  rangeRefreshing = false,
+  rangeError = "",
+  onRefreshRange,
   onClose,
 }: XwayDetailsDialogProps) {
+  const defaultBeforeDateValue = payload?.range?.before || shiftIsoDateTime(test?.startedAtIso, -1);
+  const defaultAfterDateValue = payload?.range?.after || shiftIsoDateTime(test?.endedAtIso, 1);
+  const [rangeBeforeDate, setRangeBeforeDate] = useState("");
+  const [rangeAfterDate, setRangeAfterDate] = useState("");
+  const [localRangeError, setLocalRangeError] = useState("");
+  const rangeBeforeDateRef = useRef<HTMLInputElement | null>(null);
+  const rangeAfterDateRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     if (!open) return undefined;
     const handleEscape = (event: KeyboardEvent) => {
@@ -310,6 +321,35 @@ export function XwayDetailsDialog({
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [onClose, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const nextBeforeDate = defaultBeforeDateValue || "";
+    const nextAfterDate = defaultAfterDateValue || "";
+    setRangeBeforeDate(nextBeforeDate);
+    setRangeAfterDate(nextAfterDate);
+    if (rangeBeforeDateRef.current) {
+      rangeBeforeDateRef.current.value = nextBeforeDate;
+    }
+    if (rangeAfterDateRef.current) {
+      rangeAfterDateRef.current.value = nextAfterDate;
+    }
+    setLocalRangeError("");
+  }, [defaultAfterDateValue, defaultBeforeDateValue, open, test?.testId]);
+
+  const handleRefreshRange = () => {
+    if (!test || !onRefreshRange) return;
+    const beforeDate = String(rangeBeforeDateRef.current?.value || rangeBeforeDate).trim();
+    const afterDate = String(rangeAfterDateRef.current?.value || rangeAfterDate).trim();
+    if (!beforeDate || !afterDate) {
+      setLocalRangeError("Укажите даты «ДО» и «ПОСЛЕ».");
+      return;
+    }
+    setRangeBeforeDate(beforeDate);
+    setRangeAfterDate(afterDate);
+    setLocalRangeError("");
+    onRefreshRange(test, { beforeDate, afterDate });
+  };
 
   if (!open || !test) return null;
 
@@ -417,6 +457,50 @@ export function XwayDetailsDialog({
 
             {status === "ready" && payload ? (
               <div className="space-y-5">
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700/80 dark:bg-slate-900/70 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400" style={{ fontWeight: 700 }}>
+                      До
+                      <input
+                        ref={rangeBeforeDateRef}
+                        type="date"
+                        defaultValue={rangeBeforeDate}
+                        onChange={(event) => setRangeBeforeDate(event.target.value)}
+                        className="h-9 w-[148px] rounded-xl border border-slate-200 bg-white px-3 text-[13px] normal-case tracking-normal text-slate-700 outline-none transition-colors focus:border-teal-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400" style={{ fontWeight: 700 }}>
+                      После
+                      <input
+                        ref={rangeAfterDateRef}
+                        type="date"
+                        defaultValue={rangeAfterDate}
+                        onChange={(event) => setRangeAfterDate(event.target.value)}
+                        className="h-9 w-[148px] rounded-xl border border-slate-200 bg-white px-3 text-[13px] normal-case tracking-normal text-slate-700 outline-none transition-colors focus:border-teal-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      aria-label="Обновить XWAY по выбранным датам"
+                      title="Обновить"
+                      disabled={rangeRefreshing}
+                      onClick={handleRefreshRange}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                        rangeRefreshing
+                          ? "cursor-wait border-slate-200 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-950"
+                          : "border-teal-200 bg-white text-teal-700 hover:border-teal-300 hover:bg-teal-50 dark:border-teal-800 dark:bg-slate-950 dark:text-teal-300 dark:hover:bg-teal-950/40"
+                      }`}
+                    >
+                      {rangeRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {localRangeError || rangeError ? (
+                    <div className="text-[12px] text-red-600 dark:text-red-400" style={{ fontWeight: 600 }}>
+                      {localRangeError || rangeError}
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="grid gap-4 xl:grid-cols-3">
                   <TotalsCard title="До" subtitle={beforeDate} totals={payload.totals?.before} />
                   <TotalsCard title="Во время" subtitle={duringDate} totals={payload.totals?.during} />

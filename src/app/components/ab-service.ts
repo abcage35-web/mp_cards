@@ -1280,6 +1280,8 @@ export interface XwayRequestMeta {
   campaignExternalId: string;
   startedAt: string;
   endedAt: string;
+  beforeDate?: string;
+  afterDate?: string;
 }
 
 export interface XwayMetricRow {
@@ -1334,6 +1336,7 @@ export interface XwayPayload {
     before?: string;
     beforeOriginal?: string;
     beforeShifted?: boolean;
+    beforeManual?: boolean;
     beforeAdjustment?: XwayBeforeAdjustment | null;
     during?: {
       from?: string;
@@ -1341,6 +1344,7 @@ export interface XwayPayload {
     };
     after?: string;
     afterAvailable?: boolean;
+    afterManual?: boolean;
   };
   product?: {
     shopId?: number;
@@ -1423,6 +1427,8 @@ export function buildXwayRequestKey(meta: XwayRequestMeta): string {
     String(meta?.campaignExternalId || "").trim(),
     String(meta?.startedAt || "").trim(),
     String(meta?.endedAt || "").trim(),
+    String(meta?.beforeDate || "").trim(),
+    String(meta?.afterDate || "").trim(),
   ].join("|");
 }
 
@@ -1437,6 +1443,14 @@ export async function fetchXwayPayload(
     startedAt: String(meta?.startedAt || "").trim(),
     endedAt: String(meta?.endedAt || "").trim(),
   });
+  const beforeDate = String(meta?.beforeDate || "").trim();
+  const afterDate = String(meta?.afterDate || "").trim();
+  if (beforeDate) {
+    params.set("beforeDate", beforeDate);
+  }
+  if (afterDate) {
+    params.set("afterDate", afterDate);
+  }
   if (options.force) {
     params.set("_ts", String(Date.now()));
   }
@@ -1533,8 +1547,6 @@ export function abBuildXwayComparisonRowsFromPayload(
   });
   const rowMap = new Map((Array.isArray(payload?.metrics) ? payload!.metrics : []).map((row) => [String(row.key || ""), row]));
   const metricRows = [
-    ["Ставка", "bid"],
-    ["Показы", "views"],
     ["CTR", "ctr"],
     ["CR1", "cr1"],
     ["CR2", "cr2"],

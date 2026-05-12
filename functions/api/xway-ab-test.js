@@ -48,6 +48,18 @@ function buildStataPath(shopId, productId, startDate, endDate) {
   return `/api/adv/shop/${shopId}/product/${productId}/stata?is_active=0&start=${startDate}&end=${endDate}&tags&active_camps=1`;
 }
 
+function normalizeExplicitIsoDate(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return "";
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toISOString().slice(0, 10) === value ? value : "";
+}
+
 function buildBeforeAdjustmentNote(adjustment) {
   if (!adjustment?.applied) {
     return "";
@@ -492,8 +504,32 @@ export async function onRequestGet(context) {
   const explicitCampaignExternalId = String(url.searchParams.get("campaignExternalId") || "").trim();
   const explicitStartedAt = String(url.searchParams.get("startedAt") || "").trim();
   const explicitEndedAt = String(url.searchParams.get("endedAt") || "").trim();
+  const hasExplicitBeforeDate = url.searchParams.has("beforeDate");
+  const hasExplicitAfterDate = url.searchParams.has("afterDate");
+  const explicitBeforeDate = normalizeExplicitIsoDate(url.searchParams.get("beforeDate"));
+  const explicitAfterDate = normalizeExplicitIsoDate(url.searchParams.get("afterDate"));
   if (!testId) {
     return json({ ok: false, error: "missing_test_id" }, { status: 400 });
+  }
+  if (hasExplicitBeforeDate && !explicitBeforeDate) {
+    return json(
+      {
+        ok: false,
+        error: "invalid_before_date",
+        message: "Дата «ДО» должна быть в формате YYYY-MM-DD.",
+      },
+      { status: 400 },
+    );
+  }
+  if (hasExplicitAfterDate && !explicitAfterDate) {
+    return json(
+      {
+        ok: false,
+        error: "invalid_after_date",
+        message: "Дата «ПОСЛЕ» должна быть в формате YYYY-MM-DD.",
+      },
+      { status: 400 },
+    );
   }
 
   const storageState = getXwayStorageState(env);
@@ -533,8 +569,30 @@ export async function onRequestGet(context) {
     const endedDate = xwayIsoDateFromDateLike(endedAtIso);
     const todayDate = xwayIsoDateFromDateLike(new Date().toISOString());
     const duringEndDate = endedDate || xwayIsoDateFromDateLike(new Date().toISOString());
-    const beforeDate = xwayShiftIsoDate(startedDate, -1);
-    const afterDateCandidate = endedDate ? xwayShiftIsoDate(endedDate, 1) : "";
+    if (todayDate && explicitBeforeDate && explicitBeforeDate > todayDate) {
+      return json(
+        {
+          ok: false,
+          error: "future_before_date",
+          message: "Дата «ДО» не может быть в будущем.",
+        },
+        { status: 422 },
+      );
+    }
+    if (todayDate && explicitAfterDate && explicitAfterDate > todayDate) {
+      return json(
+        {
+          ok: false,
+          error: "future_after_date",
+          message: "Дата «ПОСЛЕ» не может быть в будущем.",
+        },
+        { status: 422 },
+      );
+    }
+    const automaticBeforeDate = xwayShiftIsoDate(startedDate, -1);
+    const beforeDate = explicitBeforeDate || automaticBeforeDate;
+    const automaticAfterDate = endedDate ? xwayShiftIsoDate(endedDate, 1) : "";
+    const afterDateCandidate = explicitAfterDate || automaticAfterDate;
     const hasAfterWindow = Boolean(afterDateCandidate && todayDate && afterDateCandidate <= todayDate);
     const afterDate = hasAfterWindow ? afterDateCandidate : "";
     if (!beforeDate || !duringEndDate) {
@@ -582,7 +640,7 @@ export async function onRequestGet(context) {
     const initialBeforeTotals = xwayAggregateCampaignStats(beforeCampaigns);
     let beforeAdjustment = null;
     const nextBeforeDate = xwayShiftIsoDate(beforeDate, 1);
-    if (Number(initialBeforeTotals?.views) < XWAY_BEFORE_MIN_VIEWS && nextBeforeDate) {
+    if (!explicitBeforeDate && Number(initialBeforeTotals?.views) < XWAY_BEFORE_MIN_VIEWS && nextBeforeDate) {
       const shiftedBeforeStata = await xwayFetchJson(
         env,
         buildStataPath(shopId, productId, nextBeforeDate, nextBeforeDate),
@@ -657,6 +715,7 @@ export async function onRequestGet(context) {
         before: effectiveBeforeDate,
         beforeOriginal: beforeDate,
         beforeShifted: Boolean(beforeAdjustment?.applied),
+        beforeManual: Boolean(explicitBeforeDate),
         beforeAdjustment,
         during: {
           from: startedDate,
@@ -664,6 +723,7 @@ export async function onRequestGet(context) {
         },
         after: afterDate,
         afterAvailable: hasAfterWindow,
+        afterManual: Boolean(explicitAfterDate),
       },
       product: {
         shopId,

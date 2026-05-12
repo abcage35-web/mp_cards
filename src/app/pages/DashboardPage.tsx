@@ -65,6 +65,8 @@ interface XwayDialogState {
   status: XwayStatus;
   payload: XwayPayload | null;
   error: string;
+  rangeRefreshing?: boolean;
+  rangeError?: string;
 }
 
 interface ProductSnapshotMeta {
@@ -379,8 +381,12 @@ export function DashboardPage() {
     });
   }, []);
 
-  const resolveXwayForTest = useCallback(async (test: TestCard, options: { force?: boolean; retries?: number } = {}) => {
-    const meta = buildXwayRequestMeta(test);
+  const resolveXwayForTest = useCallback(async (test: TestCard, options: { force?: boolean; retries?: number; beforeDate?: string; afterDate?: string } = {}) => {
+    const meta = {
+      ...buildXwayRequestMeta(test),
+      beforeDate: String(options.beforeDate || "").trim(),
+      afterDate: String(options.afterDate || "").trim(),
+    };
     if (!meta.testId) {
       return {
         status: "error" as const,
@@ -740,6 +746,8 @@ export function DashboardPage() {
           status: "ready",
           payload: result.payload,
           error: "",
+          rangeRefreshing: false,
+          rangeError: "",
         });
       }
       return;
@@ -753,9 +761,68 @@ export function DashboardPage() {
         status: "error",
         payload: null,
         error: result.error,
+        rangeRefreshing: false,
+        rangeError: "",
       });
     }
   }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus, xwayDialogState.open, xwayDialogState.test?.testId]);
+
+  const handleRefreshXwayDialogRange = useCallback(async (test: TestCard, range: { beforeDate: string; afterDate: string }) => {
+    const beforeDate = String(range?.beforeDate || "").trim();
+    const afterDate = String(range?.afterDate || "").trim();
+    if (!test?.testId || !beforeDate || !afterDate) {
+      setXwayDialogState((current) => {
+        if (!current.open || current.test?.testId !== test?.testId) return current;
+        return {
+          ...current,
+          rangeError: "Укажите даты «ДО» и «ПОСЛЕ».",
+        };
+      });
+      return;
+    }
+
+    const requestId = xwayDialogRequestIdRef.current + 1;
+    xwayDialogRequestIdRef.current = requestId;
+    setXwayDialogState((current) => {
+      if (!current.open || current.test?.testId !== test.testId) return current;
+      return {
+        ...current,
+        rangeRefreshing: true,
+        rangeError: "",
+      };
+    });
+
+    const result = await resolveXwayForTest(test, {
+      force: true,
+      beforeDate,
+      afterDate,
+    });
+    if (xwayDialogRequestIdRef.current !== requestId) return;
+
+    if (result.status === "ready") {
+      setXwayDialogState((current) => {
+        if (!current.open || current.test?.testId !== test.testId) return current;
+        return {
+          ...current,
+          status: "ready",
+          payload: result.payload,
+          error: "",
+          rangeRefreshing: false,
+          rangeError: "",
+        };
+      });
+      return;
+    }
+
+    setXwayDialogState((current) => {
+      if (!current.open || current.test?.testId !== test.testId) return current;
+      return {
+        ...current,
+        rangeRefreshing: false,
+        rangeError: result.error || "Не удалось обновить XWAY по выбранным датам.",
+      };
+    });
+  }, [resolveXwayForTest]);
 
   const handleCloseXwayDialog = useCallback(() => {
     xwayDialogRequestIdRef.current += 1;
@@ -765,6 +832,8 @@ export function DashboardPage() {
       status: "idle",
       payload: null,
       error: "",
+      rangeRefreshing: false,
+      rangeError: "",
     });
   }, []);
 
@@ -777,6 +846,8 @@ export function DashboardPage() {
       status: "loading",
       payload: null,
       error: "",
+      rangeRefreshing: false,
+      rangeError: "",
     });
 
     const cached = xwayCacheRef.current.get(buildXwayRequestKey(buildXwayRequestMeta(test)));
@@ -792,6 +863,8 @@ export function DashboardPage() {
         status: "ready",
         payload: result.payload,
         error: "",
+        rangeRefreshing: false,
+        rangeError: "",
       });
       return;
     }
@@ -804,6 +877,8 @@ export function DashboardPage() {
       status: "error",
       payload: null,
       error: result.error,
+      rangeRefreshing: false,
+      rangeError: "",
     });
   }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus]);
 
@@ -989,6 +1064,9 @@ export function DashboardPage() {
         status={xwayDialogState.status}
         payload={xwayDialogState.payload}
         error={xwayDialogState.error}
+        rangeRefreshing={Boolean(xwayDialogState.rangeRefreshing)}
+        rangeError={xwayDialogState.rangeError || ""}
+        onRefreshRange={handleRefreshXwayDialogRange}
         onClose={handleCloseXwayDialog}
       />
     </div>

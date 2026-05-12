@@ -98,6 +98,9 @@ export function TestCardComponent({
         { label: "Итог", raw: test.xwaySummaryChecks.overall },
       ]
     : null;
+  const comparisonRows = Array.isArray(test.xwayComparisonRows) && test.xwayComparisonRows.length
+    ? test.xwayComparisonRows
+    : test.comparisonRows;
 
   const checksFlow = [
     { label: "CTR", raw: test.summaryChecks.testCtr },
@@ -332,7 +335,7 @@ export function TestCardComponent({
               </tr>
             </thead>
             <tbody>
-              {test.comparisonRows.map((row, i) => (
+              {comparisonRows.map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition-colors">
                   <td className="border-b border-r border-slate-100 dark:border-slate-700/50 bg-slate-50/60 dark:bg-slate-800/60 px-3 py-1.5 text-[12px] text-slate-700 dark:text-slate-200 whitespace-nowrap" style={{ fontWeight: 700 }}>
                     {row.label}
