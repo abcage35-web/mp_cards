@@ -450,6 +450,39 @@ function updateSingleRowQueueBulkProgress(reset = false) {
   );
 }
 
+function isSingleRowRefreshQueueBusy() {
+  return (
+    singleRowRefreshQueueRunning ||
+    Boolean(singleRowRefreshActiveRowId) ||
+    singleRowRefreshQueue.length > 0 ||
+    singleRowRefreshQueuedIds.size > 0
+  );
+}
+
+function clearStaleSingleRowRefreshLoadingState() {
+  const progress = state.bulkProgress && typeof state.bulkProgress === "object" ? state.bulkProgress : null;
+  const actionKey = String(progress?.actionKey || singleRowRefreshProgress.actionKey || "").trim();
+  const isRowRefreshProgress = actionKey === "row-refresh";
+  const isInactiveProgress = progress && progress.active !== true;
+
+  if (!state.isBulkLoading || isSingleRowRefreshQueueBusy() || (!isRowRefreshProgress && !isInactiveProgress)) {
+    return false;
+  }
+
+  if (typeof setBulkLoading === "function") {
+    setBulkLoading(false, "Обновление завершено", actionKey || "row-refresh", {
+      total: Math.max(0, Math.round(Number(progress?.total) || 0)),
+      completed: Math.max(0, Math.round(Number(progress?.completed) || 0)),
+      concurrency: 1,
+    });
+  } else {
+    state.isBulkLoading = false;
+    state.bulkCancelRequested = false;
+  }
+
+  return true;
+}
+
 async function processSingleRowRefreshQueue() {
   if (singleRowRefreshQueueRunning) {
     return;
@@ -536,13 +569,17 @@ async function processSingleRowRefreshQueue() {
       clearSingleRowRefreshQueue();
     }
 
-    state.lastSyncAt = new Date().toISOString();
-    if (typeof recordProblemSnapshot === "function") {
-      recordProblemSnapshot({
-        source: singleRowRefreshProgress.source,
-        actionKey: singleRowRefreshProgress.actionKey,
-        mode: singleRowRefreshProgress.mode,
-      });
+    try {
+      state.lastSyncAt = new Date().toISOString();
+      if (typeof recordProblemSnapshot === "function") {
+        recordProblemSnapshot({
+          source: singleRowRefreshProgress.source,
+          actionKey: singleRowRefreshProgress.actionKey,
+          mode: singleRowRefreshProgress.mode,
+        });
+      }
+    } catch {
+      // Финальная аналитика не должна оставлять одиночное обновление в состоянии загрузки.
     }
 
     const completed = Math.max(0, singleRowRefreshProgress.completed);
@@ -583,7 +620,9 @@ function enqueueSingleRowWithProgress(rowIdRaw, options = {}) {
     return false;
   }
 
-  if (state.isBulkLoading && !singleRowRefreshQueueRunning && !singleRowRefreshActiveRowId) {
+  clearStaleSingleRowRefreshLoadingState();
+
+  if (state.isBulkLoading && !isSingleRowRefreshQueueBusy()) {
     return false;
   }
 
