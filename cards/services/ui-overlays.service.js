@@ -1792,16 +1792,68 @@ function buildRowHistoryUrl(rowIdRaw) {
   return url.toString();
 }
 
+function getRowHistoryLogKey(entry, index = 0) {
+  const id = String(entry?.id || entry?.logId || "").trim();
+  if (id) {
+    return `id:${id}`;
+  }
+  return [
+    "entry",
+    String(entry?.at || "").trim(),
+    String(entry?.source || "").trim(),
+    String(entry?.mode || "").trim(),
+    String(entry?.actionKey || "").trim(),
+    String(entry?.status || "").trim(),
+    String(index),
+  ].join(":");
+}
+
+function mergeRowHistoryEntry(existingRaw, incomingRaw) {
+  const existing = existingRaw && typeof existingRaw === "object" ? existingRaw : {};
+  const incoming = incomingRaw && typeof incomingRaw === "object" ? incomingRaw : {};
+  const merged = {
+    ...existing,
+    ...incoming,
+    actorLogin: String(incoming.actorLogin || existing.actorLogin || ""),
+    actorRole: String(incoming.actorRole || existing.actorRole || ""),
+    actorIp: String(incoming.actorIp || existing.actorIp || ""),
+    error: String(incoming.error || existing.error || ""),
+  };
+  merged.changes =
+    Array.isArray(incoming.changes) && incoming.changes.length > 0
+      ? incoming.changes
+      : Array.isArray(existing.changes)
+        ? existing.changes
+        : [];
+  return merged;
+}
+
+function mergeRowHistoryLogs(...sources) {
+  const byKey = new Map();
+  for (const source of sources) {
+    const logs = normalizeRowUpdateLogs(source);
+    for (let index = 0; index < logs.length; index += 1) {
+      const entry = logs[index];
+      const key = getRowHistoryLogKey(entry, index);
+      byKey.set(key, mergeRowHistoryEntry(byKey.get(key), entry));
+    }
+  }
+  return Array.from(byKey.values())
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+    .slice(-UPDATE_LOG_LIMIT);
+}
+
 function getPreferredRowHistoryLogs(row, logsRaw = undefined) {
   const rowId = String(row?.id || "").trim();
   const cachedLogs = rowId && rowHistoryLogsCache.has(rowId) ? rowHistoryLogsCache.get(rowId) : null;
+  const localLogs = normalizeRowUpdateLogs(row?.updateLogs);
   if (Array.isArray(logsRaw)) {
-    return normalizeRowUpdateLogs(logsRaw);
+    return mergeRowHistoryLogs(logsRaw, localLogs);
   }
   if (Array.isArray(cachedLogs)) {
-    return normalizeRowUpdateLogs(cachedLogs);
+    return mergeRowHistoryLogs(cachedLogs, localLogs);
   }
-  return normalizeRowUpdateLogs(row?.updateLogs);
+  return localLogs;
 }
 
 function renderRowHistoryLoadingState(row, fallbackLogs = []) {
@@ -1883,12 +1935,15 @@ async function openRowHistoryWithFetch(rowId) {
   try {
     const fetchedLogs = await loadRowHistoryLogsFromApi(rowIdSafe);
     if (Array.isArray(fetchedLogs)) {
-      rowHistoryLogsCache.set(rowIdSafe, fetchedLogs);
+      rowHistoryLogsCache.set(rowIdSafe, mergeRowHistoryLogs(fetchedLogs, row.updateLogs));
     }
     if (String(el.rowHistoryContent?.dataset?.rowId || "").trim() !== rowIdSafe) {
       return;
     }
-    renderRowHistoryContent(row, Array.isArray(fetchedLogs) ? fetchedLogs : fallbackLogs);
+    renderRowHistoryContent(
+      row,
+      Array.isArray(fetchedLogs) ? rowHistoryLogsCache.get(rowIdSafe) : fallbackLogs,
+    );
   } finally {
     rowHistoryLoadingRows.delete(rowIdSafe);
   }

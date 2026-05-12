@@ -611,36 +611,12 @@ async function persistIncomingRowLogs(db, params) {
       continue;
     }
 
-    const currentLatestLogId = latestStoredLog ? safeString(latestStoredLog.logId, 120) : "";
-    const shouldMergeNoChange =
-      latestStoredLog &&
-      isNoChangeLog(latestStoredLog) &&
-      isNoChangeLog(log);
-
-    if (shouldMergeNoChange && currentLatestLogId) {
-      const mergedLog = {
-        ...latestStoredLog,
-        ...log,
-        logId: currentLatestLogId,
-        at: toIsoOrNow(log.at, nowIso),
-      };
-      await db
-        .prepare(UPDATE_EXISTING_ROW_LOG_SQL)
-        .bind(...mapLogUpdateBind(stateKey, rowId, currentLatestLogId, mergedLog, actor, nowIso))
-        .run();
-      latestStoredLog = mergedLog;
-      touched = true;
-      continue;
-    }
-
     await db
       .prepare(UPSERT_ROW_LOG_SQL)
       .bind(...mapLogToBind(stateKey, rowId, log, actor, nowIso))
       .run();
 
-    if (!currentLatestLogId || currentLatestLogId !== logId) {
-      logsUpserted += 1;
-    }
+    logsUpserted += 1;
     latestStoredLog = log;
     touched = true;
   }
@@ -837,20 +813,6 @@ function mapRowLogRecord(rowRaw) {
     actorIp: safeString(row.actor_ip, 64),
     changes,
   };
-}
-
-function isNoChangeLog(logRaw) {
-  const log = logRaw && typeof logRaw === "object" ? logRaw : null;
-  if (!log) {
-    return false;
-  }
-  if (safeString(log.status, 20).toLowerCase() === "error") {
-    return false;
-  }
-  if (safeString(log.error, 4000)) {
-    return false;
-  }
-  return !Array.isArray(log.changes) || log.changes.length <= 0;
 }
 
 async function getLatestRowLogs(db, stateKey) {
@@ -1126,24 +1088,6 @@ ON CONFLICT(state_key, row_id, log_id) DO UPDATE SET
   actor_login = excluded.actor_login,
   actor_role = excluded.actor_role,
   actor_ip = excluded.actor_ip`;
-
-const UPDATE_EXISTING_ROW_LOG_SQL = `UPDATE dashboard_row_logs
-SET
-  at = ?1,
-  source = ?2,
-  mode = ?3,
-  action_key = ?4,
-  status = ?5,
-  error = ?6,
-  changes_json = ?7,
-  actor_user_id = ?8,
-  actor_login = ?9,
-  actor_role = ?10,
-  actor_ip = ?11,
-  created_at = ?12
-WHERE state_key = ?13
-  AND row_id = ?14
-  AND log_id = ?15`;
 
 const UPSERT_META_SQL = `INSERT INTO dashboard_state_meta (
   state_key,
@@ -1740,26 +1684,6 @@ function mapLogToBind(stateKey, rowId, log, actor, nowIso) {
     actor.role,
     actor.ip,
     nowIso,
-  ];
-}
-
-function mapLogUpdateBind(stateKey, rowId, existingLogId, log, actor, nowIso) {
-  return [
-    log.at,
-    log.sourceType,
-    log.mode,
-    log.actionKey,
-    log.status,
-    log.error,
-    toJson(log.changes, "[]"),
-    actor.userId,
-    actor.login,
-    actor.role,
-    actor.ip,
-    nowIso,
-    stateKey,
-    rowId,
-    existingLogId,
   ];
 }
 
