@@ -367,6 +367,13 @@ function appendRowUpdateLog(row, payload = {}) {
     return;
   }
   row.updateLogs = normalizeRowUpdateLogs([...(Array.isArray(row.updateLogs) ? row.updateLogs : []), logEntry]);
+  if (typeof queueRowUpdateLogSync === "function") {
+    try {
+      queueRowUpdateLogSync(row, logEntry);
+    } catch {
+      // История уже сохранена локально в row.updateLogs; прямую отправку повторит общий sync.
+    }
+  }
 }
 
 function getRowById(rowId) {

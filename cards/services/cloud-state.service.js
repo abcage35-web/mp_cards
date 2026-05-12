@@ -1,6 +1,7 @@
 const CLOUD_STATE_DEFAULT_KEY = "wb-dashboard-v2";
 const CLOUD_STATE_DEFAULT_ENDPOINT = "/api/state";
 const CLOUD_STATE_EXPORT_ENDPOINT = "/api/state-export";
+const ROW_HISTORY_SYNC_ENDPOINT = "/api/row-history";
 const CLOUD_STATE_FETCH_TIMEOUT_MS = 30000;
 const CLOUD_STATE_SYNC_DEBOUNCE_MS = 250;
 const CLOUD_STATE_SYNC_RETRY_BASE_MS = 1200;
@@ -25,6 +26,15 @@ const cloudStateSync = {
     metaSignature: "",
     snapshotSignature: "",
   },
+};
+
+const rowLogSync = {
+  timer: 0,
+  inFlight: false,
+  pending: false,
+  hydrated: false,
+  rowsById: new Map(),
+  retryDelayMs: CLOUD_STATE_SYNC_RETRY_BASE_MS,
 };
 
 function getCloudStateSyncStatus() {
@@ -79,6 +89,276 @@ function buildCloudStateExportUrl() {
   const url = new URL(CLOUD_STATE_EXPORT_ENDPOINT, window.location.origin);
   url.searchParams.set("key", getCloudStateKey());
   return url.toString();
+}
+
+function buildRowHistorySyncUrl() {
+  const url = new URL(ROW_HISTORY_SYNC_ENDPOINT, window.location.origin);
+  url.searchParams.set("key", getCloudStateKey());
+  return url.toString();
+}
+
+function getRowLogSyncStorageKey() {
+  return `${getCloudStateKey()}:row-log-sync-pending-v1`;
+}
+
+function getRowLogSyncLimit() {
+  const configured =
+    typeof CLOUD_SAVE_LOGS_PER_ROW !== "undefined" ? Number(CLOUD_SAVE_LOGS_PER_ROW) : 100;
+  return Math.max(1, Math.min(240, Number.isFinite(configured) ? Math.round(configured) : 100));
+}
+
+function normalizeRowLogSyncLogs(logsRaw) {
+  if (typeof normalizeRowUpdateLogs === "function") {
+    return normalizeRowUpdateLogs(logsRaw).slice(-getRowLogSyncLimit());
+  }
+  return Array.isArray(logsRaw) ? logsRaw.filter((entry) => entry && typeof entry === "object").slice(-100) : [];
+}
+
+function getRowLogSyncLogKey(entryRaw, index = 0) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  const id = String(entry.id || entry.logId || "").trim();
+  if (id) {
+    return `id:${id}`;
+  }
+  return [
+    "entry",
+    String(entry.at || "").trim(),
+    String(entry.source || "").trim(),
+    String(entry.mode || "").trim(),
+    String(entry.actionKey || "").trim(),
+    String(entry.status || "").trim(),
+    String(index),
+  ].join(":");
+}
+
+function getRowLogSyncRowId(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const nmId = String(row.nmId || row.nm_id || "").trim();
+  if (nmId) {
+    return nmId;
+  }
+  return String(row.rowId || row.id || "").trim();
+}
+
+function mergeRowLogSyncEntries(existingRaw, incomingRaw) {
+  const merged = new Map();
+  const addLogs = (logsRaw) => {
+    const logs = normalizeRowLogSyncLogs(logsRaw);
+    for (let index = 0; index < logs.length; index += 1) {
+      const entry = logs[index];
+      merged.set(getRowLogSyncLogKey(entry, index), entry);
+    }
+  };
+  addLogs(existingRaw);
+  addLogs(incomingRaw);
+  return Array.from(merged.values()).slice(-getRowLogSyncLimit());
+}
+
+function persistRowLogSyncPending() {
+  try {
+    const rows = Array.from(rowLogSync.rowsById.values())
+      .map((row) => ({
+        rowId: String(row.rowId || "").trim(),
+        nmId: String(row.nmId || "").trim(),
+        logs: normalizeRowLogSyncLogs(row.logs),
+      }))
+      .filter((row) => row.rowId && row.logs.length > 0);
+    if (rows.length <= 0) {
+      localStorage.removeItem(getRowLogSyncStorageKey());
+      return;
+    }
+    localStorage.setItem(
+      getRowLogSyncStorageKey(),
+      JSON.stringify({
+        savedAt: new Date().toISOString(),
+        rows,
+      }),
+    );
+  } catch {
+    // noop
+  }
+}
+
+function hydrateRowLogSyncPending() {
+  if (rowLogSync.hydrated) {
+    return;
+  }
+  rowLogSync.hydrated = true;
+  let raw = "";
+  try {
+    raw = String(localStorage.getItem(getRowLogSyncStorageKey()) || "");
+  } catch {
+    return;
+  }
+  if (!raw) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+    for (const row of rows) {
+      const rowId = getRowLogSyncRowId(row);
+      const logs = normalizeRowLogSyncLogs(row.logs);
+      if (!rowId || logs.length <= 0) {
+        continue;
+      }
+      rowLogSync.rowsById.set(rowId, {
+        rowId,
+        nmId: String(row.nmId || "").trim() || rowId,
+        logs: mergeRowLogSyncEntries(rowLogSync.rowsById.get(rowId)?.logs, logs),
+      });
+    }
+  } catch {
+    // noop
+  }
+}
+
+function removeSentRowLogSyncEntries(sentRows) {
+  for (const sentRow of sentRows) {
+    const rowId = getRowLogSyncRowId(sentRow);
+    const current = rowLogSync.rowsById.get(rowId);
+    if (!rowId || !current) {
+      continue;
+    }
+    const sentKeys = new Set(
+      normalizeRowLogSyncLogs(sentRow.logs).map((entry, index) => getRowLogSyncLogKey(entry, index)),
+    );
+    const remaining = normalizeRowLogSyncLogs(current.logs).filter(
+      (entry, index) => !sentKeys.has(getRowLogSyncLogKey(entry, index)),
+    );
+    if (remaining.length > 0) {
+      rowLogSync.rowsById.set(rowId, {
+        ...current,
+        logs: remaining,
+      });
+    } else {
+      rowLogSync.rowsById.delete(rowId);
+    }
+  }
+  persistRowLogSyncPending();
+}
+
+function clearRowLogSyncTimer() {
+  if (!rowLogSync.timer) {
+    return;
+  }
+  clearTimeout(rowLogSync.timer);
+  rowLogSync.timer = 0;
+}
+
+function scheduleRowLogSync(delayMs = CLOUD_STATE_SYNC_DEBOUNCE_MS) {
+  if (isCloudStateDisabled()) {
+    return;
+  }
+  clearRowLogSyncTimer();
+  rowLogSync.timer = setTimeout(() => {
+    clearRowLogSyncTimer();
+    flushRowUpdateLogSync();
+  }, Math.max(0, Math.round(Number(delayMs) || 0)));
+}
+
+async function flushRowUpdateLogSync() {
+  hydrateRowLogSyncPending();
+  if (rowLogSync.inFlight) {
+    rowLogSync.pending = true;
+    return;
+  }
+  if (rowLogSync.rowsById.size <= 0 || isCloudStateDisabled()) {
+    return;
+  }
+  if (typeof isAuthenticated === "function" && !isAuthenticated()) {
+    return;
+  }
+
+  const rows = Array.from(rowLogSync.rowsById.values())
+    .map((row) => ({
+      rowId: String(row.rowId || "").trim(),
+      nmId: String(row.nmId || "").trim(),
+      logs: normalizeRowLogSyncLogs(row.logs),
+    }))
+    .filter((row) => row.rowId && row.logs.length > 0);
+  if (rows.length <= 0) {
+    rowLogSync.rowsById.clear();
+    persistRowLogSyncPending();
+    return;
+  }
+
+  rowLogSync.inFlight = true;
+  rowLogSync.pending = false;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLOUD_STATE_FETCH_TIMEOUT_MS);
+  let ok = false;
+  try {
+    const response = await fetch(buildRowHistorySyncUrl(), {
+      method: "POST",
+      headers: getCloudStateHeaders(),
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({
+        key: getCloudStateKey(),
+        rows,
+      }),
+    });
+
+    if (response.status === 401) {
+      notifyAuthRequiredThrottled();
+      return;
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok !== true) {
+      return;
+    }
+
+    ok = true;
+    removeSentRowLogSyncEntries(rows);
+    rowLogSync.retryDelayMs = CLOUD_STATE_SYNC_RETRY_BASE_MS;
+  } catch {
+    // retry is scheduled in finally
+  } finally {
+    clearTimeout(timeoutId);
+    rowLogSync.inFlight = false;
+    if (!ok && rowLogSync.rowsById.size > 0 && !(typeof isAuthenticated === "function" && !isAuthenticated())) {
+      rowLogSync.retryDelayMs = Math.min(
+        CLOUD_STATE_SYNC_RETRY_MAX_MS,
+        Math.max(CLOUD_STATE_SYNC_RETRY_BASE_MS, Math.round(rowLogSync.retryDelayMs * 1.6)),
+      );
+      scheduleRowLogSync(rowLogSync.retryDelayMs);
+    }
+    if (rowLogSync.pending) {
+      rowLogSync.pending = false;
+      scheduleRowLogSync();
+    }
+  }
+}
+
+function queueRowUpdateLogSync(rowRaw, logRaw) {
+  if (isCloudStateDisabled()) {
+    return;
+  }
+  hydrateRowLogSyncPending();
+  const rowId = getRowLogSyncRowId(rowRaw);
+  const logs = normalizeRowLogSyncLogs([logRaw]);
+  if (!rowId || logs.length <= 0) {
+    return;
+  }
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const existing = rowLogSync.rowsById.get(rowId);
+  rowLogSync.rowsById.set(rowId, {
+    rowId,
+    nmId: String(row.nmId || row.nm_id || "").trim() || rowId,
+    logs: mergeRowLogSyncEntries(existing?.logs, logs),
+  });
+  persistRowLogSyncPending();
+  scheduleRowLogSync();
+}
+
+function retryPendingRowUpdateLogSync() {
+  hydrateRowLogSyncPending();
+  if (rowLogSync.rowsById.size > 0) {
+    scheduleRowLogSync(0);
+  }
 }
 
 function clearCloudStateTimer() {
@@ -352,6 +632,7 @@ async function loadCloudStatePayload() {
   const payload = parseCloudStateResponse(response.data);
   if (payload) {
     setCloudDeltaBaseline(payload);
+    retryPendingRowUpdateLogSync();
   }
   return payload;
 }
@@ -467,6 +748,7 @@ function queueCloudStateSync(payload) {
   if (typeof persistShadowPendingPayload === "function") {
     persistShadowPendingPayload(payload);
   }
+  retryPendingRowUpdateLogSync();
   cloudStateSync.retryDelayMs = CLOUD_STATE_SYNC_RETRY_BASE_MS;
   cloudStateSync.retryAt = 0;
 

@@ -6,6 +6,7 @@ import {
   getStateKeyFromUrl,
   loadRowHistoryLogs,
   migrateLegacyStateToNormalizedIfNeeded,
+  saveDashboardRowHistoryLogs,
 } from "./_lib/state-store.js";
 
 function getRowIdFromUrl(url) {
@@ -53,5 +54,61 @@ export async function onRequestGet(context) {
     });
   } catch (error) {
     return errorJson(error, "Не удалось загрузить историю строки");
+  }
+}
+
+export async function onRequestPost(context) {
+  const { env, request } = context;
+  if (!env?.DB) {
+    return json({ ok: false, error: "D1 binding DB is not configured" }, { status: 500 });
+  }
+
+  const session = await getSessionFromRequest(request, env);
+  if (!session) {
+    return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  try {
+    await ensureStateTables(env.DB);
+    const url = new URL(request.url);
+    const stateKey = String(body?.key || "").trim() || getStateKeyFromUrl(url);
+    const rows = Array.isArray(body?.rows)
+      ? body.rows
+      : [
+          {
+            rowId: String(body?.rowId || "").trim(),
+            nmId: String(body?.nmId || "").trim(),
+            logs: Array.isArray(body?.logs) ? body.logs : [],
+          },
+        ];
+
+    const saved = await saveDashboardRowHistoryLogs(env.DB, {
+      stateKey,
+      rows,
+      actorUserId: session?.user?.id,
+      actorLogin: session?.user?.login,
+      actorRole: session?.user?.role,
+      actorIp: getClientIp(request),
+    });
+
+    return json({
+      ok: true,
+      key: saved.key,
+      updatedAt: saved.updatedAt,
+      stats: {
+        rowsTotal: saved.rowsTotal,
+        rowsTouched: saved.rowsTouched,
+        logsUpserted: saved.logsUpserted,
+      },
+    });
+  } catch (error) {
+    return errorJson(error, "Не удалось сохранить историю строки");
   }
 }

@@ -624,6 +624,111 @@ async function persistIncomingRowLogs(db, params) {
   return { latestStoredLog, logsUpserted, touched };
 }
 
+export async function saveDashboardRowHistoryLogs(db, input = {}) {
+  await ensureStateTables(db);
+
+  const stateKey = safeString(input.stateKey, 120) || DEFAULT_STATE_KEY;
+  const actor = {
+    stateKey,
+    userId: Number.isFinite(Number(input.actorUserId)) ? Number(input.actorUserId) : null,
+    login: safeString(input.actorLogin, 80),
+    role: safeString(input.actorRole, 40),
+    ip: safeString(input.actorIp, 64),
+  };
+  const nowIso = new Date().toISOString();
+  const rowsRaw = Array.isArray(input.rows)
+    ? input.rows
+    : [
+        {
+          rowId: input.rowId,
+          nmId: input.nmId,
+          logs: input.logs,
+        },
+      ];
+
+  const normalizedRows = [];
+  const rowIds = [];
+  const seen = new Set();
+  for (const rowRaw of rowsRaw) {
+    const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+    const rowId = normalizeNmId(row.nmId) || safeString(row.rowId || row.id, 120);
+    if (!rowId) {
+      continue;
+    }
+    const logs = normalizeRowLogs(row.logs, nowIso);
+    if (logs.length <= 0) {
+      continue;
+    }
+    normalizedRows.push({ rowId, logs });
+    if (!seen.has(rowId)) {
+      seen.add(rowId);
+      rowIds.push(rowId);
+    }
+  }
+
+  if (normalizedRows.length <= 0) {
+    return {
+      key: stateKey,
+      rowsTotal: 0,
+      logsUpserted: 0,
+      updatedAt: nowIso,
+    };
+  }
+
+  const existingLatestLogsByRowId = await getLatestRowLogsForRows(db, stateKey, rowIds);
+  let logsUpserted = 0;
+  let rowsTouched = 0;
+
+  let txStarted = false;
+  try {
+    await db.exec("BEGIN");
+    txStarted = true;
+  } catch {
+    txStarted = false;
+  }
+
+  try {
+    for (const row of normalizedRows) {
+      const logPersistResult = await persistIncomingRowLogs(db, {
+        stateKey,
+        rowId: row.rowId,
+        incomingLogs: row.logs,
+        latestStoredLog: existingLatestLogsByRowId.get(row.rowId) || null,
+        actor,
+        nowIso,
+      });
+      if (logPersistResult.logsUpserted > 0) {
+        logsUpserted += logPersistResult.logsUpserted;
+        rowsTouched += 1;
+      }
+      if (logPersistResult.latestStoredLog) {
+        existingLatestLogsByRowId.set(row.rowId, logPersistResult.latestStoredLog);
+      }
+    }
+
+    if (txStarted) {
+      await db.exec("COMMIT");
+    }
+  } catch (error) {
+    if (txStarted) {
+      try {
+        await db.exec("ROLLBACK");
+      } catch {
+        // noop
+      }
+    }
+    throw error;
+  }
+
+  return {
+    key: stateKey,
+    rowsTotal: normalizedRows.length,
+    rowsTouched,
+    logsUpserted,
+    updatedAt: nowIso,
+  };
+}
+
 async function hasNormalizedStateData(db, stateKey) {
   const metaRow = await db
     .prepare(
