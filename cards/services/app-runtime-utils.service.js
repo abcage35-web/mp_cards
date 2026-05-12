@@ -907,6 +907,89 @@ function getPayloadRowMergeKey(rowRaw) {
   return rowId ? `id:${rowId}` : "";
 }
 
+function getPayloadTimestampMs(valueRaw) {
+  const value = String(valueRaw || "").trim();
+  if (!value) {
+    return 0;
+  }
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getPayloadRowLatestLogMs(rowRaw) {
+  const logs = normalizeRowUpdateLogs(rowRaw?.updateLogs);
+  let latest = 0;
+  for (const entry of logs) {
+    latest = Math.max(latest, getPayloadTimestampMs(entry?.at));
+  }
+  return latest;
+}
+
+function getPayloadRowFreshnessMs(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  return Math.max(
+    getPayloadTimestampMs(row.updatedAt),
+    getPayloadRowLatestLogMs(row),
+  );
+}
+
+function getPayloadLogMergeKey(entryRaw, index = 0) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  const id = String(entry.id || entry.logId || "").trim();
+  if (id) {
+    return `id:${id}`;
+  }
+  return [
+    "entry",
+    String(entry.at || "").trim(),
+    String(entry.source || "").trim(),
+    String(entry.mode || "").trim(),
+    String(entry.actionKey || "").trim(),
+    String(entry.status || "").trim(),
+    String(index),
+  ].join(":");
+}
+
+function mergePayloadUpdateLogs(...sources) {
+  const byKey = new Map();
+  for (const source of sources) {
+    const logs = normalizeRowUpdateLogs(source);
+    for (let index = 0; index < logs.length; index += 1) {
+      const entry = logs[index];
+      const key = getPayloadLogMergeKey(entry, index);
+      const existing = byKey.get(key);
+      byKey.set(key, {
+        ...(existing && typeof existing === "object" ? existing : {}),
+        ...entry,
+        changes:
+          Array.isArray(entry.changes) && entry.changes.length > 0
+            ? entry.changes
+            : Array.isArray(existing?.changes)
+              ? existing.changes
+              : [],
+      });
+    }
+  }
+  return Array.from(byKey.values())
+    .sort((left, right) => getPayloadTimestampMs(left.at) - getPayloadTimestampMs(right.at))
+    .slice(-UPDATE_LOG_LIMIT);
+}
+
+function mergeRemoteRowWithPendingRow(remoteRowRaw, pendingRowRaw) {
+  const remoteRow = remoteRowRaw && typeof remoteRowRaw === "object" ? remoteRowRaw : {};
+  const pendingRow = pendingRowRaw && typeof pendingRowRaw === "object" ? pendingRowRaw : {};
+  const pendingFreshness = getPayloadRowFreshnessMs(pendingRow);
+  const remoteFreshness = getPayloadRowFreshnessMs(remoteRow);
+  const usePendingRow = pendingFreshness > remoteFreshness;
+  const mergedLogs = mergePayloadUpdateLogs(remoteRow.updateLogs, pendingRow.updateLogs);
+  const merged = usePendingRow ? { ...remoteRow, ...pendingRow } : { ...remoteRow };
+
+  merged.id = String(remoteRow.id || "").trim() || String(pendingRow.id || "").trim();
+  merged.nmId = String(remoteRow.nmId || "").trim() || String(pendingRow.nmId || "").trim();
+  merged.updateLogs = mergedLogs;
+  return merged;
+}
+
 function isBareLocalAddedRow(rowRaw) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   if (!getPayloadRowMergeKey(row)) {
@@ -934,44 +1017,69 @@ function mergeRemotePayloadWithLocalAdditions(remotePayloadRaw, ...localPayloads
   }
 
   const remoteRows = getPayloadRows(remotePayload);
+  const remotePayloadMs = getStatePayloadSavedAtMs(remotePayload);
   if (remoteRows.length <= 0) {
     return pickStatePayload(remotePayload, ...localPayloadsRaw) || remotePayload;
   }
 
-  const seen = new Set();
-  remoteRows.forEach((row) => {
+  let changed = false;
+  let mergedSavedAtMs = remotePayloadMs;
+  let mergedSavedAt = String(remotePayload.savedAt || remotePayload.lastSyncAt || "").trim();
+  const rowIndexByKey = new Map();
+  const mergedRows = remoteRows.map((row, index) => {
     const key = getPayloadRowMergeKey(row);
     if (key) {
-      seen.add(key);
+      rowIndexByKey.set(key, index);
     }
+    return row;
   });
 
   const localPayloads = localPayloadsRaw
     .filter((payload) => getPayloadRowsCount(payload) > 0)
     .sort((left, right) => getStatePayloadSavedAtMs(right) - getStatePayloadSavedAtMs(left));
-  const additions = [];
 
   for (const payload of localPayloads) {
+    const payloadMs = getStatePayloadSavedAtMs(payload);
+    if (payloadMs > mergedSavedAtMs) {
+      mergedSavedAtMs = payloadMs;
+      mergedSavedAt = String(payload.savedAt || payload.lastSyncAt || mergedSavedAt).trim();
+    }
     for (const row of getPayloadRows(payload)) {
       const key = getPayloadRowMergeKey(row);
-      if (!key || seen.has(key) || !isBareLocalAddedRow(row)) {
+      if (!key) {
         continue;
       }
-      seen.add(key);
-      additions.push({
+      if (rowIndexByKey.has(key)) {
+        const index = rowIndexByKey.get(key);
+        const previousRow = mergedRows[index];
+        const mergedRow = mergeRemoteRowWithPendingRow(previousRow, row);
+        if (JSON.stringify(mergedRow) !== JSON.stringify(previousRow)) {
+          changed = true;
+          mergedRows[index] = mergedRow;
+        }
+        continue;
+      }
+      if (!isBareLocalAddedRow(row)) {
+        continue;
+      }
+      rowIndexByKey.set(key, mergedRows.length);
+      mergedRows.push({
         ...(row && typeof row === "object" ? row : {}),
         updateLogs: [],
       });
+      changed = true;
     }
   }
 
-  if (additions.length <= 0) {
+  if (!changed) {
     return remotePayload;
   }
 
   return {
     ...remotePayload,
-    rows: [...remoteRows, ...additions],
+    savedAt: mergedSavedAt || remotePayload.savedAt,
+    lastSyncAt: mergedSavedAt || remotePayload.lastSyncAt,
+    rows: mergedRows,
   };
 }
 

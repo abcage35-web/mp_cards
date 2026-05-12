@@ -118,6 +118,7 @@ function getCloudRowKey(rowRaw, index) {
 
 function getCloudRowSignature(rowRaw, index) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const updateLogsCount = Array.isArray(row.updateLogs) ? row.updateLogs.length : 0;
   const latestLog =
     Array.isArray(row.updateLogs) && row.updateLogs.length > 0
       ? row.updateLogs[row.updateLogs.length - 1]
@@ -143,6 +144,7 @@ function getCloudRowSignature(rowRaw, index) {
       updatedAt: String(row.updatedAt || "").trim(),
       data: row.data && typeof row.data === "object" ? row.data : null,
       latestLogId,
+      updateLogsCount,
     });
   } catch {
     return `${getCloudRowKey(rowRaw, index)}-${Date.now()}`;
