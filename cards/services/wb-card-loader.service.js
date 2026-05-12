@@ -5,6 +5,7 @@
 
 const singleRowRefreshQueue = [];
 const singleRowRefreshQueuedIds = new Set();
+const bulkRowAbortControllers = new Set();
 let singleRowRefreshQueueRunning = false;
 let singleRowRefreshActiveRowId = "";
 const singleRowRefreshProgress = {
@@ -786,6 +787,115 @@ function applyMarketStabilityGuard(payload, previousData, row) {
   }
 }
 
+function getBulkRowTimeoutMs() {
+  const configured =
+    typeof BULK_ROW_TIMEOUT_MS !== "undefined" ? Number(BULK_ROW_TIMEOUT_MS) : 90000;
+  return Math.max(20000, Math.min(180000, Number.isFinite(configured) ? Math.round(configured) : 90000));
+}
+
+function createAbortReason(messageRaw, name = "AbortError") {
+  const error = new Error(String(messageRaw || "Обновление остановлено пользователем"));
+  error.name = name;
+  return error;
+}
+
+function getAbortSignalReasonMessage(signalRaw) {
+  const signal = signalRaw || null;
+  const reason = signal?.reason;
+  if (reason instanceof Error && reason.message) {
+    return reason.message;
+  }
+  if (typeof reason === "string" && reason.trim()) {
+    return reason.trim();
+  }
+  if (reason && typeof reason === "object" && typeof reason.message === "string" && reason.message.trim()) {
+    return reason.message.trim();
+  }
+  return "Обновление остановлено пользователем";
+}
+
+function isAbortSignalTimeout(signalRaw) {
+  const signal = signalRaw || null;
+  const reason = signal?.reason;
+  const reasonName = String(reason?.name || "").trim();
+  return reasonName === "TimeoutError" || /таймаут/i.test(getAbortSignalReasonMessage(signal));
+}
+
+function abortControllerWithReason(controller, reason) {
+  if (!controller || typeof controller.abort !== "function") {
+    return;
+  }
+  try {
+    controller.abort(reason);
+  } catch {
+    controller.abort();
+  }
+}
+
+function abortActiveBulkRowRequests(messageRaw = "Обновление остановлено пользователем") {
+  const message = String(messageRaw || "Обновление остановлено пользователем");
+  for (const controller of Array.from(bulkRowAbortControllers)) {
+    abortControllerWithReason(controller, createAbortReason(message, "AbortError"));
+  }
+}
+
+function normalizeUnexpectedRowError(errorRaw) {
+  const message = errorRaw instanceof Error ? errorRaw.message : String(errorRaw || "");
+  return String(message || "Неожиданная ошибка обновления").trim();
+}
+
+async function runLoadRowWithDeadline(rowId, loadOptions, timeoutMs) {
+  const abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+  let timeoutId = 0;
+  let timedOut = false;
+  let timeoutMessage = "";
+
+  if (abortController && timeoutMs > 0) {
+    bulkRowAbortControllers.add(abortController);
+    timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      timeoutMessage = `Таймаут обновления товара: строка не ответила за ${Math.round(timeoutMs / 1000)}с`;
+      abortControllerWithReason(
+        abortController,
+        createAbortReason(timeoutMessage, "TimeoutError"),
+      );
+    }, timeoutMs);
+  }
+
+  try {
+    await loadRow(rowId, {
+      ...loadOptions,
+      requestSignal: abortController ? abortController.signal : null,
+    });
+  } catch (error) {
+    const row = getRowById(rowId);
+    if (row) {
+      row.loading = false;
+      row.queuedForRefresh = false;
+      if (!row.error) {
+        row.error = normalizeUnexpectedRowError(error);
+      }
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
+    if (abortController) {
+      bulkRowAbortControllers.delete(abortController);
+    }
+  }
+
+  if (timedOut) {
+    const row = getRowById(rowId);
+    if (row && !row.error) {
+      row.error = timeoutMessage || `Таймаут обновления товара: строка не ответила за ${Math.round(timeoutMs / 1000)}с`;
+    }
+  }
+
+  return { timedOut };
+}
+
 async function loadRowsByIds(rowIds, options = {}) {
   const {
     loadingText = "Обновляю карточки",
@@ -806,6 +916,8 @@ async function loadRowsByIds(rowIds, options = {}) {
   let completed = 0;
   let canceled = false;
   let total = uniqueIds.length;
+  let fatalError = null;
+  const rowTimeoutMs = getBulkRowTimeoutMs();
   setBulkLoading(true, `${loadingText} (0/${total})...`, actionKey, {
     reset: true,
     total,
@@ -814,43 +926,59 @@ async function loadRowsByIds(rowIds, options = {}) {
     concurrency: BULK_CONCURRENCY,
   });
 
-  await runWithConcurrency(
-    uniqueIds,
-    BULK_CONCURRENCY,
-    async (rowId) => {
-      if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
-        canceled = true;
-        return;
-      }
+  try {
+    await runWithConcurrency(
+      uniqueIds,
+      BULK_CONCURRENCY,
+      async (rowId) => {
+        if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+          canceled = true;
+          return;
+        }
 
-      await loadRow(rowId, {
-        silentStart: true,
-        mode,
-        source,
-        actionKey,
-        recordProblemSnapshot: false,
-      });
-      completed += 1;
-      const cancelRequested =
-        typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
-      setBulkLoading(true, `${loadingText} (${completed}/${total})...`, actionKey, {
-        total,
-        completed,
-        cancellable: true,
-        cancelRequested,
-        concurrency: BULK_CONCURRENCY,
-      });
-    },
-    {
-      shouldStop: () => typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested(),
-    },
-  );
+        try {
+          await runLoadRowWithDeadline(
+            rowId,
+            {
+              silentStart: true,
+              mode,
+              source,
+              actionKey,
+              recordProblemSnapshot: false,
+            },
+            rowTimeoutMs,
+          );
+        } catch (error) {
+          const row = getRowById(rowId);
+          if (row && !row.error) {
+            row.error = normalizeUnexpectedRowError(error);
+          }
+        } finally {
+          completed += 1;
+          const cancelRequested =
+            typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
+          setBulkLoading(true, `${loadingText} (${completed}/${total})...`, actionKey, {
+            total,
+            completed,
+            cancellable: true,
+            cancelRequested,
+            concurrency: BULK_CONCURRENCY,
+          });
+        }
+      },
+      {
+        shouldStop: () => typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested(),
+      },
+    );
+  } catch (error) {
+    fatalError = error;
+  }
 
   if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
     canceled = true;
   }
 
-  if (!canceled) {
+  if (!canceled && !fatalError) {
     const retryIds = uniqueIds.filter((rowId) => {
       const row = getRowById(rowId);
       return Boolean(row?.error && isRetriableRowError(row.error));
@@ -866,37 +994,53 @@ async function loadRowsByIds(rowIds, options = {}) {
 
       let retryCompleted = 0;
       await sleep(320);
-      await runWithConcurrency(
-        retryIds,
-        BULK_CONCURRENCY,
-        async (rowId) => {
-          if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
-            canceled = true;
-            return;
-          }
-          await loadRow(rowId, {
-            silentStart: true,
-            mode,
-            source,
-            actionKey: `${actionKey}-retry`,
-            recordProblemSnapshot: false,
-          });
-          retryCompleted += 1;
-          completed += 1;
-          const cancelRequested =
-            typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
-          setBulkLoading(true, `${loadingText} · повтор (${retryCompleted}/${retryIds.length})...`, actionKey, {
-            total,
-            completed,
-            cancellable: true,
-            cancelRequested,
-            concurrency: BULK_CONCURRENCY,
-          });
-        },
-        {
-          shouldStop: () => typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested(),
-        },
-      );
+      try {
+        await runWithConcurrency(
+          retryIds,
+          BULK_CONCURRENCY,
+          async (rowId) => {
+            if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
+              canceled = true;
+              return;
+            }
+            try {
+              await runLoadRowWithDeadline(
+                rowId,
+                {
+                  silentStart: true,
+                  mode,
+                  source,
+                  actionKey: `${actionKey}-retry`,
+                  recordProblemSnapshot: false,
+                },
+                rowTimeoutMs,
+              );
+            } catch (error) {
+              const row = getRowById(rowId);
+              if (row && !row.error) {
+                row.error = normalizeUnexpectedRowError(error);
+              }
+            } finally {
+              retryCompleted += 1;
+              completed += 1;
+              const cancelRequested =
+                typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested();
+              setBulkLoading(true, `${loadingText} · повтор (${retryCompleted}/${retryIds.length})...`, actionKey, {
+                total,
+                completed,
+                cancellable: true,
+                cancelRequested,
+                concurrency: BULK_CONCURRENCY,
+              });
+            }
+          },
+          {
+            shouldStop: () => typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested(),
+          },
+        );
+      } catch (error) {
+        fatalError = fatalError || error;
+      }
 
       if (typeof isBulkLoadingCancelRequested === "function" && isBulkLoadingCancelRequested()) {
         canceled = true;
@@ -904,26 +1048,35 @@ async function loadRowsByIds(rowIds, options = {}) {
     }
   }
 
-  state.lastSyncAt = new Date().toISOString();
-  if (typeof recordProblemSnapshot === "function") {
-    recordProblemSnapshot({
-      source,
+  try {
+    state.lastSyncAt = new Date().toISOString();
+    if (typeof recordProblemSnapshot === "function") {
+      recordProblemSnapshot({
+        source,
+        actionKey,
+        mode,
+      });
+    }
+  } catch (error) {
+    fatalError = fatalError || error;
+  } finally {
+    setBulkLoading(
+      false,
+      canceled
+        ? `Обновление остановлено (${completed}/${total})`
+        : fatalError
+          ? `Обновление завершено с ошибкой (${completed}/${total})`
+          : "Обновление завершено",
       actionKey,
-      mode,
-    });
+      {
+        total,
+        completed,
+        canceled,
+        concurrency: BULK_CONCURRENCY,
+      },
+    );
+    render();
   }
-  setBulkLoading(
-    false,
-    canceled ? `Обновление остановлено (${completed}/${total})` : "Обновление завершено",
-    actionKey,
-    {
-      total,
-      completed,
-      canceled,
-      concurrency: BULK_CONCURRENCY,
-    },
-  );
-  render();
 }
 
 async function loadSingleRowWithProgress(rowId, options = {}) {
@@ -1154,8 +1307,11 @@ async function loadRow(
       { requestSignal },
     );
     const aborted = canceledByUser || (requestSignal && requestSignal.aborted) || isUpdateCanceledError(error);
+    const abortedByTimeout = requestSignal && requestSignal.aborted && isAbortSignalTimeout(requestSignal);
 
-    if (aborted) {
+    if (abortedByTimeout) {
+      target.error = getAbortSignalReasonMessage(requestSignal);
+    } else if (aborted) {
       canceledByUser = true;
       target.error = "";
     } else {

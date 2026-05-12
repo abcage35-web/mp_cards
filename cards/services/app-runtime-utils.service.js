@@ -479,6 +479,9 @@ function requestBulkLoadingCancel() {
       // noop
     }
   }
+  if (typeof abortActiveBulkRowRequests === "function") {
+    abortActiveBulkRowRequests("Обновление остановлено пользователем");
+  }
   const progress = ensureBulkProgressState();
   progress.cancelRequested = true;
   ensureBulkProgressTickTimer(progress);
@@ -796,7 +799,11 @@ function persistStateLocalPayload(payload) {
   if (!payload || typeof payload !== "object") {
     return;
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.warn("Не удалось сохранить локальное состояние карточек.", error);
+  }
 }
 
 function readLocalStatePayload() {
