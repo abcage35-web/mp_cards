@@ -514,26 +514,28 @@ function setPresetActive(presetId, isActive) {
 }
 
 function getPresetRowsCount(presetId) {
+  const getScopedRows = (filterOverrides = {}) => getDashboardScopeRows(state.rows, { filters: filterOverrides });
+
   switch (presetId) {
     case "problemRows":
-      return state.rows.filter((row) => Boolean(row.error)).length;
+      return getScopedRows().filter((row) => Boolean(row.error)).length;
     case "notLoaded":
-      return state.rows.filter((row) => !row?.data).length;
+      return getScopedRows().filter((row) => !row?.data).length;
     case "stockPositive":
-      return state.rows.filter((row) => row?.data && !row?.error && Number.isFinite(row.stockValue) && row.stockValue > 0)
+      return getScopedRows().filter((row) => row?.data && !row?.error && Number.isFinite(row.stockValue) && row.stockValue > 0)
         .length;
     case "recommendationsNo":
-      return state.rows.filter((row) => row.data && !row.error && getRecommendationValue(row.data) === false).length;
+      return getScopedRows({ recommendations: "no" }).length;
     case "richNo":
-      return state.rows.filter((row) => row.data && !row.error && row.data.hasRich === false).length;
+      return getScopedRows({ rich: "no" }).length;
     case "videoNo":
-      return state.rows.filter((row) => row.data && !row.error && getVideoValue(row.data) === false).length;
+      return getScopedRows({ video: "no" }).length;
     case "autoplayNo":
-      return getProblemStats(state.rows).autoplayNo;
+      return getProblemStats(getScopedRows()).autoplayNo;
     case "tagsNo":
-      return getProblemStats(state.rows).tagsNo;
+      return getProblemStats(getScopedRows()).tagsNo;
     case "coverDuplicate":
-      return state.rows.filter((row) => row.data && !row.error && getCoverDuplicateValue(row.data) === true).length;
+      return getScopedRows({ coverDuplicate: "yes" }).length;
     default:
       return 0;
   }

@@ -420,24 +420,9 @@ function getDashboardScopeRows(rows = state.rows, options = {}) {
     options && typeof options === "object" && options.filters && typeof options.filters === "object"
       ? options.filters
       : {};
-  const activeFilters = {
-    cabinet: state.filters.cabinet,
-    categoryGroup: state.filters.categoryGroup,
-    ...filterOverrides,
-  };
 
-  return sourceRows.filter((row) => {
-    if (!matchCabinetFilter(row?.cabinet, activeFilters.cabinet)) {
-      return false;
-    }
-    if (!matchCategoryGroupFilter(row?.data?.category || "", activeFilters.categoryGroup)) {
-      return false;
-    }
-    if (state.stockPositiveOnly && !(Number.isFinite(row?.stockValue) && row.stockValue > 0)) {
-      return false;
-    }
-    return true;
-  });
+  // Dashboard counters must follow the same filter scope as the table.
+  return applyFilters(sourceRows, filterOverrides);
 }
 
 function getAutoplayProblemCandidateRowIds(rows) {
