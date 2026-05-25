@@ -1,5 +1,10 @@
 import { json } from "./_lib/auth.js";
 import {
+  buildXwayRequestKey,
+  loadXwayPayload,
+  saveXwayPayload,
+} from "./_lib/ab-month-cache.js";
+import {
   XWAY_REFERERS,
   XWAY_STATS_TIME_ZONE,
   buildXwayCookieHeader,
@@ -508,6 +513,7 @@ export async function onRequestGet(context) {
   const hasExplicitAfterDate = url.searchParams.has("afterDate");
   const explicitBeforeDate = normalizeExplicitIsoDate(url.searchParams.get("beforeDate"));
   const explicitAfterDate = normalizeExplicitIsoDate(url.searchParams.get("afterDate"));
+  const forceRefresh = url.searchParams.has("_ts") || url.searchParams.get("force") === "1";
   if (!testId) {
     return json({ ok: false, error: "missing_test_id" }, { status: 400 });
   }
@@ -530,6 +536,27 @@ export async function onRequestGet(context) {
       },
       { status: 400 },
     );
+  }
+
+  const requestMeta = {
+    testId,
+    campaignType: explicitCampaignType,
+    campaignExternalId: explicitCampaignExternalId,
+    startedAt: explicitStartedAt,
+    endedAt: explicitEndedAt,
+    beforeDate: explicitBeforeDate,
+    afterDate: explicitAfterDate,
+  };
+  const requestKey = buildXwayRequestKey(requestMeta);
+  if (!forceRefresh && env?.DB) {
+    try {
+      const cachedPayload = await loadXwayPayload(env.DB, requestKey);
+      if (cachedPayload?.ok) {
+        return json(cachedPayload);
+      }
+    } catch {
+      // Cache misses or D1 errors must not block live XWAY loading.
+    }
   }
 
   const storageState = getXwayStorageState(env);
@@ -704,7 +731,7 @@ export async function onRequestGet(context) {
         }
       : null;
 
-    return json({
+    const payload = {
       ok: true,
       source: "xway",
       testId,
@@ -770,7 +797,29 @@ export async function onRequestGet(context) {
         after: hasAfterWindow && afterTotals ? buildAveragePrice(afterTotals) : null,
       },
       metrics: buildMetricsRows(beforeMetrics, duringMetrics, afterMetrics),
-    });
+    };
+
+    if (env?.DB) {
+      try {
+        await saveXwayPayload(env.DB, {
+          requestKey,
+          meta: {
+            ...requestMeta,
+            campaignType,
+            campaignExternalId,
+            startedAt: startedAtIso,
+            endedAt: endedAtIso,
+            beforeDate: explicitBeforeDate,
+            afterDate: explicitAfterDate,
+          },
+          payload,
+        });
+      } catch {
+        // D1 persistence is opportunistic; the live response is still valid.
+      }
+    }
+
+    return json(payload);
   } catch (error) {
     return json(
       {

@@ -1,5 +1,9 @@
 import { json } from "./_lib/auth.js";
 import {
+  loadProductSnapshots,
+  saveProductSnapshots,
+} from "./_lib/ab-month-cache.js";
+import {
   buildXwayCookieHeader,
   getXwayStorageState,
   xwayFetchJson,
@@ -120,9 +124,15 @@ export async function onRequestGet(context) {
   if (!items.length) {
     return json({ ok: true, source: "xway-product-snapshots", items: [] });
   }
+  const forceRefresh = url.searchParams.has("_ts") || url.searchParams.get("force") === "1";
 
   try {
-    const snapshots = await mapWithConcurrency(items, 8, async (item) => {
+    const cachedByKey = !forceRefresh && env?.DB
+      ? await loadProductSnapshots(env.DB, items.map((item) => item.key)).catch(() => new Map())
+      : new Map();
+    const missingItems = items.filter((item) => !cachedByKey.has(item.key));
+
+    const fetchedSnapshots = await mapWithConcurrency(missingItems, 8, async (item) => {
       try {
         const productInfo = await xwayFetchJson(
           env,
@@ -143,6 +153,12 @@ export async function onRequestGet(context) {
         };
       }
     });
+    if (env?.DB && fetchedSnapshots.length) {
+      await saveProductSnapshots(env.DB, fetchedSnapshots).catch(() => {});
+    }
+
+    const fetchedByKey = new Map(fetchedSnapshots.map((snapshot) => [snapshot.key, snapshot]));
+    const snapshots = items.map((item) => cachedByKey.get(item.key) || fetchedByKey.get(item.key)).filter(Boolean);
 
     return json({
       ok: true,

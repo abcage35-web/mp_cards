@@ -226,6 +226,13 @@ export interface DashboardModel {
   cabinets: string[];
   statusTotals: { good: number; bad: number; neutral: number; unknown: number };
   rowCounts: { catalog: number; technical: number; results: number };
+  fetchedAt?: string;
+  availableMonthKeys?: string[];
+  cache?: {
+    source?: string;
+    tabKey?: string;
+    monthKeys?: string[];
+  };
 }
 
 export interface Filters {
@@ -239,6 +246,15 @@ export interface Filters {
   dateTo: string;
   monthKeys: string[];
   view: string;
+}
+
+export type AbDashboardCacheTab = "ab-tests" | "ab-tests-xway";
+
+export interface AbDashboardLoadOptions {
+  monthKeys?: string[];
+  force?: boolean;
+  cache?: boolean;
+  tabKey?: AbDashboardCacheTab;
 }
 
 // ── Utility functions ──
@@ -290,6 +306,48 @@ export function abBuildDateRangeFromMonthKeys(monthKeysRaw: string[]) {
     .sort();
   if (!monthKeys.length) return { from: "", to: "" };
   return { from: abGetMonthBounds(monthKeys[0]).from, to: abGetMonthBounds(monthKeys[monthKeys.length - 1]).to };
+}
+
+export function abNormalizeMonthKeys(monthKeysRaw: unknown): string[] {
+  const rawValues = Array.isArray(monthKeysRaw)
+    ? monthKeysRaw
+    : String(monthKeysRaw || "").split(",");
+  return Array.from(
+    new Set(
+      rawValues
+        .map((value) => String(value || "").trim())
+        .filter((value) => /^\d{4}-\d{2}$/.test(value)),
+    ),
+  ).sort();
+}
+
+export function abBuildMonthKeysFromDateRange(dateFromRaw: string, dateToRaw: string): string[] {
+  const fromMonth = abGetMonthKeyByDateInputValue(dateFromRaw);
+  const toMonth = abGetMonthKeyByDateInputValue(dateToRaw);
+  if (!fromMonth && !toMonth) return [];
+  const start = fromMonth || toMonth;
+  const end = toMonth || fromMonth;
+  if (!start || !end) return [];
+  const [startYearRaw, startMonthRaw] = start.split("-");
+  const [endYearRaw, endMonthRaw] = end.split("-");
+  const startDate = new Date(Number(startYearRaw), Number(startMonthRaw) - 1, 1);
+  const endDate = new Date(Number(endYearRaw), Number(endMonthRaw) - 1, 1);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return [];
+
+  const output: string[] = [];
+  const cursor = startDate <= endDate ? startDate : endDate;
+  const limit = startDate <= endDate ? endDate : startDate;
+  while (cursor <= limit && output.length < 48) {
+    output.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return output;
+}
+
+export function abResolveCacheMonthKeys(filtersRaw: Pick<Filters, "monthKeys" | "dateFrom" | "dateTo">): string[] {
+  const selected = abNormalizeMonthKeys(filtersRaw.monthKeys);
+  if (selected.length) return selected;
+  return abBuildMonthKeysFromDateRange(filtersRaw.dateFrom, filtersRaw.dateTo);
 }
 
 export function abFormatMonthLabel(monthKeyRaw: string): string {
@@ -1006,13 +1064,115 @@ export async function abLoadOvrPerformerByWbArticle(options: { force?: boolean }
   return abOvrPerformerByArticlePromise;
 }
 
-export async function loadAbDashboardData(): Promise<DashboardModel> {
+function abGetTestMonthKey(test: Pick<TestCard, "startedAtIso" | "endedAtIso">): string {
+  const testDate = abGetTestFilterDate(test as TestCard);
+  return testDate ? testDate.slice(0, 7) : "";
+}
+
+export function abSelectDashboardModelMonthKeys<T extends DashboardModel>(model: T, monthKeysRaw: string[]): T {
+  const monthKeys = abNormalizeMonthKeys(monthKeysRaw);
+  if (!monthKeys.length) return model;
+  const monthSet = new Set(monthKeys);
+  const tests = (Array.isArray(model.tests) ? model.tests : []).filter((test) => monthSet.has(abGetTestMonthKey(test)));
+  const products = abBuildProducts(tests);
+  const cabinets = Array.from(new Set(tests.map((test) => test.cabinet).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ru"));
+  const statusTotals = tests.reduce((acc, test) => {
+    const key = test.finalStatusKind as keyof typeof acc;
+    if (key in acc) acc[key] += 1;
+    else acc.unknown += 1;
+    return acc;
+  }, { good: 0, bad: 0, neutral: 0, unknown: 0 });
+  return {
+    ...model,
+    tests,
+    products,
+    cabinets,
+    statusTotals,
+    availableMonthKeys: model.availableMonthKeys?.length ? model.availableMonthKeys : abGetAvailableMonthKeys(model),
+  };
+}
+
+export async function abLoadDashboardModelCache<T extends DashboardModel>(
+  tabKey: AbDashboardCacheTab,
+  monthKeysRaw: string[],
+): Promise<T | null> {
+  const monthKeys = abNormalizeMonthKeys(monthKeysRaw);
+  if (!monthKeys.length) return null;
+  try {
+    const params = new URLSearchParams({ tab: tabKey, months: monthKeys.join(",") });
+    const response = await fetch(`/api/ab-month-cache?${params.toString()}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const text = await response.text();
+    const payload = text.trim() ? JSON.parse(text) : null;
+    if (!response.ok || !payload?.ok || !payload?.hit || !payload?.model) {
+      return null;
+    }
+    return payload.model as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function abSaveDashboardModelCache(
+  tabKey: AbDashboardCacheTab,
+  model: DashboardModel,
+): Promise<void> {
+  const tests = Array.isArray(model?.tests) ? model.tests : [];
+  const monthKeys = abNormalizeMonthKeys(
+    tests
+      .map((test) => abGetTestMonthKey(test))
+      .filter(Boolean),
+  );
+  if (!monthKeys.length) return;
+
+  for (const monthKey of monthKeys) {
+    const monthModel = abSelectDashboardModelMonthKeys(model, [monthKey]);
+    try {
+      await fetch("/api/ab-month-cache", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          tab: tabKey,
+          month: monthKey,
+          source: "client",
+          model: monthModel,
+        }),
+      });
+    } catch {
+      // D1 cache is an optimization; live data remains usable when persistence fails.
+    }
+  }
+}
+
+export async function loadAbDashboardData(options: AbDashboardLoadOptions = {}): Promise<DashboardModel> {
+  const tabKey = options.tabKey || "ab-tests";
+  const monthKeys = abNormalizeMonthKeys(options.monthKeys || []);
+  if (options.cache !== false && !options.force && monthKeys.length) {
+    const cached = await abLoadDashboardModelCache<DashboardModel>(tabKey, monthKeys);
+    if (cached) {
+      return cached;
+    }
+  }
+
   const [catalog, technical, results] = await Promise.all([
     fetchAbSheetRaw(AB_DASHBOARD_SOURCE_SHEETS.catalog),
     fetchAbSheetRaw(AB_DASHBOARD_SOURCE_SHEETS.technical),
     fetchAbSheetRaw(AB_DASHBOARD_SOURCE_SHEETS.results),
   ]);
-  return buildAbDashboardModel({ catalog, technical, results });
+  const model = {
+    ...buildAbDashboardModel({ catalog, technical, results }),
+    fetchedAt: new Date().toISOString(),
+  };
+  void abSaveDashboardModelCache(tabKey, model);
+  return monthKeys.length ? abSelectDashboardModelMonthKeys(model, monthKeys) : model;
 }
 
 export function abBuildSourceMetaText(fetchedLabel = ""): string {
@@ -1032,6 +1192,9 @@ export function abGetTestFilterDate(test: TestCard): string {
 export function abGetAvailableMonthKeys(model: DashboardModel | null): string[] {
   const tests = Array.isArray(model?.tests) ? model!.tests : [];
   const keys = new Set<string>();
+  for (const monthKey of abNormalizeMonthKeys(model?.availableMonthKeys || [])) {
+    keys.add(monthKey);
+  }
   for (const test of tests) {
     const testDate = abGetTestFilterDate(test);
     const monthKey = testDate ? testDate.slice(0, 7) : "";

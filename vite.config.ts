@@ -157,6 +157,7 @@ function createLocalFunctionsPlugin() {
     ["/api/xway-ab-test", "functions/api/xway-ab-test.js"],
     ["/api/xway-ab-tests", "functions/api/xway-ab-tests.js"],
     ["/api/xway-product-snapshots", "functions/api/xway-product-snapshots.js"],
+    ["/api/ab-month-cache", "functions/api/ab-month-cache.js"],
     ["/api/ovr-performers", "functions/api/ovr-performers.js"],
   ]);
 

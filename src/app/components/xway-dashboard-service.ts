@@ -1,14 +1,19 @@
 import {
   AB_TEST_LIMIT_OPTIONS,
+  abLoadDashboardModelCache,
   abBuildCoverImageSrc,
   abFormatXwayVariantDateTime,
   abFormatInt,
   abGetXwayBeforeAdjustmentNote,
   abGetCurrentMonthRange,
+  abGetAvailableMonthKeys,
+  abNormalizeMonthKeys,
+  abSaveDashboardModelCache,
   abNormalizeStatus,
   buildXwaySummaryChecksFromPayload,
   calculateXwayVariantCtrBoost,
   loadAbDashboardData,
+  type AbDashboardLoadOptions,
   type ComparisonRow,
   type DashboardModel,
   type Filters,
@@ -312,6 +317,66 @@ function buildProducts(tests: XwayDashboardTest[]): Product[] {
     .sort((a, b) => b.testsCount - a.testsCount);
 }
 
+function getXwayTestMonthKey(test: XwayDashboardTest) {
+  const iso = String(test.startedAtIso || test.endedAtIso || test.abActivityStartedAtIso || test.abActivityEndedAtIso || "").trim();
+  return /^\d{4}-\d{2}/.test(iso) ? iso.slice(0, 7) : "";
+}
+
+function selectXwayDashboardModelMonthKeys(model: XwayDashboardModel, monthKeysRaw: string[]): XwayDashboardModel {
+  const monthKeys = abNormalizeMonthKeys(monthKeysRaw);
+  if (!monthKeys.length) return model;
+  const monthSet = new Set(monthKeys);
+  const tests = (Array.isArray(model.tests) ? model.tests : []).filter((test) => monthSet.has(getXwayTestMonthKey(test)));
+  const products = buildProducts(tests);
+  const cabinets = Array.from(new Set(tests.map((test) => test.cabinet).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, "ru"),
+  );
+  const statusTotals = tests.reduce(
+    (acc, test) => {
+      const key = test.finalStatusKind as keyof typeof acc;
+      if (key in acc) acc[key] += 1;
+      else acc.unknown += 1;
+      return acc;
+    },
+    { good: 0, bad: 0, neutral: 0, unknown: 0 },
+  );
+  const liveTotals = tests.reduce(
+    (acc, test) => {
+      acc.views += test.views;
+      acc.estimatedExpense += test.estimatedExpense;
+      switch (normalizeLaunchStatus(test.launchStatus)) {
+        case "DONE":
+          acc.done += 1;
+          break;
+        case "LAUNCHED":
+          acc.launched += 1;
+          break;
+        case "PENDING":
+          acc.pending += 1;
+          break;
+        case "REJECTED":
+          acc.rejected += 1;
+          break;
+        default:
+          break;
+      }
+      return acc;
+    },
+    { done: 0, launched: 0, pending: 0, rejected: 0, views: 0, estimatedExpense: 0 },
+  );
+
+  return {
+    ...model,
+    total: tests.length,
+    tests,
+    products,
+    cabinets,
+    statusTotals,
+    liveTotals,
+    availableMonthKeys: model.availableMonthKeys?.length ? model.availableMonthKeys : abGetAvailableMonthKeys(model),
+  };
+}
+
 function buildBaseTest(item: XwayAbApiItem, mainImageUrl: string, sheetPrice: XwaySheetPriceSnapshot | null): XwayDashboardTest {
   const article = String(item.productWbId || "").trim();
   const title = String(item.name || "").trim();
@@ -367,16 +432,25 @@ function buildBaseTest(item: XwayAbApiItem, mainImageUrl: string, sheetPrice: Xw
   };
 }
 
-export async function loadXwayDashboardData(): Promise<XwayDashboardModel> {
+export async function loadXwayDashboardData(options: AbDashboardLoadOptions = {}): Promise<XwayDashboardModel> {
+  const monthKeys = abNormalizeMonthKeys(options.monthKeys || []);
+  if (options.cache !== false && !options.force && monthKeys.length) {
+    const cached = await abLoadDashboardModelCache<XwayDashboardModel>("ab-tests-xway", monthKeys);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  const requestUrl = options.force ? `/api/xway-ab-tests?_ts=${Date.now()}` : "/api/xway-ab-tests";
   const [response, legacyDashboardResult] = await Promise.all([
-    fetch("/api/xway-ab-tests", {
+    fetch(requestUrl, {
       credentials: "same-origin",
       cache: "no-store",
       headers: {
         Accept: "application/json",
       },
     }),
-    loadAbDashboardData()
+    loadAbDashboardData({ cache: false })
       .then((dashboard) => dashboard)
       .catch(() => null),
   ]);
@@ -473,7 +547,7 @@ export async function loadXwayDashboardData(): Promise<XwayDashboardModel> {
     { done: 0, launched: 0, pending: 0, rejected: 0, views: 0, estimatedExpense: 0 },
   );
 
-  return {
+  const model: XwayDashboardModel = {
     fetchedAt: String(payload.fetchedAt || "").trim(),
     total: Number(payload.total) || tests.length,
     tests,
@@ -486,7 +560,14 @@ export async function loadXwayDashboardData(): Promise<XwayDashboardModel> {
       results: 0,
     },
     liveTotals,
+    availableMonthKeys: abGetAvailableMonthKeys({ tests, products, cabinets, statusTotals, rowCounts: {
+      catalog: tests.length,
+      technical: Array.isArray(payload.productImages) ? payload.productImages.length : 0,
+      results: 0,
+    } }),
   };
+  void abSaveDashboardModelCache("ab-tests-xway", model);
+  return monthKeys.length ? selectXwayDashboardModelMonthKeys(model, monthKeys) : model;
 }
 
 function safeDivide(numeratorRaw: unknown, denominatorRaw: unknown) {

@@ -15,6 +15,7 @@ import {
   abFilterTests,
   abFormatInt,
   abNormalizeStatus,
+  abResolveCacheMonthKeys,
   buildXwayRequestKey,
   buildXwayRequestMeta,
   buildXwaySummaryChecksFromPayload,
@@ -320,6 +321,8 @@ export function DashboardPage() {
   const productSnapshotInflightRef = useRef(new Set<string>());
   const xwayDialogRequestIdRef = useRef(0);
   const filteredTestsRef = useRef<TestCard[]>([]);
+  const cacheMonthKeys = useMemo(() => abResolveCacheMonthKeys(filters), [filters.monthKeys, filters.dateFrom, filters.dateTo]);
+  const cacheMonthSignature = cacheMonthKeys.join(",");
 
   const applyXwayChecksToModel = useCallback((testId: string, checks: SummaryChecks | null, payload: XwayPayload | null = null) => {
     startTransition(() => {
@@ -544,7 +547,7 @@ export function DashboardPage() {
     }
   }, [applyXwayChecksToModel, resolveXwayForTest, updateXwayStatus]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError("");
     xwayCacheRef.current.clear();
@@ -553,16 +556,16 @@ export function DashboardPage() {
     productSnapshotInflightRef.current.clear();
     setProductSnapshotsByKey({});
     try {
-      const data = await loadAbDashboardData();
+      const data = await loadAbDashboardData({ monthKeys: cacheMonthKeys, force: Boolean(options.force) });
       setModel(data);
-      setFetchedAt(new Date().toISOString());
+      setFetchedAt(data.fetchedAt || new Date().toISOString());
       setXwayStatusByTestId({});
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить AB-данные.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cacheMonthSignature]);
 
   const hydrateProductSnapshots = useCallback(async (productsRaw: Product[]) => {
     const queue = productsRaw
@@ -717,7 +720,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!filteredXwaySignature) return;
-    void hydrateXwayForTests(filteredTestsRef.current, { force: true, reset: true });
+    void hydrateXwayForTests(filteredTestsRef.current, { force: false, reset: false });
   }, [filteredXwaySignature, hydrateXwayForTests]);
 
   const handleRefreshFilteredXway = useCallback(async () => {
@@ -936,7 +939,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => void loadData({ force: true })}
               disabled={loading}
               className={`h-10 px-5 rounded-xl border text-[14px] inline-flex items-center gap-2 cursor-pointer transition-all ${
                 loading

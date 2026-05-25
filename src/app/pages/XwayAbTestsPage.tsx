@@ -11,6 +11,7 @@ import {
   abBuildDateRangeFromMonthKeys,
   abFilterTests,
   abFormatInt,
+  abResolveCacheMonthKeys,
   buildXwayRequestKey,
   buildXwayRequestMeta,
   fetchXwayPayload,
@@ -204,6 +205,8 @@ export function XwayAbTestsPage() {
   const productSnapshotCacheRef = useRef(new Map<string, XwayProductSnapshot>());
   const productSnapshotInflightRef = useRef(new Set<string>());
   const filteredTestsRef = useRef<XwayDashboardTest[]>([]);
+  const cacheMonthKeys = useMemo(() => abResolveCacheMonthKeys(filters), [filters.monthKeys, filters.dateFrom, filters.dateTo]);
+  const cacheMonthSignature = cacheMonthKeys.join(",");
 
   const applyPatchToModel = useCallback((testId: string, patch: Partial<XwayDashboardTest>) => {
     startTransition(() => {
@@ -378,7 +381,7 @@ export function XwayAbTestsPage() {
     }
   }, [applyPatchToModel, resolveXwayForTest, updateXwayStatus]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true);
     setError("");
     xwayCacheRef.current.clear();
@@ -387,7 +390,7 @@ export function XwayAbTestsPage() {
     productSnapshotInflightRef.current.clear();
     setProductSnapshotsByKey({});
     try {
-      const data = await loadXwayDashboardData();
+      const data = await loadXwayDashboardData({ monthKeys: cacheMonthKeys, force: Boolean(options.force) });
       setModel(data);
       setXwayStatusByTestId({});
     } catch (requestError) {
@@ -395,7 +398,7 @@ export function XwayAbTestsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cacheMonthSignature]);
 
   const hydrateProductSnapshots = useCallback(async (productsRaw: Product[]) => {
     const queue = productsRaw
@@ -545,7 +548,7 @@ export function XwayAbTestsPage() {
 
   useEffect(() => {
     if (!filteredXwaySignature) return;
-    void hydrateXwayForTests(filteredTestsRef.current, { force: true, reset: true });
+    void hydrateXwayForTests(filteredTestsRef.current, { force: false, reset: false });
   }, [filteredXwaySignature, hydrateXwayForTests]);
 
   const handleRefreshFilteredXway = useCallback(async () => {
@@ -623,7 +626,7 @@ export function XwayAbTestsPage() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => void loadData({ force: true })}
               disabled={loading}
               className={`h-10 px-5 rounded-xl border text-[14px] inline-flex items-center gap-2 cursor-pointer transition-all ${
                 loading
