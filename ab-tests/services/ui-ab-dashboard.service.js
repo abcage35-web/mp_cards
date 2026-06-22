@@ -644,6 +644,31 @@ function abCellText(row, id) {
   return String(value).trim();
 }
 
+function abCellLink(row, id) {
+  const raw = String(abCellRaw(row, id) ?? "").trim();
+  const formatted = String(abCellText(row, id) ?? "").trim();
+  const preferred = raw || formatted;
+  if (!preferred) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(preferred)) {
+    return preferred.replace(/^http:\/\//i, "https://");
+  }
+  if (/^\/\//.test(preferred)) {
+    return `https:${preferred}`;
+  }
+
+  if (/^https?:\/\//i.test(formatted)) {
+    return formatted.replace(/^http:\/\//i, "https://");
+  }
+  if (/^\/\//.test(formatted)) {
+    return `https:${formatted}`;
+  }
+
+  return preferred;
+}
+
 function abNormalizeTestId(valueRaw) {
   const digits = String(valueRaw ?? "").match(/\d{3,}/);
   return digits ? digits[0] : "";
@@ -683,7 +708,7 @@ function abParseResultIndex(resultsSheet) {
       continue;
     }
 
-    const coverUrl = String(abCellText(row, "C") || "").trim();
+    const coverUrl = abCellLink(row, "C");
     if (!coverUrl) {
       continue;
     }
@@ -985,8 +1010,8 @@ function abBuildComputedTestCard(sourceRow, resultsByTest, catalogIndex) {
   const catalog = catalogIndex.get(article) || null;
   const testTitle = String(abCellText(sourceRow, "AY") || "").trim();
   const productName = String(abCellText(sourceRow, "AX") || "").trim() || catalog?.productName || testTitle || "—";
-  const wbUrl = String(abCellText(sourceRow, "B") || "").trim() || catalog?.wbUrl || "";
-  const xwayUrl = String(abCellText(sourceRow, "F") || "").trim();
+  const wbUrl = abCellLink(sourceRow, "B") || catalog?.wbUrl || "";
+  const xwayUrl = abCellLink(sourceRow, "F");
   const startedAtIso = abParseDateLiteral(abCellRaw(sourceRow, "M"));
   const endedAtIso = abParseDateLiteral(abCellRaw(sourceRow, "O"));
   const campaignExternalId = abExtractCampaignExternalId(testTitle);
